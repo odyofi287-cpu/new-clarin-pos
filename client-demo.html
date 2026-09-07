@@ -1,0 +1,1473 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Clarin POS Demo</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg-1: #fbe7f5;
+      --bg-2: #f5d3ec;
+      --bg-3: #eed1f6;
+      --bg-4: #110537;
+      --surface: rgba(22, 6, 60, 0.92);
+      --surface-2: rgba(31, 9, 76, 0.96);
+      --surface-3: rgba(35, 10, 78, 0.85);
+      --line: rgba(252, 153, 196, 0.22);
+      --text: #f8f3ff;
+      --muted: #d8c2ec;
+      --accent: #fc99c4;
+      --accent-strong: #903799;
+      --accent-soft: rgba(252, 208, 238, 0.9);
+      --danger: #ff85bd;
+      --success: #c4a0f0;
+      --shadow: 0 24px 90px rgba(17, 5, 55, 0.45);
+      --radius: 22px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      font-family: Georgia, Cambria, "Times New Roman", Times, serif;
+      color: var(--text);
+      background: radial-gradient(circle at top left, rgba(252,153,196,0.18), transparent 24%),
+        radial-gradient(circle at 80% 15%, rgba(186,82,173,0.14), transparent 20%),
+        linear-gradient(180deg, var(--bg-1) 0%, var(--bg-2) 35%, var(--bg-3) 75%, var(--bg-4) 100%);
+    }
+
+    .shell {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px 18px 40px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      background: rgba(24, 8, 75, 0.92);
+      border: 1px solid var(--line);
+      border-radius: 26px;
+      box-shadow: var(--shadow);
+      padding: 18px 22px;
+      margin-bottom: 18px;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: clamp(1.75rem, 3vw, 2.5rem);
+      line-height: 1.1;
+      letter-spacing: -0.04em;
+      text-shadow: 0 0 14px rgba(252,153,196,0.45);
+    }
+
+    .header p {
+      margin: 6px 0 0;
+      color: var(--muted);
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 7px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--line);
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .card {
+      background: linear-gradient(180deg, var(--surface-2), var(--surface));
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      padding: 18px 18px 16px;
+      margin-bottom: 16px;
+    }
+
+    .pos-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+
+    .pos-header h2 {
+      margin: 0;
+      font-size: clamp(1.6rem, 2.5vw, 2.2rem);
+    }
+
+    .pos-header p {
+      margin: 6px 0 0;
+      color: var(--muted);
+    }
+
+    .card h2, .card h3, .card h4 { margin: 0 0 12px; }
+
+    .tabs {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 12px;
+      padding: 12px;
+      border-radius: 18px;
+      background: rgba(24, 8, 75, 0.85);
+      border: 1px solid var(--line);
+    }
+
+    button {
+      border: none;
+      border-radius: 16px;
+      padding: 0.82rem 1.3rem;
+      font: inherit;
+      cursor: pointer;
+      color: white;
+      background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+      box-shadow: 0 12px 26px rgba(252,153,196,0.18);
+      transition: transform 0.18s ease, filter 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    button:hover { transform: translateY(-1px); filter: brightness(1.06); }
+    button.secondary {
+      background: var(--accent-soft);
+      color: #1f4e79;
+      box-shadow: none;
+    }
+    button.danger {
+      background: linear-gradient(135deg, #ff8ec4, #d94f9d);
+    }
+    button.active {
+      box-shadow: 0 16px 28px rgba(252,153,196,0.28);
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    input, select {
+      width: 100%;
+      padding: 0.9rem 1rem;
+      border-radius: 16px;
+      border: 1px solid rgba(252,153,196,0.28);
+      background: rgba(255,255,255,0.96);
+      color: #110537;
+      font: inherit;
+    }
+
+    input:focus, select:focus {
+      outline: none;
+      border-color: rgba(186,82,173,0.75);
+      box-shadow: 0 0 0 4px rgba(186,82,173,0.18);
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+
+    .metric {
+      padding: 16px;
+      border-radius: 20px;
+      background: rgba(38, 10, 64, 0.82);
+      border: 1px solid var(--line);
+    }
+    .metric .label { display: block; margin-bottom: 8px; color: var(--muted); font-size: 0.8rem; }
+    .metric strong { font-size: clamp(1.3rem, 2vw, 1.8rem); }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: rgba(18, 4, 44, 0.92);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+    th, td {
+      padding: 12px 10px;
+      text-align: left;
+      border-bottom: 1px solid var(--line);
+      color: #f7ebff;
+    }
+    th {
+      background: rgba(42, 10, 87, 0.96);
+    }
+    tbody tr:hover { background: rgba(252,153,196,0.06); }
+
+    .muted { color: var(--muted); }
+    .error { color: #ffd2eb; }
+    .success { color: #e6d8ff; }
+    .muted-text { color: var(--muted); }
+    .success-message {
+      color: #eee2ff;
+      background: rgba(102, 64, 163, 0.28);
+      border: 1px solid rgba(189, 157, 255, 0.35);
+      padding: 0.8rem 0.9rem;
+      border-radius: 12px;
+      margin: 0 0 12px;
+    }
+    .error-message {
+      color: #ffd7ef;
+      background: rgba(152, 52, 121, 0.22);
+      border: 1px solid rgba(255, 142, 196, 0.35);
+      padding: 0.8rem 0.9rem;
+      border-radius: 12px;
+      margin: 0 0 12px;
+    }
+
+    .hidden { display: none !important; }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(10, 10, 14, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 18px;
+    }
+
+    .modal {
+      width: min(980px, 96vw);
+      max-height: 92vh;
+      overflow: auto;
+      border-radius: 24px;
+      background: linear-gradient(180deg, rgba(31, 9, 76, 0.98), rgba(20, 6, 52, 0.94));
+      border: 1px solid var(--line);
+      box-shadow: 0 30px 110px rgba(17,5,55,0.56);
+      padding: 18px;
+    }
+
+    .pos-modal-card,
+    .pos-modal-card--narrow {
+      width: min(980px, 92vw);
+      max-width: 980px;
+      max-height: calc(100vh - 4.5rem);
+      overflow: auto;
+      border-radius: 26px;
+      background: linear-gradient(180deg, rgba(31, 9, 76, 0.98), rgba(20, 6, 52, 0.94));
+      border: 1px solid rgba(252, 153, 196, 0.22);
+      box-shadow: 0 30px 110px rgba(17, 5, 55, 0.56);
+      padding: 1.5rem;
+      position: relative;
+    }
+
+    .pos-modal-card--narrow {
+      width: min(760px, 92vw);
+      max-width: 760px;
+    }
+
+    .modal.narrow { width: min(620px, 92vw); }
+    .modal-header,
+    .pos-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .pos-modal-header {
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid rgba(252, 153, 196, 0.12);
+    }
+
+    .pos-modal-header h3 {
+      margin: 0;
+      font-size: clamp(1.25rem, 2vw, 1.7rem);
+    }
+
+    .pos-modal-form {
+      display: grid;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .pos-modal-form-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    }
+
+    .demo-footer {
+      padding-top: 10px;
+      color: var(--muted);
+      font-size: 0.8rem;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="header">
+      <div>
+        <h1>New Clarin Sports Arena POS</h1>
+        <p>Client testing build — self contained demo</p>
+      </div>
+      <span class="pill">Offline demo</span>
+    </header>
+
+    <section id="login-panel" class="card">
+      <h2>Staff / Vendor Login</h2>
+      <div class="grid" style="max-width: 640px;">
+        <label>
+          Email
+          <input id="login-email" type="email" value="superadmin@clarin.local" />
+        </label>
+        <label>
+          Password
+          <input id="login-password" type="password" value="Superadmin123!" />
+        </label>
+      </div>
+      <div class="button-row" style="margin-top: 12px;">
+        <button id="login-btn">Log in</button>
+        <button id="reset-btn" class="secondary" type="button">Reset demo data</button>
+      </div>
+      <p id="login-error" class="error"></p>
+    </section>
+
+    <section id="app-panel" class="hidden">
+      <div class="card">
+        <div class="button-row" style="justify-content: space-between;">
+          <div>
+            <h2 id="welcome-title">Dashboard</h2>
+            <p id="session-line" class="muted"></p>
+          </div>
+          <div class="button-row">
+            <button id="export-btn" class="secondary" type="button">Export JSON</button>
+            <button id="logout-btn" type="button">Log out</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="tabs" class="tabs"></div>
+
+      <div id="dashboard-view"></div>
+      <div id="pos-view" class="hidden"></div>
+      <div id="reports-view" class="hidden"></div>
+    </section>
+
+    <div class="demo-footer">Self-contained UI demo for client review. Data is stored locally in your browser.</div>
+  </div>
+
+  <div id="manage-products-modal" class="modal-backdrop hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Manage Products</h3>
+        <button id="close-products-modal" class="secondary" type="button">Close</button>
+      </div>
+      <p id="manage-products-error" class="error"></p>
+      <div class="button-row" style="justify-content: flex-end; margin-bottom: 10px;">
+        <button id="open-add-product" type="button">Add New Product</button>
+      </div>
+      <div id="products-table"></div>
+    </div>
+  </div>
+
+  <div id="add-product-modal" class="modal-backdrop hidden">
+    <div class="modal narrow">
+      <div class="modal-header">
+        <h3 id="product-form-title">Add New Product</h3>
+        <button id="close-add-product" class="secondary" type="button">Close</button>
+      </div>
+      <form id="product-form" class="grid">
+        <label>
+          Name
+          <input id="product-name" required />
+        </label>
+        <label>
+          Category
+          <input id="product-category" />
+        </label>
+        <label>
+          Price
+          <input id="product-price" type="number" min="0" step="0.01" required />
+        </label>
+        <label>
+          Initial Stock
+          <input id="product-stock" type="number" min="0" required />
+        </label>
+        <div class="button-row" style="grid-column: 1 / -1; justify-content: flex-end;">
+          <button id="cancel-product-form" class="secondary" type="button">Cancel</button>
+          <button id="save-product-btn" type="submit">Save Product</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="manage-accounts-modal" class="modal-backdrop hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Manage Accounts</h3>
+        <button id="close-accounts-modal" class="secondary" type="button">Close</button>
+      </div>
+      <p id="manage-accounts-error" class="error"></p>
+      <div class="button-row" style="justify-content: flex-end; margin-bottom: 10px;">
+        <button id="open-add-account" type="button">Add New Account</button>
+      </div>
+      <div id="accounts-table"></div>
+    </div>
+  </div>
+
+  <div id="add-account-modal" class="modal-backdrop hidden">
+    <div class="modal narrow">
+      <div class="modal-header">
+        <h3 id="account-form-title">Add New Account</h3>
+        <button id="close-add-account" class="secondary" type="button">Close</button>
+      </div>
+      <form id="account-form" class="grid">
+        <label>
+          Full Name
+          <input id="account-name" required />
+        </label>
+        <label>
+          Account Type
+          <select id="account-role">
+            <option value="ADMIN">Admin</option>
+            <option value="STAFF">Staff</option>
+            <option value="VENDOR">Vendor</option>
+          </select>
+        </label>
+        <label>
+          Contact Person
+          <input id="account-contact-person" required />
+        </label>
+        <label>
+          Contact Number
+          <input id="account-contact-number" required />
+        </label>
+        <label id="vendor-id-row" class="hidden">
+          Vendor ID
+          <input id="account-vendor-id" type="number" min="1" />
+        </label>
+        <label>
+          Username
+          <input id="account-username" required />
+        </label>
+        <label>
+          Password
+          <input id="account-password" type="password" required />
+        </label>
+        <div class="button-row" style="grid-column: 1 / -1; justify-content: flex-end;">
+          <button id="cancel-account-form" class="secondary" type="button">Cancel</button>
+          <button id="save-account-btn" type="submit">Save Account</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = 'clarin-client-demo-v1';
+    const appState = {
+      currentUser: null,
+      activeTab: 'dashboard',
+      productEditId: null,
+      accountEditId: null,
+      pickupOpen: false,
+      listWindowOpen: false,
+      historyWindowOpen: false,
+      pickupMode: 'create',
+      editingPickupId: null,
+      pickupForm: {
+        pickup_date: '',
+        pickup_time: '',
+        vendor_id: '',
+        product_id: '',
+        quantity: '1',
+        category: '',
+        unit_price: '',
+        total_price: '0.00'
+      },
+      posStatus: '',
+      posError: ''
+    };
+
+    const defaultData = () => ({
+      users: [
+        { id: 1, name: 'Superadmin', email: 'superadmin@clarin.local', password: 'Superadmin123!', role: 'SUPERADMIN', contact_person: 'Operations Lead', contact_number: '09170000001' },
+        { id: 2, name: 'Admin', email: 'admin@clarin.local', password: 'Admin123!', role: 'ADMIN', contact_person: 'Store Lead', contact_number: '09170000002' },
+        { id: 3, name: 'Staff', email: 'staff@clarin.local', password: 'Staff123!', role: 'STAFF', contact_person: 'Front Desk', contact_number: '09170000003' },
+        { id: 4, name: 'Vendor User', email: 'vendor@clarin.local', password: 'Vendor123!', role: 'VENDOR', vendor_id: 1, contact_person: 'Vendor Liaison', contact_number: '09170000004' },
+        { id: 5, name: 'Vendor Two', email: 'vendor2@clarin.local', password: 'Vendor123!', role: 'VENDOR', vendor_id: 2, contact_person: 'Vendor Two Liaison', contact_number: '09170000005' }
+      ],
+      products: [
+        { id: 1, name: 'Cola', category: 'Soft Drink', selling_price: 35, current_stock: 24, minimum_stock: 10, active: 1 },
+        { id: 2, name: 'Mineral Water', category: 'Water', selling_price: 25, current_stock: 38, minimum_stock: 15, active: 1 },
+        { id: 3, name: 'Sprite', category: 'Softdrinks', selling_price: 40, current_stock: 12, minimum_stock: 8, active: 1 },
+        { id: 4, name: 'Jai Jai', category: 'General', selling_price: 60, current_stock: 8, minimum_stock: 5, active: 1 }
+      ],
+      sales: [
+        { id: 1, sale_date: today(), total_amount: 210, item_count: 5, created_at: isoNow() },
+        { id: 2, sale_date: today(), total_amount: 100, item_count: 2, created_at: isoNow() }
+      ],
+      deliveries: [
+        { id: 1, delivery_date: today(), vendor_name: 'Clarin Beverages', total_amount: 150, created_at: isoNow() }
+      ],
+      vendors: [
+        { id: 1, name: 'Clarin Beverages', vendor_id: 1 },
+        { id: 2, name: 'Arena Drinks Supplier', vendor_id: 2 }
+      ]
+    });
+
+    const els = {
+      loginPanel: document.getElementById('login-panel'),
+      appPanel: document.getElementById('app-panel'),
+      loginEmail: document.getElementById('login-email'),
+      loginPassword: document.getElementById('login-password'),
+      loginError: document.getElementById('login-error'),
+      loginBtn: document.getElementById('login-btn'),
+      resetBtn: document.getElementById('reset-btn'),
+      exportBtn: document.getElementById('export-btn'),
+      logoutBtn: document.getElementById('logout-btn'),
+      tabs: document.getElementById('tabs'),
+      welcomeTitle: document.getElementById('welcome-title'),
+      sessionLine: document.getElementById('session-line'),
+      dashboardView: document.getElementById('dashboard-view'),
+      posView: document.getElementById('pos-view'),
+      reportsView: document.getElementById('reports-view'),
+      productsModal: document.getElementById('manage-products-modal'),
+      closeProductsModal: document.getElementById('close-products-modal'),
+      openAddProduct: document.getElementById('open-add-product'),
+      productsTable: document.getElementById('products-table'),
+      manageProductsError: document.getElementById('manage-products-error'),
+      addProductModal: document.getElementById('add-product-modal'),
+      closeAddProduct: document.getElementById('close-add-product'),
+      productForm: document.getElementById('product-form'),
+      productName: document.getElementById('product-name'),
+      productCategory: document.getElementById('product-category'),
+      productPrice: document.getElementById('product-price'),
+      productStock: document.getElementById('product-stock'),
+      productFormTitle: document.getElementById('product-form-title'),
+      cancelProductForm: document.getElementById('cancel-product-form'),
+      saveProductBtn: document.getElementById('save-product-btn'),
+      accountsModal: document.getElementById('manage-accounts-modal'),
+      closeAccountsModal: document.getElementById('close-accounts-modal'),
+      openAddAccount: document.getElementById('open-add-account'),
+      accountsTable: document.getElementById('accounts-table'),
+      manageAccountsError: document.getElementById('manage-accounts-error'),
+      addAccountModal: document.getElementById('add-account-modal'),
+      closeAddAccount: document.getElementById('close-add-account'),
+      accountForm: document.getElementById('account-form'),
+      accountName: document.getElementById('account-name'),
+      accountRole: document.getElementById('account-role'),
+      accountContactPerson: document.getElementById('account-contact-person'),
+      accountContactNumber: document.getElementById('account-contact-number'),
+      accountVendorId: document.getElementById('account-vendor-id'),
+      accountUsername: document.getElementById('account-username'),
+      accountPassword: document.getElementById('account-password'),
+      accountFormTitle: document.getElementById('account-form-title'),
+      cancelAccountForm: document.getElementById('cancel-account-form'),
+      saveAccountBtn: document.getElementById('save-account-btn'),
+      vendorIdRow: document.getElementById('vendor-id-row')
+    };
+
+    function isoNow() { return new Date().toISOString(); }
+    function today() { return new Date().toISOString().slice(0, 10); }
+    function money(num) { return Number(num || 0).toLocaleString('en-PH', { style: 'currency', currency: 'PHP', minimumFractionDigits: 2 }); }
+    function loadData() { const raw = localStorage.getItem(STORAGE_KEY); if (!raw) { const data = defaultData(); localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); return data; } try { return JSON.parse(raw); } catch { const data = defaultData(); localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); return data; } }
+    function saveData(data) { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+    function escapeHtml(str) { return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
+
+    function getActiveProducts(data) {
+      return (data.products || []).filter(p => Number(p.active) === 1);
+    }
+
+    function dashboardStats(data) {
+      const salesToday = (data.sales || []).filter(s => s.sale_date === today());
+      const itemsSold = salesToday.reduce((sum, s) => sum + Number(s.item_count || 0), 0);
+      const totalSales = salesToday.reduce((sum, s) => sum + Number(s.total_amount || 0), 0);
+      const activeProducts = getActiveProducts(data);
+      const lowStock = activeProducts.filter(p => Number(p.current_stock) <= Number(p.minimum_stock));
+      const outOfStock = activeProducts.filter(p => Number(p.current_stock) <= 0);
+      return {
+        totalSales,
+        transactionCount: salesToday.length,
+        itemsSold,
+        inventory: activeProducts.reduce((sum, p) => sum + Number(p.current_stock || 0), 0),
+        lowStock: lowStock.length,
+        outOfStock: outOfStock.length,
+        lowStockList: lowStock.slice(0, 5)
+      };
+    }
+
+    function setActiveTab(tab) {
+      appState.activeTab = tab;
+      renderTabs();
+      renderDashboard();
+      renderPos();
+      renderReports();
+
+      els.dashboardView.classList.toggle('hidden', appState.activeTab !== 'dashboard');
+      els.posView.classList.toggle('hidden', appState.activeTab !== 'pos');
+      els.reportsView.classList.toggle('hidden', appState.activeTab !== 'reports');
+    }
+
+    function renderTabs() {
+      const tabs = [
+        { id: 'dashboard', label: 'Dashboard' },
+        { id: 'pos', label: 'POS' },
+        { id: 'reports', label: 'Reports' }
+      ];
+      els.tabs.innerHTML = tabs.map(tab => `<button class="${appState.activeTab === tab.id ? 'active' : ''}" data-tab="${tab.id}">${tab.label}</button>`).join('');
+    }
+
+    function renderDashboard() {
+      const user = appState.currentUser;
+      const data = loadData();
+      const stats = dashboardStats(data);
+      const lowRows = stats.lowStockList.map(p => `
+        <tr>
+          <td>${escapeHtml(p.name)}</td>
+          <td>${escapeHtml(p.category || 'General')}</td>
+          <td>${Number(p.current_stock || 0)}</td>
+          <td>${Number(p.minimum_stock || 0)}</td>
+        </tr>
+      `).join('');
+
+      els.dashboardView.innerHTML = `
+        <div class="card">
+          <h3>Operational Dashboard</h3>
+          <div class="metric-grid">
+            <div class="metric"><span class="label">Today's total sales</span><strong>${money(stats.totalSales)}</strong></div>
+            <div class="metric"><span class="label">Transaction count</span><strong>${stats.transactionCount}</strong></div>
+            <div class="metric"><span class="label">Items sold today</span><strong>${stats.itemsSold}</strong></div>
+            <div class="metric"><span class="label">Total current inventory</span><strong>${stats.inventory}</strong></div>
+            <div class="metric"><span class="label">Low-stock products</span><strong>${stats.lowStock}</strong></div>
+            <div class="metric"><span class="label">Out-of-stock products</span><strong>${stats.outOfStock}</strong></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="button-row" style="justify-content: space-between;">
+            <h3>Product Management</h3>
+            <button type="button" id="open-manage-products">Manage Products</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="button-row" style="justify-content: space-between;">
+            <h3>Manage Accounts</h3>
+            <button type="button" id="open-manage-accounts" class="secondary">Manage Accounts</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Low-stock products</h3>
+          ${lowRows ? `<table><thead><tr><th>Name</th><th>Category</th><th>Stock</th><th>Minimum</th></tr></thead><tbody>${lowRows}</tbody></table>` : '<p class="muted">No low-stock products.</p>'}
+        </div>
+      `;
+
+      if (user && user.role === 'VENDOR') {
+        els.dashboardView.innerHTML = `
+          <div class="card">
+            <h3>Vendor Dashboard</h3>
+            <p class="muted">Read-only access in the offline demo.</p>
+          </div>
+        `;
+      }
+    }
+
+    function renderPos() {
+      const user = appState.currentUser;
+      const data = loadData();
+      const products = getActiveProducts(data);
+      const vendors = (data.users || []).filter((entry) => entry.role === 'VENDOR');
+      const pickupEntries = (data.deliveries || []).slice().sort((a, b) => String(b.delivery_date).localeCompare(String(a.delivery_date)));
+      const selectedProduct = products.find((product) => String(product.id) === String(appState.pickupForm.product_id)) || null;
+      const unitPrice = selectedProduct ? Number(selectedProduct.selling_price || 0) : 0;
+      const quantity = Number(appState.pickupForm.quantity || 0);
+      const totalPrice = Number.isFinite(quantity) && quantity > 0 ? (quantity * unitPrice).toFixed(2) : '0.00';
+
+      if (selectedProduct && !appState.pickupForm.category) {
+        appState.pickupForm.category = selectedProduct.category || '';
+      }
+      if (selectedProduct && !appState.pickupForm.unit_price) {
+        appState.pickupForm.unit_price = String(unitPrice);
+      }
+      if (selectedProduct && appState.pickupForm.total_price === '0.00') {
+        appState.pickupForm.total_price = totalPrice;
+      }
+
+      els.posView.innerHTML = `
+        <div class="card">
+          <div class="pos-header">
+            <div>
+              <h2>Direct-to-Vendor POS</h2>
+              <p class="muted-text">Record vendor pickups with product, category, quantity, and total price.</p>
+            </div>
+            <div class="button-row">
+              <button type="button" data-open-pickup="1">Add Vendor Pickup</button>
+              <button type="button" class="secondary" data-open-list="1">Vendor Pickup List</button>
+              <button type="button" class="secondary" data-open-history="1">Vendor Pickup History</button>
+            </div>
+          </div>
+
+          ${appState.posStatus ? `<p class="success-message">${escapeHtml(appState.posStatus)}</p>` : ''}
+          ${appState.posError ? `<p class="error-message">${escapeHtml(appState.posError)}</p>` : ''}
+
+          ${appState.listWindowOpen ? `
+            <div class="modal-backdrop">
+              <div class="pos-modal-card">
+                <div class="pos-modal-header">
+                  <h3>Vendor Pickup List</h3>
+                  <button type="button" class="secondary" data-close-list="1">Close</button>
+                </div>
+                ${pickupEntries.length === 0 ? '<p>No vendor pickups available.</p>' : `
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Vendor</th>
+                        <th>Date</th>
+                        <th>Total</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${pickupEntries.map((entry) => `
+                        <tr>
+                          <td>${entry.id}</td>
+                          <td>${escapeHtml(entry.vendor_name || entry.vendor_id || '-')}</td>
+                          <td>${escapeHtml(entry.delivery_date || '-')}</td>
+                          <td>${money(entry.total_amount || 0)}</td>
+                          <td class="button-row">
+                            <button type="button" class="secondary" data-edit-pickup="${entry.id}">Edit</button>
+                            <button type="button" class="danger" data-delete-pickup="${entry.id}">Delete</button>
+                          </td>
+                        </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                `}
+              </div>
+            </div>
+          ` : ''}
+
+          ${appState.historyWindowOpen ? `
+            <div class="modal-backdrop">
+              <div class="pos-modal-card">
+                <div class="pos-modal-header">
+                  <h3>Vendor Pickup History</h3>
+                  <button type="button" class="secondary" data-close-history="1">Close</button>
+                </div>
+                ${pickupEntries.length === 0 ? '<p>No pickup history available.</p>' : `
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Vendor</th>
+                        <th>Date</th>
+                        <th>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${pickupEntries.map((entry) => `
+                        <tr>
+                          <td>${entry.id}</td>
+                          <td>${escapeHtml(entry.vendor_name || entry.vendor_id || '-')}</td>
+                          <td>${escapeHtml(entry.delivery_date || '-')}</td>
+                          <td>${money(entry.total_amount || 0)}</td>
+                        </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                `}
+              </div>
+            </div>
+          ` : ''}
+
+          ${appState.pickupOpen ? `
+            <div class="modal-backdrop">
+              <div class="pos-modal-card--narrow">
+                <div class="pos-modal-header">
+                  <h3>${appState.pickupMode === 'edit' ? 'Edit Vendor Pickup' : 'Add Vendor Pickup'}</h3>
+                  <button type="button" class="secondary" data-close-pickup="1">Close</button>
+                </div>
+
+                <form class="pos-modal-form" data-submit-pickup="1">
+                  <div class="pos-modal-form-grid">
+                    <label>
+                      Pick-up date
+                      <input type="date" value="${escapeHtml(appState.pickupForm.pickup_date)}" data-pickup-field="pickup_date" required />
+                    </label>
+                    <label>
+                      Pick-up time
+                      <input type="time" value="${escapeHtml(appState.pickupForm.pickup_time)}" data-pickup-field="pickup_time" required />
+                    </label>
+                  </div>
+
+                  <div class="pos-modal-form-grid">
+                    <label>
+                      Vendor
+                      <select data-pickup-field="vendor_id" required>
+                        <option value="">Select vendor</option>
+                        ${vendors.map((vendor) => `<option value="${vendor.vendor_id ?? vendor.id}" ${String(appState.pickupForm.vendor_id) === String(vendor.vendor_id ?? vendor.id) ? 'selected' : ''}>${escapeHtml(vendor.name)} (Vendor ID: ${vendor.vendor_id ?? vendor.id})</option>`).join('')}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div class="pos-modal-form-grid">
+                    <label>
+                      Product
+                      <select data-pickup-field="product_id" required>
+                        <option value="">Select product</option>
+                        ${products.map((product) => `<option value="${product.id}" ${String(appState.pickupForm.product_id) === String(product.id) ? 'selected' : ''}>${escapeHtml(product.name)} - ${escapeHtml(product.category || 'General')}</option>`).join('')}
+                      </select>
+                    </label>
+                    <label>
+                      Category
+                      <input value="${escapeHtml(appState.pickupForm.category)}" readonly placeholder="Auto-filled from product data" />
+                    </label>
+                  </div>
+
+                  <div class="pos-modal-form-grid">
+                    <label>
+                      Quantity
+                      <input type="number" min="1" value="${escapeHtml(appState.pickupForm.quantity)}" data-pickup-field="quantity" required />
+                    </label>
+                    <label>
+                      Unit price
+                      <input value="${escapeHtml(appState.pickupForm.unit_price)}" readonly placeholder="Auto-filled from product data" />
+                    </label>
+                    <label>
+                      Total price
+                      <input value="${escapeHtml(appState.pickupForm.total_price)}" readonly placeholder="Quantity × unit price" />
+                    </label>
+                  </div>
+
+                  <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; grid-column: 1 / -1;">
+                    <button type="button" class="secondary" data-close-pickup="1">Cancel</button>
+                    <button type="submit" class="primary-button">${appState.pickupMode === 'edit' ? 'Update Vendor Pickup' : 'Save Vendor Pickup'}</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    function renderReports() {
+      const data = loadData();
+      const sales = (data.sales || []).slice(0, 6);
+      const deliveries = (data.deliveries || []).slice(0, 6);
+      els.reportsView.innerHTML = `
+        <div class="card">
+          <h3>Recent activity</h3>
+          <div class="grid">
+            <div>
+              <h4>Recent sales</h4>
+              ${sales.length ? `<table><thead><tr><th>ID</th><th>Date</th><th>Items</th><th>Total</th></tr></thead><tbody>${sales.map(s => `<tr><td>${s.id}</td><td>${s.sale_date}</td><td>${s.item_count}</td><td>${money(s.total_amount)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">No sales yet.</p>'}
+            </div>
+            <div>
+              <h4>Recent deliveries</h4>
+              ${deliveries.length ? `<table><thead><tr><th>ID</th><th>Date</th><th>Vendor</th><th>Total</th></tr></thead><tbody>${deliveries.map(d => `<tr><td>${d.id}</td><td>${d.delivery_date}</td><td>${escapeHtml(d.vendor_name)}</td><td>${money(d.total_amount)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">No deliveries yet.</p>'}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderProductsTable() {
+      const data = loadData();
+      const rows = (data.products || []).sort((a, b) => a.name.localeCompare(b.name));
+      if (!rows.length) {
+        els.productsTable.innerHTML = '<p class="muted">No products available.</p>';
+        return;
+      }
+      els.productsTable.innerHTML = `
+        <table>
+          <thead><tr><th>Name</th><th>Category</th><th>Price</th><th>Stock</th><th>Active</th><th>Actions</th></tr></thead>
+          <tbody>
+            ${rows.map(p => `
+              <tr>
+                <td>${escapeHtml(p.name)}</td>
+                <td>${escapeHtml(p.category || 'General')}</td>
+                <td>${money(p.selling_price)}</td>
+                <td>${Number(p.current_stock || 0)}</td>
+                <td>${Number(p.active) === 1 ? 'Yes' : 'No'}</td>
+                <td class="button-row">
+                  <button type="button" data-product-edit="${p.id}" class="secondary">Edit</button>
+                  <button type="button" data-product-toggle="${p.id}" class="${Number(p.active) === 1 ? 'danger' : 'secondary'}">${Number(p.active) === 1 ? 'Remove' : 'Restore'}</button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    function renderAccountsTable() {
+      const data = loadData();
+      const rows = (data.users || []).filter(u => u.role !== 'SUPERADMIN');
+      if (!rows.length) {
+        els.accountsTable.innerHTML = '<p class="muted">No users found.</p>';
+        return;
+      }
+      els.accountsTable.innerHTML = `
+        <table>
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Contact Person</th><th>Contact Number</th><th>Actions</th></tr></thead>
+          <tbody>
+            ${rows.map(u => `
+              <tr>
+                <td>${escapeHtml(u.name)}</td>
+                <td>${escapeHtml(u.email)}</td>
+                <td>${escapeHtml(u.role)}</td>
+                <td>${escapeHtml(u.contact_person || '-')}</td>
+                <td>${escapeHtml(u.contact_number || '-')}</td>
+                <td class="button-row">
+                  <button type="button" data-account-edit="${u.id}" class="secondary">Edit</button>
+                  <button type="button" data-account-delete="${u.id}" class="danger">Delete</button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    function showProductsModal() {
+      renderProductsTable();
+      els.productsModal.classList.remove('hidden');
+    }
+
+    function hideProductsModal() {
+      els.productsModal.classList.add('hidden');
+      els.manageProductsError.textContent = '';
+    }
+
+    function showAddProductModal(editId = null) {
+      const data = loadData();
+      if (editId) {
+        const product = (data.products || []).find(p => p.id === Number(editId));
+        if (!product) return;
+        appState.productEditId = product.id;
+        els.productFormTitle.textContent = 'Edit Product';
+        els.productName.value = product.name;
+        els.productCategory.value = product.category || '';
+        els.productPrice.value = product.selling_price || 0;
+        els.productStock.value = product.current_stock || 0;
+        els.saveProductBtn.textContent = 'Save Changes';
+      } else {
+        appState.productEditId = null;
+        els.productFormTitle.textContent = 'Add New Product';
+        els.productName.value = '';
+        els.productCategory.value = '';
+        els.productPrice.value = '';
+        els.productStock.value = '';
+        els.saveProductBtn.textContent = 'Save Product';
+      }
+      els.addProductModal.classList.remove('hidden');
+    }
+
+    function hideAddProductModal() {
+      els.addProductModal.classList.add('hidden');
+      appState.productEditId = null;
+      els.productForm.reset();
+    }
+
+    function showAccountsModal() {
+      renderAccountsTable();
+      els.accountsModal.classList.remove('hidden');
+    }
+
+    function hideAccountsModal() {
+      els.accountsModal.classList.add('hidden');
+      els.manageAccountsError.textContent = '';
+    }
+
+    function showAddAccountModal(editId = null) {
+      const data = loadData();
+      if (editId) {
+        const user = (data.users || []).find(u => u.id === Number(editId));
+        if (!user) return;
+        appState.accountEditId = user.id;
+        els.accountFormTitle.textContent = 'Edit Account';
+        els.accountName.value = user.name || '';
+        els.accountRole.value = user.role || 'ADMIN';
+        els.accountContactPerson.value = user.contact_person || '';
+        els.accountContactNumber.value = user.contact_number || '';
+        els.accountUsername.value = user.email || '';
+        els.accountPassword.value = '';
+        els.saveAccountBtn.textContent = 'Save Changes';
+      } else {
+        appState.accountEditId = null;
+        els.accountFormTitle.textContent = 'Add New Account';
+        els.accountName.value = '';
+        els.accountRole.value = 'ADMIN';
+        els.accountContactPerson.value = '';
+        els.accountContactNumber.value = '';
+        els.accountUsername.value = '';
+        els.accountPassword.value = '';
+        els.saveAccountBtn.textContent = 'Save Account';
+      }
+      const isVendor = els.accountRole.value === 'VENDOR';
+      els.vendorIdRow.classList.toggle('hidden', !isVendor);
+      els.addAccountModal.classList.remove('hidden');
+    }
+
+    function hideAddAccountModal() {
+      els.addAccountModal.classList.add('hidden');
+      appState.accountEditId = null;
+      els.accountForm.reset();
+      els.vendorIdRow.classList.add('hidden');
+    }
+
+    function ensureLoggedIn() {
+      const user = appState.currentUser;
+      if (!user) {
+        els.loginPanel.classList.remove('hidden');
+        els.appPanel.classList.add('hidden');
+        return false;
+      }
+      els.loginPanel.classList.add('hidden');
+      els.appPanel.classList.remove('hidden');
+      els.welcomeTitle.textContent = user.name || 'Dashboard';
+      els.sessionLine.textContent = `${user.name} · ${user.role}`;
+      return true;
+    }
+
+    function handleLogin() {
+      const email = els.loginEmail.value.trim();
+      const password = els.loginPassword.value.trim();
+      const data = loadData();
+      const found = (data.users || []).find(u => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
+      if (!found) {
+        els.loginError.textContent = 'Invalid email or password.';
+        return;
+      }
+      appState.currentUser = { id: found.id, name: found.name, email: found.email, role: found.role };
+      els.loginError.textContent = '';
+      ensureLoggedIn();
+      setActiveTab('dashboard');
+    }
+
+    function doLogout() {
+      appState.currentUser = null;
+      ensureLoggedIn();
+    }
+
+    function resetPickupForm() {
+      appState.pickupForm = {
+        pickup_date: '',
+        pickup_time: '',
+        vendor_id: '',
+        product_id: '',
+        quantity: '1',
+        category: '',
+        unit_price: '',
+        total_price: '0.00'
+      };
+      appState.editingPickupId = null;
+      appState.pickupMode = 'create';
+    }
+
+    function openCreatePickup() {
+      resetPickupForm();
+      appState.pickupOpen = true;
+      appState.posError = '';
+      appState.posStatus = '';
+      renderPos();
+    }
+
+    function openEditPickup(recordId) {
+      const data = loadData();
+      const record = (data.deliveries || []).find((entry) => Number(entry.id) === Number(recordId));
+      if (!record) return;
+      const firstItem = (record.items || [])[0] || {};
+      appState.editingPickupId = Number(record.id);
+      appState.pickupMode = 'edit';
+      appState.pickupForm = {
+        pickup_date: record.delivery_date || '',
+        pickup_time: record.pickup_time || '09:00',
+        vendor_id: String(record.vendor_id ?? record.vendor ?? ''),
+        product_id: String(firstItem.product_id || ''),
+        quantity: String(firstItem.quantity || 1),
+        category: firstItem.product_name ? '' : '',
+        unit_price: String(firstItem.unit_cost || 0),
+        total_price: String((Number(firstItem.quantity || 0) * Number(firstItem.unit_cost || 0)).toFixed(2))
+      };
+      appState.pickupOpen = true;
+      appState.posError = '';
+      appState.posStatus = '';
+      renderPos();
+    }
+
+    function handleDeletePickup(pickupId) {
+      const data = loadData();
+      const targetId = Number(pickupId);
+      const remaining = (data.deliveries || []).filter((entry) => Number(entry.id) !== targetId);
+      data.deliveries = remaining;
+      saveData(data);
+      appState.posStatus = 'Vendor pickup deleted successfully.';
+      appState.posError = '';
+      appState.listWindowOpen = true;
+      renderDashboard();
+      renderPos();
+      renderReports();
+    }
+
+    function submitPickup(event) {
+      event.preventDefault();
+      const data = loadData();
+      const pickupDate = appState.pickupForm.pickup_date;
+      const pickupTime = appState.pickupForm.pickup_time;
+      const vendorId = appState.pickupForm.vendor_id;
+      const productId = appState.pickupForm.product_id;
+      const quantity = Number(appState.pickupForm.quantity || 0);
+
+      if (!pickupDate || !pickupTime) {
+        appState.posError = 'Pick-up date and time are required.';
+        renderPos();
+        return;
+      }
+      if (!vendorId) {
+        appState.posError = 'Please select a vendor.';
+        renderPos();
+        return;
+      }
+      if (!productId) {
+        appState.posError = 'Please select a product.';
+        renderPos();
+        return;
+      }
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        appState.posError = 'Quantity must be greater than zero.';
+        renderPos();
+        return;
+      }
+
+      const product = (data.products || []).find((entry) => Number(entry.id) === Number(productId));
+      if (!product) {
+        appState.posError = 'Selected product could not be found.';
+        renderPos();
+        return;
+      }
+
+      const unitPrice = Number(product.selling_price || 0);
+      const totalPrice = quantity * unitPrice;
+      const record = {
+        id: appState.editingPickupId || Date.now(),
+        delivery_date: pickupDate,
+        pickup_time: pickupTime,
+        vendor_id: Number(vendorId),
+        vendor_name: (data.users || []).find((user) => Number(user.vendor_id ?? user.id) === Number(vendorId))?.name || `Vendor ${vendorId}`,
+        total_amount: totalPrice,
+        items: [{ product_id: Number(productId), product_name: product.name, quantity, unit_cost: unitPrice }]
+      };
+
+      if (appState.editingPickupId) {
+        data.deliveries = (data.deliveries || []).map((entry) => Number(entry.id) === Number(appState.editingPickupId) ? { ...entry, ...record } : entry);
+        appState.posStatus = `Vendor pickup updated for ${product.name} — total ${money(totalPrice)}`;
+      } else {
+        data.deliveries = [record, ...(data.deliveries || [])];
+        appState.posStatus = `Vendor pickup recorded for ${product.name} — total ${money(totalPrice)}`;
+      }
+
+      saveData(data);
+      appState.posError = '';
+      appState.pickupOpen = false;
+      appState.listWindowOpen = false;
+      appState.historyWindowOpen = false;
+      resetPickupForm();
+      renderDashboard();
+      renderPos();
+      renderReports();
+      renderProductsTable();
+    }
+
+    function resetDemoData() {
+      if (!confirm('Reset the offline demo data?')) return;
+      saveData(defaultData());
+      appState.posStatus = '';
+      appState.posError = '';
+      appState.pickupOpen = false;
+      appState.listWindowOpen = false;
+      appState.historyWindowOpen = false;
+      resetPickupForm();
+      renderDashboard();
+      renderPos();
+      renderReports();
+      renderProductsTable();
+      renderAccountsTable();
+      alert('Demo data reset.');
+    }
+
+    function exportJson() {
+      const data = loadData();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'clarin-demo-data.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    els.loginBtn.addEventListener('click', handleLogin);
+    els.logoutBtn.addEventListener('click', doLogout);
+    els.resetBtn.addEventListener('click', resetDemoData);
+    els.exportBtn.addEventListener('click', exportJson);
+    els.tabs.addEventListener('click', function (event) {
+      const button = event.target.closest('[data-tab]');
+      if (!button) return;
+      setActiveTab(button.getAttribute('data-tab'));
+    });
+
+    document.body.addEventListener('click', function (event) {
+      const target = event.target;
+      const button = target.closest('[data-tab]');
+      if (button) {
+        setActiveTab(button.getAttribute('data-tab'));
+        return;
+      }
+
+      const manageProducts = target.closest('#open-manage-products');
+      if (manageProducts) { showProductsModal(); }
+
+      const manageAccounts = target.closest('#open-manage-accounts');
+      if (manageAccounts) { showAccountsModal(); }
+
+      const addProduct = target.closest('#open-add-product');
+      if (addProduct) { showAddProductModal(); }
+
+      const addAccount = target.closest('#open-add-account');
+      if (addAccount) { showAddAccountModal(); }
+
+      const productEdit = target.closest('[data-product-edit]');
+      if (productEdit) { showAddProductModal(productEdit.getAttribute('data-product-edit')); }
+
+      const accountEdit = target.closest('[data-account-edit]');
+      if (accountEdit) { showAddAccountModal(accountEdit.getAttribute('data-account-edit')); }
+
+      const productToggle = target.closest('[data-product-toggle]');
+      if (productToggle) {
+        const data = loadData();
+        const id = Number(productToggle.getAttribute('data-product-toggle'));
+        const product = (data.products || []).find(p => p.id === id);
+        if (!product) return;
+        product.active = Number(product.active) === 1 ? 0 : 1;
+        saveData(data);
+        renderProductsTable();
+        renderDashboard();
+      }
+
+      const accountDelete = target.closest('[data-account-delete]');
+      if (accountDelete) {
+        const data = loadData();
+        const id = Number(accountDelete.getAttribute('data-account-delete'));
+        const user = (data.users || []).find(u => u.id === id);
+        if (!user) return;
+        if (!confirm(`Delete account for ${user.name}?`)) return;
+        data.users = (data.users || []).filter(u => u.id !== id);
+        saveData(data);
+        renderAccountsTable();
+      }
+
+      const openPickup = target.closest('[data-open-pickup]');
+      if (openPickup) { openCreatePickup(); }
+
+      const openList = target.closest('[data-open-list]');
+      if (openList) {
+        appState.listWindowOpen = true;
+        appState.historyWindowOpen = false;
+        renderPos();
+      }
+
+      const openHistory = target.closest('[data-open-history]');
+      if (openHistory) {
+        appState.historyWindowOpen = true;
+        appState.listWindowOpen = false;
+        renderPos();
+      }
+
+      const closeList = target.closest('[data-close-list]');
+      if (closeList) {
+        appState.listWindowOpen = false;
+        renderPos();
+      }
+
+      const closeHistory = target.closest('[data-close-history]');
+      if (closeHistory) {
+        appState.historyWindowOpen = false;
+        renderPos();
+      }
+
+      const closePickup = target.closest('[data-close-pickup]');
+      if (closePickup) {
+        appState.pickupOpen = false;
+        appState.posError = '';
+        resetPickupForm();
+        renderPos();
+      }
+
+      const editPickup = target.closest('[data-edit-pickup]');
+      if (editPickup) {
+        openEditPickup(editPickup.getAttribute('data-edit-pickup'));
+      }
+
+      const deletePickup = target.closest('[data-delete-pickup]');
+      if (deletePickup) {
+        handleDeletePickup(deletePickup.getAttribute('data-delete-pickup'));
+      }
+
+      const posSubmit = target.closest('[data-submit-pickup]');
+      if (posSubmit && event.target.closest('button[type="submit"]')) {
+        const form = posSubmit.closest('form');
+        if (form) submitPickup({ preventDefault: () => {}, target: form });
+      }
+    });
+
+    document.body.addEventListener('input', function (event) {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const fieldName = target.getAttribute('data-pickup-field');
+      if (!fieldName) return;
+      appState.pickupForm = { ...appState.pickupForm, [fieldName]: target.value };
+
+      if (fieldName === 'product_id') {
+        const data = loadData();
+        const product = (data.products || []).find((entry) => Number(entry.id) === Number(target.value));
+        if (product) {
+          const quantity = Number(appState.pickupForm.quantity || 0);
+          const total = Number.isFinite(quantity) && quantity > 0 ? quantity * Number(product.selling_price || 0) : 0;
+          appState.pickupForm = {
+            ...appState.pickupForm,
+            category: product.category || '',
+            unit_price: String(product.selling_price || 0),
+            total_price: String(total.toFixed(2))
+          };
+        }
+      }
+
+      if (fieldName === 'quantity') {
+        const productId = appState.pickupForm.product_id;
+        const data = loadData();
+        const product = (data.products || []).find((entry) => Number(entry.id) === Number(productId));
+        const quantity = Number(appState.pickupForm.quantity || 0);
+        const unitPrice = product ? Number(product.selling_price || 0) : 0;
+        appState.pickupForm = {
+          ...appState.pickupForm,
+          total_price: Number.isFinite(quantity) && quantity > 0 ? String((quantity * unitPrice).toFixed(2)) : '0.00'
+        };
+      }
+      renderPos();
+    });
+
+    document.body.addEventListener('change', function (event) {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const fieldName = target.getAttribute('data-pickup-field');
+      if (!fieldName) return;
+      appState.pickupForm = { ...appState.pickupForm, [fieldName]: target.value };
+      renderPos();
+    });
+
+    els.productForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      const data = loadData();
+      const name = els.productName.value.trim();
+      const category = els.productCategory.value.trim();
+      const price = Number(els.productPrice.value);
+      const stock = Number(els.productStock.value);
+      if (!name) { els.manageProductsError.textContent = 'Product name is required.'; return; }
+      if (Number.isNaN(price) || price < 0) { els.manageProductsError.textContent = 'Product price is invalid.'; return; }
+      if (Number.isNaN(stock) || stock < 0) { els.manageProductsError.textContent = 'Stock must be zero or greater.'; return; }
+
+      if (appState.productEditId) {
+        const product = (data.products || []).find(p => p.id === Number(appState.productEditId));
+        if (!product) return;
+        product.name = name;
+        product.category = category || 'General';
+        product.selling_price = price;
+        product.current_stock = stock;
+      } else {
+        data.products.push({ id: Date.now(), name, category: category || 'General', selling_price: price, current_stock: stock, minimum_stock: 0, active: 1 });
+      }
+      saveData(data);
+      hideAddProductModal();
+      renderProductsTable();
+      renderDashboard();
+    });
+
+    els.accountForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      const data = loadData();
+      const name = els.accountName.value.trim();
+      const role = els.accountRole.value;
+      const contactPerson = els.accountContactPerson.value.trim();
+      const contactNumber = els.accountContactNumber.value.trim();
+      const username = els.accountUsername.value.trim();
+      const password = els.accountPassword.value.trim();
+      if (!name || !contactPerson || !contactNumber || !username || !password) {
+        els.manageAccountsError.textContent = 'All fields are required.';
+        return;
+      }
+
+      if (appState.accountEditId) {
+        const user = (data.users || []).find(u => u.id === Number(appState.accountEditId));
+        if (!user) return;
+        user.name = name;
+        user.role = role;
+        user.contact_person = contactPerson;
+        user.contact_number = contactNumber;
+        user.email = username;
+        if (password) user.password = password;
+      } else {
+        data.users.push({ id: Date.now(), name, email: username, password, role, contact_person: contactPerson, contact_number: contactNumber, vendor_id: role === 'VENDOR' ? Number(els.accountVendorId.value || 1) : null });
+      }
+      saveData(data);
+      hideAddAccountModal();
+      renderAccountsTable();
+    });
+
+    els.closeProductsModal.addEventListener('click', hideProductsModal);
+    els.closeAddProduct.addEventListener('click', hideAddProductModal);
+    els.cancelProductForm.addEventListener('click', hideAddProductModal);
+    els.closeAccountsModal.addEventListener('click', hideAccountsModal);
+    els.closeAddAccount.addEventListener('click', hideAddAccountModal);
+    els.cancelAccountForm.addEventListener('click', hideAddAccountModal);
+
+    els.accountRole.addEventListener('change', function () {
+      const isVendor = els.accountRole.value === 'VENDOR';
+      els.vendorIdRow.classList.toggle('hidden', !isVendor);
+    });
+
+    function init() {
+      ensureLoggedIn();
+      renderTabs();
+      renderDashboard();
+      renderPos();
+      renderReports();
+      setActiveTab(appState.activeTab || 'dashboard');
+      renderProductsTable();
+      renderAccountsTable();
+    }
+
+    init();
+  </script>
+</body>
+</html>

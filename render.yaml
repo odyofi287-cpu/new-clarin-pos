@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: new-clarin-pos
+    env: docker
+    plan: free
+    dockerfilePath: Dockerfile
+    autoDeploy: true
+    disk:
+      name: pos-data
+      mountPath: /app/server/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true

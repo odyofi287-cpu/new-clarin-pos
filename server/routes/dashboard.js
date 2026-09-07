@@ -1,0 +1,243 @@
+import express from "express";
+import { requireRole } from "../middleware/auth.js";
+
+const router = express.Router();
+
+function getTodayString() {
+  return new Date().toISOString().split("T")[0];
+}
+
+function isInMemoryDb(db) {
+  return db && Array.isArray(db.sales) && Array.isArray(db.sale_items);
+}
+
+router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), (req, res) => {
+  try {
+    if (req.user.role === "VENDOR") {
+      return vendorDashboard(req, res);
+    }
+    return operationalDashboard(req, res);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to load dashboard" });
+  }
+});
+
+function operationalDashboard(req, res) {
+  const today = getTodayString();
+
+  if (isInMemoryDb(req.db)) {
+    const salesToday = req.db.sales.filter((sale) => sale.sale_date === today);
+    const transactionCount = salesToday.length;
+    const totalSales = salesToday.reduce((sum, sale) => sum + sale.total_amount, 0);
+    const deliveriesToday = req.db.deliveries.filter((delivery) => delivery.delivery_date === today);
+    const totalDeliveries = deliveriesToday.reduce((sum, delivery) => sum + Number(delivery.total_amount || 0), 0);
+    const returnsToday = req.db.vendor_returns.filter((entry) => entry.return_date === today);
+    const totalReturns = returnsToday.reduce((sum, entry) => sum + Number(entry.total_product_price_returned || 0), 0);
+    const calculatedSales = totalSales + totalDeliveries - totalReturns;
+    const itemsSold = req.db.sale_items
+      .filter((item) => salesToday.some((sale) => sale.id === item.sale_id))
+      .reduce((sum, item) => sum + item.quantity, 0);
+
+    const activeProducts = req.db.products.filter((p) => Number(p.active ?? 1) === 1);
+    const totalCurrentInventory = activeProducts.reduce((sum, p) => sum + Number(p.current_stock || 0), 0);
+    const lowStockProducts = activeProducts
+      .filter((p) => Number(p.current_stock || 0) > 0 && Number(p.current_stock || 0) <= 10)
+      .sort((a, b) => a.current_stock - b.current_stock);
+    const outOfStockCount = activeProducts.filter((p) => Number(p.current_stock || 0) <= 0).length;
+
+    const recentSales = req.db.sales
+      .slice()
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, 5)
+      .map((sale) => {
+        const items = req.db.sale_items.filter((item) => item.sale_id === sale.id);
+        const user = req.db.users.find((u) => u.id === sale.user_id);
+        return {
+          id: sale.id,
+          sale_date: sale.sale_date,
+          total_amount: sale.total_amount,
+          item_count: items.reduce((sum, item) => sum + item.quantity, 0),
+          sold_by: user?.name || "Unknown",
+        };
+      });
+
+    const recentDeliveries = req.db.deliveries
+      .slice()
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, 5)
+      .map((delivery) => {
+        const vendor = req.db.vendors.find((v) => v.id === delivery.vendor_id);
+        return {
+          id: delivery.id,
+          delivery_date: delivery.delivery_date,
+          total_amount: delivery.total_amount,
+          vendor_name: vendor?.name || "Unknown",
+        };
+      });
+
+    return res.json({
+      data: {
+        todays_total_sales: totalSales,
+        todays_total_deliveries: totalDeliveries,
+        todays_total_vendor_returns: totalReturns,
+        calculated_todays_sales: calculatedSales,
+        todays_transaction_count: transactionCount,
+        items_sold_today: itemsSold,
+        total_current_inventory: totalCurrentInventory,
+        low_stock_count: lowStockProducts.length,
+        out_of_stock_count: outOfStockCount,
+        recent_sales: recentSales,
+        recent_deliveries: recentDeliveries,
+        low_stock_products: lowStockProducts.map((p) => ({
+          id: p.id,
+          name: p.name,
+          category: p.category,
+          image_url: p.image_url || null,
+          current_stock: p.current_stock,
+          minimum_stock: p.minimum_stock,
+          unit: p.unit,
+        })),
+      },
+    });
+  }
+
+  const todaysTotalSales = req.db.prepare(
+    "SELECT COALESCE(SUM(total_amount), 0) AS total FROM sales WHERE sale_date = ?"
+  ).get(today).total;
+
+  const todaysTransactionCount = req.db.prepare(
+    "SELECT COUNT(*) AS count FROM sales WHERE sale_date = ?"
+  ).get(today).count;
+
+  const todaysTotalDeliveries = req.db.prepare(
+    "SELECT COALESCE(SUM(total_amount), 0) AS total FROM deliveries WHERE delivery_date = ?"
+  ).get(today).total;
+
+  const todaysTotalVendorReturns = req.db.prepare(
+    "SELECT COALESCE(SUM(total_product_price_returned), 0) AS total FROM vendor_returns WHERE return_date = ?"
+  ).get(today).total;
+
+  const calculatedTodaysSales = Number(todaysTotalSales) + Number(todaysTotalDeliveries) - Number(todaysTotalVendorReturns);
+
+  const itemsSoldToday = req.db.prepare(
+    `SELECT COALESCE(SUM(si.quantity), 0) AS count
+      FROM sale_items si
+      JOIN sales s ON si.sale_id = s.id
+      WHERE s.sale_date = ?`
+  ).get(today).count;
+
+  const totalCurrentInventory = req.db.prepare(
+    "SELECT COALESCE(SUM(current_stock), 0) AS total FROM products WHERE active = 1"
+  ).get().total;
+
+  const lowStockProducts = req.db.prepare(
+    `SELECT id, name, category, image_url, current_stock, minimum_stock, unit
+      FROM products WHERE active = 1 AND current_stock > 0 AND current_stock <= 10
+      ORDER BY current_stock ASC LIMIT 10`
+  ).all();
+
+  const lowStockCount = lowStockProducts.length;
+  const outOfStockCount = req.db.prepare(
+    "SELECT COUNT(*) AS count FROM products WHERE active = 1 AND current_stock <= 0"
+  ).get().count;
+
+  const recentSales = req.db.prepare(
+    `SELECT s.id, s.sale_date, s.total_amount, u.name AS sold_by, COALESCE(SUM(si.quantity), 0) AS item_count
+      FROM sales s
+      LEFT JOIN sale_items si ON si.sale_id = s.id
+      JOIN users u ON s.user_id = u.id
+      GROUP BY s.id
+      ORDER BY s.created_at DESC
+      LIMIT 5`
+  ).all();
+
+  const recentDeliveries = req.db.prepare(
+    `SELECT d.id, d.delivery_date, d.total_amount, v.name AS vendor_name
+      FROM deliveries d
+      JOIN vendors v ON d.vendor_id = v.id
+      ORDER BY d.created_at DESC
+      LIMIT 5`
+  ).all();
+
+  return res.json({
+    data: {
+      todays_total_sales: todaysTotalSales,
+      todays_total_deliveries: todaysTotalDeliveries,
+      todays_total_vendor_returns: todaysTotalVendorReturns,
+      calculated_todays_sales: calculatedTodaysSales,
+      todays_transaction_count: todaysTransactionCount,
+      items_sold_today: itemsSoldToday,
+      total_current_inventory: totalCurrentInventory,
+      low_stock_count: lowStockCount,
+      out_of_stock_count: outOfStockCount,
+      recent_sales: recentSales,
+      recent_deliveries: recentDeliveries,
+      low_stock_products: lowStockProducts,
+    },
+  });
+}
+
+function vendorDashboard(req, res) {
+  const today = getTodayString();
+
+  if (isInMemoryDb(req.db)) {
+    const deliveries = req.db.deliveries
+      .filter((delivery) => delivery.vendor_id === req.user.vendor_id)
+      .slice()
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, 10)
+      .map((delivery) => ({
+        id: delivery.id,
+        delivery_date: delivery.delivery_date,
+        total_amount: delivery.total_amount,
+        created_at: delivery.created_at,
+      }));
+
+    const todayCount = req.db.deliveries.filter(
+      (delivery) => delivery.vendor_id === req.user.vendor_id && delivery.delivery_date === today
+    ).length;
+
+    const todayTotal = req.db.deliveries
+      .filter((delivery) => delivery.vendor_id === req.user.vendor_id && delivery.delivery_date === today)
+      .reduce((sum, delivery) => sum + delivery.total_amount, 0);
+
+    return res.json({
+      data: {
+        vendor_summary: {
+          today_delivery_count: todayCount,
+          today_delivery_total: todayTotal,
+          recent_deliveries: deliveries,
+        },
+      },
+    });
+  }
+
+  const vendorDeliveries = req.db.prepare(
+    `SELECT id, delivery_date, total_amount, created_at
+      FROM deliveries
+      WHERE vendor_id = ?
+      ORDER BY created_at DESC
+      LIMIT 10`
+  ).all(req.user.vendor_id);
+
+  const todayDeliveryCount = req.db.prepare(
+    "SELECT COUNT(*) AS count FROM deliveries WHERE vendor_id = ? AND delivery_date = ?"
+  ).get(req.user.vendor_id, today).count;
+
+  const todayDeliveryTotal = req.db.prepare(
+    "SELECT COALESCE(SUM(total_amount), 0) AS total FROM deliveries WHERE vendor_id = ? AND delivery_date = ?"
+  ).get(req.user.vendor_id, today).total;
+
+  return res.json({
+    data: {
+      vendor_summary: {
+        today_delivery_count: todayDeliveryCount,
+        today_delivery_total: todayDeliveryTotal,
+        recent_deliveries: vendorDeliveries,
+      },
+    },
+  });
+}
+
+export default router;

@@ -1,0 +1,1160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Clarin POS Offline Demo</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --surface: rgba(22, 6, 60, 0.9);
+      --surface-strong: rgba(30, 9, 72, 0.94);
+      --border: rgba(252, 153, 196, 0.3);
+      --muted: #d4b4e4;
+      --text: #f8f3ff;
+      --accent: #fc99c4;
+      --accent-strong: #903799;
+      --accent-soft: rgba(252, 208, 238, 0.9);
+      --danger: #ff85bd;
+      --success: #c4a0f0;
+      --ok: #c4a0f0;
+      --warn: #ffd2eb;
+      --line: rgba(252, 153, 196, 0.2);
+      --shadow: 0 24px 90px rgba(17, 5, 55, 0.4);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Georgia, Cambria, "Times New Roman", Times, serif;
+      color: var(--text);
+      background: radial-gradient(circle at top left, rgba(252, 153, 196, 0.18), transparent 24%),
+        radial-gradient(circle at 80% 15%, rgba(186, 82, 173, 0.14), transparent 20%),
+        linear-gradient(180deg, #fbe7f5 0%, #f5d3ec 35%, #eed1f6 75%, #110537 100%);
+      min-height: 100vh;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    .shell {
+      min-height: 100vh;
+      max-width: 1140px;
+      margin: 0 auto;
+      padding: clamp(1rem, 2vw, 2rem);
+    }
+
+    .app-header {
+      width: 100%;
+      max-width: 1100px;
+      margin: 0 auto 1.75rem;
+      padding: 1.4rem 1.6rem;
+      background: rgba(24, 8, 75, 0.92);
+      border-radius: 26px;
+      border: 1px solid rgba(252, 153, 196, 0.2);
+      box-shadow: 0 24px 90px rgba(17, 5, 55, 0.45);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      backdrop-filter: blur(18px);
+    }
+
+    .app-header h1 {
+      margin: 0;
+      font-size: clamp(1.75rem, 2.8vw, 2.4rem);
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+      color: #ffffff;
+      text-shadow: 0 0 16px rgba(252, 153, 196, 0.45);
+    }
+
+    .app-header p {
+      margin: 0.45rem 0 0;
+      color: rgba(229, 184, 241, 0.95);
+      font-size: 1rem;
+    }
+
+    .card {
+      background: rgba(26, 7, 64, 0.92);
+      border: 1px solid var(--line);
+      border-radius: 26px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+      padding: 1.75rem;
+      margin-bottom: 14px;
+    }
+
+    .card h2,
+    .card h3,
+    .card h4 {
+      margin-top: 0;
+      color: #ffffff;
+      text-shadow: 0 0 8px rgba(252, 153, 196, 0.2);
+    }
+
+    h1, h2, h3, h4 { margin: 0 0 10px; }
+    p { margin: 0 0 10px; }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 1.35rem;
+      background: rgba(38, 10, 64, 0.82);
+    }
+
+    .metric .label {
+      color: var(--muted);
+      font-size: 12px;
+      display: block;
+      margin-bottom: 5px;
+    }
+
+    .metric strong {
+      font-size: 1.45rem;
+      color: #fff;
+    }
+
+    .tabs {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 0.85rem;
+      margin-bottom: 10px;
+      padding: 1rem 1rem 0.75rem;
+      background: var(--surface);
+      border-radius: 24px;
+      border: 1px solid rgba(252, 153, 196, 0.16);
+      box-shadow: 0 20px 48px rgba(17, 5, 55, 0.26);
+    }
+
+    button {
+      border: none;
+      border-radius: 16px;
+      padding: 0.92rem 1.45rem;
+      font: inherit;
+      cursor: pointer;
+      color: #fff;
+      background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+      box-shadow: 0 16px 38px rgba(252, 153, 196, 0.22);
+      text-shadow: 0 0 10px rgba(252, 153, 196, 0.35);
+      transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 20px 42px rgba(252, 153, 196, 0.3);
+      filter: brightness(1.08);
+    }
+    button:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    .primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+      color: #fff;
+    }
+
+    .secondary {
+      background: var(--accent-soft);
+      color: #1f4e79;
+      box-shadow: none;
+    }
+
+    .danger {
+      background: var(--danger);
+      color: #fff;
+    }
+
+    .active-tab {
+      background: linear-gradient(135deg, #fc99c4, #903799);
+      color: #fff;
+      box-shadow: 0 16px 28px rgba(24, 64, 102, 0.2);
+    }
+
+    .muted { color: var(--muted); }
+    .ok { color: var(--ok); }
+    .warn { color: var(--warn); }
+    .err { color: var(--danger); }
+
+    label {
+      display: grid;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    input, select {
+      width: 100%;
+      border: 1px solid rgba(252, 153, 196, 0.26);
+      border-radius: 18px;
+      padding: 0.95rem 1rem;
+      font: inherit;
+      background: rgba(255, 255, 255, 0.95);
+      color: #110537;
+    }
+
+    input:focus,
+    select:focus {
+      outline: none;
+      border-color: rgba(186, 82, 173, 0.75);
+      box-shadow: 0 0 0 4px rgba(186, 82, 173, 0.18);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      background: rgba(18, 4, 44, 0.92);
+      border-radius: 18px;
+      overflow: hidden;
+      box-shadow: 0 10px 32px rgba(17, 5, 55, 0.22);
+    }
+
+    thead {
+      background: rgba(42, 10, 87, 0.96);
+      color: #fdf7ff;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 1rem 1.1rem;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      color: #f7ebff;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1.5fr 1fr;
+      gap: 1.5rem;
+    }
+
+    .pos-panel {
+      min-height: 260px;
+    }
+
+    .pos-products {
+      min-height: 420px;
+    }
+
+    .pos-list {
+      display: grid;
+      gap: 0.9rem;
+    }
+
+    .pos-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      width: 100%;
+      padding: 1rem;
+      background: rgba(39, 9, 74, 0.84);
+      border: 1px solid rgba(252, 153, 196, 0.18);
+      border-radius: 18px;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      color: #ffffff;
+      text-align: left;
+    }
+
+    .pos-item:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 18px 38px rgba(17, 5, 55, 0.22);
+    }
+
+    .pos-item div span {
+      display: block;
+      color: #f6eeff;
+      margin-top: 0.2rem;
+      font-size: 0.9rem;
+    }
+
+    .stock-tag {
+      padding: 0.3rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      background: rgba(252, 153, 196, 0.18);
+      color: #fc99c4;
+      display: inline-block;
+    }
+
+    .status-pill {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 11px;
+      border: 1px solid var(--line);
+      background: rgba(18, 4, 44, 0.92);
+    }
+
+    .status-ok { color: var(--ok); }
+    .status-low { color: var(--warn); }
+    .status-out { color: var(--danger); }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 15, 15, 0.45);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 14px;
+      z-index: 30;
+    }
+
+    .modal {
+      width: min(1020px, 96vw);
+      max-height: 90vh;
+      overflow: auto;
+      background: rgba(26, 7, 64, 0.96);
+      border: 1px solid var(--line);
+      border-radius: 26px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+      padding: 1.4rem;
+    }
+
+    .hidden { display: none !important; }
+
+    .kv {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      background: rgba(18, 4, 44, 0.92);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px;
+      overflow: auto;
+      color: #f7ebff;
+    }
+
+    @media (max-width: 820px) {
+      .app-header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .two-col { grid-template-columns: 1fr; }
+      .shell { margin-top: 12px; }
+      th, td { font-size: 13px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="app-header">
+      <div>
+        <h1>New Clarin Sports Arena POS</h1>
+        <p>Backend status: offline demo mode</p>
+      </div>
+      <span class="status-pill">Standalone reviewer build</span>
+    </header>
+
+    <section class="card" id="login-card">
+      <h2>Staff / Vendor Login</h2>
+      <p class="muted">Single-file offline tester for role-based flows. Data is stored in your browser localStorage.</p>
+      <div class="row" style="margin-bottom:10px;">
+        <span class="status-pill">Admin: admin@clarin.local / Admin123!</span>
+        <span class="status-pill">Staff: staff@clarin.local / Staff123!</span>
+        <span class="status-pill">Vendor: vendor@clarin.local / Vendor123!</span>
+      </div>
+      <div class="grid" style="max-width: 560px;">
+        <label>Email <input id="login-email" type="email" value="admin@clarin.local" /></label>
+        <label>Password <input id="login-password" type="password" value="Admin123!" /></label>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <button class="primary" id="btn-login">Log in</button>
+        <button id="btn-reset-db">Reset demo data</button>
+      </div>
+      <p id="login-error" class="err" style="margin-top:10px;"></p>
+    </section>
+
+    <section class="card hidden" id="app-card">
+      <div class="row" style="justify-content: space-between; margin-bottom: 8px;">
+        <div>
+          <h2 id="welcome-title">Dashboard</h2>
+          <p class="muted" id="session-line"></p>
+        </div>
+        <div class="row">
+          <button id="btn-export">Export Data JSON</button>
+          <button id="btn-import">Import Data JSON</button>
+          <button id="btn-logout">Log out</button>
+        </div>
+      </div>
+
+      <div class="tabs" id="tabs"></div>
+
+      <div id="view-dashboard"></div>
+      <div id="view-pos" class="hidden"></div>
+      <div id="view-reports" class="hidden"></div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="manage-modal-backdrop">
+    <div class="modal">
+      <div class="row" style="justify-content: space-between; margin-bottom: 8px;">
+        <h3>Manage Products</h3>
+        <button id="btn-close-manage">Close</button>
+      </div>
+      <p class="muted">Create, edit, remove, or restore products.</p>
+      <p id="manage-error" class="err"></p>
+
+      <div class="card" style="box-shadow:none; margin-top:8px;">
+        <h4 id="manage-form-title">Create Product</h4>
+        <form id="manage-form" class="grid" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
+          <label>Name <input id="f-name" required /></label>
+          <label>Category <input id="f-category" /></label>
+          <label>Price <input id="f-price" type="number" step="0.01" min="0" required /></label>
+          <label>Stock <input id="f-stock" type="number" min="0" required /></label>
+          <div class="row" style="align-items:end;">
+            <button class="primary" type="submit" id="btn-save-product">Create</button>
+            <button type="button" id="btn-cancel-edit" class="hidden">Cancel</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card" style="box-shadow:none; margin-top:8px;">
+        <h4>Products</h4>
+        <div id="manage-table-wrap"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const DB_KEY = "CLARIN_POS_OFFLINE_DEMO_V2";
+
+    const els = {
+      loginCard: document.getElementById("login-card"),
+      appCard: document.getElementById("app-card"),
+      loginEmail: document.getElementById("login-email"),
+      loginPassword: document.getElementById("login-password"),
+      loginError: document.getElementById("login-error"),
+      btnLogin: document.getElementById("btn-login"),
+      btnLogout: document.getElementById("btn-logout"),
+      btnResetDb: document.getElementById("btn-reset-db"),
+      btnExport: document.getElementById("btn-export"),
+      btnImport: document.getElementById("btn-import"),
+      tabs: document.getElementById("tabs"),
+      welcomeTitle: document.getElementById("welcome-title"),
+      sessionLine: document.getElementById("session-line"),
+      viewDashboard: document.getElementById("view-dashboard"),
+      viewPos: document.getElementById("view-pos"),
+      viewReports: document.getElementById("view-reports"),
+      manageBackdrop: document.getElementById("manage-modal-backdrop"),
+      btnCloseManage: document.getElementById("btn-close-manage"),
+      manageError: document.getElementById("manage-error"),
+      manageForm: document.getElementById("manage-form"),
+      manageFormTitle: document.getElementById("manage-form-title"),
+      btnSaveProduct: document.getElementById("btn-save-product"),
+      btnCancelEdit: document.getElementById("btn-cancel-edit"),
+      manageTableWrap: document.getElementById("manage-table-wrap"),
+      fName: document.getElementById("f-name"),
+      fCategory: document.getElementById("f-category"),
+      fPrice: document.getElementById("f-price"),
+      fStock: document.getElementById("f-stock")
+    };
+
+    const appState = {
+      currentUser: null,
+      activeTab: "dashboard",
+      cart: [],
+      manageEditId: null
+    };
+
+    function nowIso() {
+      return new Date().toISOString();
+    }
+
+    function today() {
+      return new Date().toISOString().slice(0, 10);
+    }
+
+    function money(v) {
+      return Number(v || 0).toLocaleString("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 });
+    }
+
+    function productStatus(p) {
+      const stock = Number(p.current_stock || 0);
+      const min = Number(p.minimum_stock || 0);
+      if (stock <= 0) return "OUT_OF_STOCK";
+      if (stock <= min) return "LOW_STOCK";
+      return "OK";
+    }
+
+    function seedDb() {
+      return {
+        users: [
+          { id: 1, email: "admin@clarin.local", password: "Admin123!", name: "Arena Owner", role: "ADMIN" },
+          { id: 2, email: "staff@clarin.local", password: "Staff123!", name: "Front Desk", role: "STAFF" },
+          { id: 3, email: "vendor@clarin.local", password: "Vendor123!", name: "Vendor User", role: "VENDOR" }
+        ],
+        products: [
+          { id: 1, name: "Cola", category: "Soft Drink", selling_price: 35, current_stock: 24, minimum_stock: 10, active: 1 },
+          { id: 2, name: "Mineral Water", category: "Water", selling_price: 25, current_stock: 38, minimum_stock: 15, active: 1 },
+          { id: 3, name: "Sports Juice", category: "Juice", selling_price: 45, current_stock: 11, minimum_stock: 8, active: 1 }
+        ],
+        sales: [],
+        sale_items: [],
+        inventory_movements: [
+          { id: 1, product_id: 1, movement_type: "STOCK_IN", quantity: 24, created_at: nowIso() },
+          { id: 2, product_id: 2, movement_type: "STOCK_IN", quantity: 38, created_at: nowIso() },
+          { id: 3, product_id: 3, movement_type: "STOCK_IN", quantity: 11, created_at: nowIso() }
+        ]
+      };
+    }
+
+    function loadDb() {
+      const raw = localStorage.getItem(DB_KEY);
+      if (!raw) {
+        const seeded = seedDb();
+        saveDb(seeded);
+        return seeded;
+      }
+      try {
+        return JSON.parse(raw);
+      } catch {
+        const seeded = seedDb();
+        saveDb(seeded);
+        return seeded;
+      }
+    }
+
+    function saveDb(db) {
+      localStorage.setItem(DB_KEY, JSON.stringify(db));
+      window.dispatchEvent(new Event("db-updated"));
+    }
+
+    function nextId(rows) {
+      return rows.length ? Math.max(...rows.map((r) => Number(r.id || 0))) + 1 : 1;
+    }
+
+    function canUsePos(role) {
+      return role === "ADMIN" || role === "STAFF";
+    }
+
+    function activeProducts(db) {
+      return db.products.filter((p) => Number(p.active) === 1);
+    }
+
+    function recomputeDashboard(db) {
+      const active = activeProducts(db);
+      const salesToday = db.sales.filter((s) => s.sale_date === today());
+      const saleIds = new Set(salesToday.map((s) => s.id));
+      const itemsSold = db.sale_items.filter((i) => saleIds.has(i.sale_id)).reduce((sum, i) => sum + Number(i.quantity || 0), 0);
+      const totalSales = salesToday.reduce((sum, s) => sum + Number(s.total_amount || 0), 0);
+      const low = active.filter((p) => Number(p.current_stock) > 0 && Number(p.current_stock) <= Number(p.minimum_stock));
+      const out = active.filter((p) => Number(p.current_stock) <= 0);
+
+      return {
+        todays_total_sales: totalSales,
+        todays_transaction_count: salesToday.length,
+        items_sold_today: itemsSold,
+        total_current_inventory: active.reduce((sum, p) => sum + Number(p.current_stock || 0), 0),
+        low_stock_count: low.length,
+        out_of_stock_count: out.length,
+        low_stock_products: low,
+        recent_sales: db.sales.slice().sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).slice(0, 5)
+      };
+    }
+
+    function setTab(tab) {
+      appState.activeTab = tab;
+      renderApp();
+    }
+
+    function showManageModal() {
+      els.manageBackdrop.style.display = "flex";
+      renderManageTable();
+      setManageForm(null);
+    }
+
+    function hideManageModal() {
+      els.manageBackdrop.style.display = "none";
+      els.manageError.textContent = "";
+    }
+
+    function setManageForm(product) {
+      appState.manageEditId = product ? product.id : null;
+      els.fName.value = product ? product.name : "";
+      els.fCategory.value = product ? (product.category || "") : "";
+      els.fPrice.value = product ? Number(product.selling_price || 0) : "";
+      els.fStock.value = product ? Number(product.current_stock || 0) : "";
+      els.manageFormTitle.textContent = product ? "Edit Product" : "Create Product";
+      els.btnSaveProduct.textContent = product ? "Save" : "Create";
+      els.btnCancelEdit.classList.toggle("hidden", !product);
+    }
+
+    function renderManageTable() {
+      const db = loadDb();
+      const rows = db.products.slice().sort((a, b) => a.name.localeCompare(b.name));
+      if (!rows.length) {
+        els.manageTableWrap.innerHTML = "<p>No products found.</p>";
+        return;
+      }
+
+      const htmlRows = rows.map((p) => {
+        const st = productStatus(p);
+        const stClass = st === "OK" ? "status-ok" : st === "LOW_STOCK" ? "status-low" : "status-out";
+        return `
+          <tr>
+            <td>${escapeHtml(p.name)}</td>
+            <td>${escapeHtml(p.category || "General")}</td>
+            <td>${money(p.selling_price)}</td>
+            <td>${Number(p.current_stock || 0)}</td>
+            <td>${Number(p.active) === 1 ? "Active" : "Inactive"}</td>
+            <td><span class="status-pill ${stClass}">${st}</span></td>
+            <td>
+              <button data-act="edit" data-id="${p.id}">Edit</button>
+              ${Number(p.active) === 1
+                ? `<button class="danger" data-act="remove" data-id="${p.id}">Remove</button>`
+                : `<button class="secondary" data-act="restore" data-id="${p.id}">Restore</button>`}
+            </td>
+          </tr>
+        `;
+      }).join("");
+
+      els.manageTableWrap.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Category</th>
+              <th>Price</th>
+              <th>Stock</th>
+              <th>Status</th>
+              <th>Stock Flag</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>${htmlRows}</tbody>
+        </table>
+      `;
+    }
+
+    function renderTabs(role) {
+      const tabDefs = [
+        { id: "dashboard", label: "Dashboard" },
+        ...(canUsePos(role) ? [{ id: "pos", label: "POS" }] : []),
+        { id: "reports", label: "Reports" }
+      ];
+
+      els.tabs.innerHTML = tabDefs.map((t) => {
+        const cls = appState.activeTab === t.id ? "active-tab" : "";
+        return `<button class="${cls}" data-tab="${t.id}">${t.label}</button>`;
+      }).join("");
+
+      if (!tabDefs.some((t) => t.id === appState.activeTab)) {
+        appState.activeTab = "dashboard";
+      }
+    }
+
+    function renderDashboard(user, db) {
+      if (user.role === "VENDOR") {
+        els.viewDashboard.innerHTML = `
+          <div class="card">
+            <h3>Vendor Dashboard</h3>
+            <p class="muted">Offline demo mode: vendor area is read-only.</p>
+            <div class="grid">
+              <div class="metric"><span class="label">Today's deliveries</span><strong>0</strong></div>
+              <div class="metric"><span class="label">Today's total deliveries</span><strong>${money(0)}</strong></div>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      const m = recomputeDashboard(db);
+      const lowRows = m.low_stock_products.slice(0, 10).map((p) => `
+        <tr>
+          <td>${escapeHtml(p.name)}</td>
+          <td>${escapeHtml(p.category || "General")}</td>
+          <td>${Number(p.current_stock || 0)}</td>
+          <td>${Number(p.minimum_stock || 0)}</td>
+        </tr>
+      `).join("");
+
+      els.viewDashboard.innerHTML = `
+        <div class="card">
+          <h3>Operational Dashboard</h3>
+          <div class="grid">
+            <div class="metric"><span class="label">Today's total sales</span><strong>${money(m.todays_total_sales)}</strong></div>
+            <div class="metric"><span class="label">Transaction count</span><strong>${m.todays_transaction_count}</strong></div>
+            <div class="metric"><span class="label">Items sold today</span><strong>${m.items_sold_today}</strong></div>
+            <div class="metric"><span class="label">Total current inventory</span><strong>${m.total_current_inventory}</strong></div>
+            <div class="metric"><span class="label">Low-stock products</span><strong>${m.low_stock_count}</strong></div>
+            <div class="metric"><span class="label">Out-of-stock products</span><strong>${m.out_of_stock_count}</strong></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="row" style="justify-content: space-between; margin-bottom: 8px;">
+            <h3>Product Management</h3>
+            <button class="primary" id="btn-open-manage">Manage Products</button>
+          </div>
+          <p class="muted">Create, edit, remove, and restore products in one window.</p>
+        </div>
+
+        <div class="card">
+          <h3>Low-stock products</h3>
+          ${lowRows ? `<table><thead><tr><th>Name</th><th>Category</th><th>Stock</th><th>Minimum</th></tr></thead><tbody>${lowRows}</tbody></table>` : "<p>No low-stock products.</p>"}
+        </div>
+      `;
+    }
+
+    function renderPos(user, db) {
+      if (!canUsePos(user.role)) {
+        els.viewPos.innerHTML = `
+          <div class="card">
+            <h3>Access restricted</h3>
+            <p class="muted">Vendor accounts cannot use POS.</p>
+          </div>
+        `;
+        return;
+      }
+
+      const products = activeProducts(db).sort((a, b) => a.name.localeCompare(b.name));
+      const q = (window.__posSearch || "").toLowerCase();
+      const filtered = products.filter((p) => (p.name || "").toLowerCase().includes(q) || (p.category || "").toLowerCase().includes(q));
+
+      const productButtons = filtered.map((p) => `
+        <button class="pos-item" data-act="add-cart" data-id="${p.id}">
+          <div>
+            <strong>${escapeHtml(p.name)}</strong>
+            <span>${escapeHtml(p.category || "General")}</span>
+          </div>
+          <div>
+            <span>${money(p.selling_price)}</span>
+            <span class="stock-tag">${Number(p.current_stock || 0) > 0 ? `In stock ${Number(p.current_stock || 0)}` : "Out of stock"}</span>
+          </div>
+        </button>
+      `).join("");
+
+      const cartRows = appState.cart.map((item) => {
+        const total = Number(item.quantity) * Number(item.price);
+        return `
+          <tr>
+            <td>${escapeHtml(item.name)}</td>
+            <td><input data-act="qty" data-id="${item.product_id}" type="number" min="1" value="${item.quantity}" style="width:70px;" /></td>
+            <td>${money(item.price)}</td>
+            <td>${money(total)}</td>
+            <td><button data-act="remove-cart" data-id="${item.product_id}">Remove</button></td>
+          </tr>
+        `;
+      }).join("");
+
+      const subtotal = appState.cart.reduce((sum, it) => sum + Number(it.price) * Number(it.quantity), 0);
+
+      els.viewPos.innerHTML = `
+        <div class="card">
+          <h3>POS</h3>
+          <div class="two-col">
+            <div class="card pos-panel pos-products" style="box-shadow:none;">
+              <label>Search
+                <input id="pos-search" value="${escapeHtml(window.__posSearch || "")}" placeholder="Search by name/category" />
+              </label>
+              <div class="pos-list" style="margin-top:8px; max-height:300px; overflow:auto;">
+                ${productButtons || "<p>No active products.</p>"}
+              </div>
+            </div>
+            <div class="card pos-panel" style="box-shadow:none;">
+              <h4>Cart</h4>
+              ${cartRows ? `<table><thead><tr><th>Product</th><th>Qty</th><th>Price</th><th>Total</th><th></th></tr></thead><tbody>${cartRows}</tbody></table>` : "<p>No items.</p>"}
+              <p><strong>Subtotal:</strong> ${money(subtotal)}</p>
+              <button class="primary" data-act="complete-sale" ${appState.cart.length ? "" : "disabled"}>Complete sale</button>
+              <p id="pos-message" class="ok" style="margin-top:8px;"></p>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderReports(user, db) {
+      const sales = db.sales.slice().sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).slice(0, 20);
+      const inventory = activeProducts(db).map((p) => ({
+        name: p.name,
+        category: p.category || "General",
+        current_stock: Number(p.current_stock || 0),
+        minimum_stock: Number(p.minimum_stock || 0),
+        status: productStatus(p)
+      }));
+
+      const salesRows = sales.map((s) => `
+        <tr>
+          <td>${s.id}</td>
+          <td>${s.sale_date}</td>
+          <td>${escapeHtml(s.staff_name || "Unknown")}</td>
+          <td>${money(s.total_amount)}</td>
+        </tr>
+      `).join("");
+
+      const invRows = inventory.map((r) => `
+        <tr>
+          <td>${escapeHtml(r.name)}</td>
+          <td>${escapeHtml(r.category)}</td>
+          <td>${r.current_stock}</td>
+          <td>${r.minimum_stock}</td>
+          <td>${r.status}</td>
+        </tr>
+      `).join("");
+
+      els.viewReports.innerHTML = `
+        <div class="card">
+          <h3>Reports (Offline Demo)</h3>
+          <p class="muted">These are browser-local demo reports, not server-generated files.</p>
+        </div>
+
+        <div class="card">
+          <h4>Inventory</h4>
+          ${invRows ? `<table><thead><tr><th>Product</th><th>Category</th><th>Stock</th><th>Minimum</th><th>Status</th></tr></thead><tbody>${invRows}</tbody></table>` : "<p>No active products.</p>"}
+        </div>
+
+        <div class="card">
+          <h4>Recent Sales</h4>
+          ${salesRows ? `<table><thead><tr><th>ID</th><th>Date</th><th>Staff</th><th>Total</th></tr></thead><tbody>${salesRows}</tbody></table>` : "<p>No sales yet.</p>"}
+        </div>
+
+        <div class="card">
+          <h4>Debug Snapshot</h4>
+          <pre class="kv">${escapeHtml(JSON.stringify({ role: user.role, activeProducts: activeProducts(db).length, totalSales: db.sales.length }, null, 2))}</pre>
+        </div>
+      `;
+    }
+
+    function renderApp() {
+      const user = appState.currentUser;
+      if (!user) return;
+      const db = loadDb();
+
+      els.welcomeTitle.textContent = user.role === "VENDOR" ? "Vendor Dashboard" : "Operational Dashboard";
+      els.sessionLine.textContent = `${user.name} (${user.role})`;
+
+      renderTabs(user.role);
+      els.viewDashboard.classList.toggle("hidden", appState.activeTab !== "dashboard");
+      els.viewPos.classList.toggle("hidden", appState.activeTab !== "pos");
+      els.viewReports.classList.toggle("hidden", appState.activeTab !== "reports");
+
+      renderDashboard(user, db);
+      renderPos(user, db);
+      renderReports(user, db);
+    }
+
+    function login(email, password) {
+      const db = loadDb();
+      const user = db.users.find((u) => u.email.toLowerCase() === String(email || "").toLowerCase().trim() && u.password === password);
+      if (!user) return null;
+      return { id: user.id, name: user.name, email: user.email, role: user.role };
+    }
+
+    function syncView() {
+      const loggedIn = !!appState.currentUser;
+      els.loginCard.classList.toggle("hidden", loggedIn);
+      els.appCard.classList.toggle("hidden", !loggedIn);
+      if (loggedIn) renderApp();
+      else hideManageModal();
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    els.btnLogin.addEventListener("click", () => {
+      els.loginError.textContent = "";
+      const user = login(els.loginEmail.value, els.loginPassword.value);
+      if (!user) {
+        els.loginError.textContent = "Invalid email or password.";
+        return;
+      }
+      appState.currentUser = user;
+      appState.activeTab = "dashboard";
+      appState.cart = [];
+      syncView();
+    });
+
+    els.btnLogout.addEventListener("click", () => {
+      appState.currentUser = null;
+      appState.cart = [];
+      appState.manageEditId = null;
+      syncView();
+    });
+
+    els.btnResetDb.addEventListener("click", () => {
+      if (!confirm("Reset demo data to defaults?")) return;
+      saveDb(seedDb());
+      appState.cart = [];
+      if (appState.currentUser) renderApp();
+      alert("Demo data reset complete.");
+    });
+
+    els.btnExport.addEventListener("click", () => {
+      const db = loadDb();
+      const blob = new Blob([JSON.stringify(db, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "clarin-offline-demo-data.json";
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    els.btnImport.addEventListener("click", () => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "application/json";
+      input.onchange = () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const parsed = JSON.parse(String(reader.result || "{}"));
+            if (!parsed || !Array.isArray(parsed.users) || !Array.isArray(parsed.products)) {
+              throw new Error("Invalid demo file format");
+            }
+            saveDb(parsed);
+            appState.cart = [];
+            renderApp();
+            alert("Import complete.");
+          } catch (err) {
+            alert("Import failed: " + (err.message || "Invalid file"));
+          }
+        };
+        reader.readAsText(file);
+      };
+      input.click();
+    });
+
+    els.tabs.addEventListener("click", (e) => {
+      const target = e.target;
+      if (!(target instanceof HTMLElement)) return;
+      const tab = target.getAttribute("data-tab");
+      if (!tab) return;
+      setTab(tab);
+    });
+
+    document.addEventListener("click", (e) => {
+      const target = e.target;
+      if (!(target instanceof HTMLElement)) return;
+
+      if (target.id === "btn-open-manage") {
+        showManageModal();
+        return;
+      }
+
+      if (target.getAttribute("data-act") === "edit") {
+        const id = Number(target.getAttribute("data-id"));
+        const db = loadDb();
+        const p = db.products.find((x) => x.id === id);
+        if (p) setManageForm(p);
+        return;
+      }
+
+      if (target.getAttribute("data-act") === "remove") {
+        const id = Number(target.getAttribute("data-id"));
+        const db = loadDb();
+        const p = db.products.find((x) => x.id === id);
+        if (!p) return;
+        if (!confirm(`Remove product \"${p.name}\" and mark inactive?`)) return;
+        p.active = 0;
+        saveDb(db);
+        renderManageTable();
+        renderApp();
+        return;
+      }
+
+      if (target.getAttribute("data-act") === "restore") {
+        const id = Number(target.getAttribute("data-id"));
+        const db = loadDb();
+        const p = db.products.find((x) => x.id === id);
+        if (!p) return;
+        if (!confirm(`Restore product \"${p.name}\" and mark active?`)) return;
+        p.active = 1;
+        saveDb(db);
+        renderManageTable();
+        renderApp();
+        return;
+      }
+
+      if (target.getAttribute("data-act") === "add-cart") {
+        const id = Number(target.getAttribute("data-id"));
+        const db = loadDb();
+        const p = db.products.find((x) => x.id === id && Number(x.active) === 1);
+        if (!p) return;
+        const stock = Number(p.current_stock || 0);
+        if (stock <= 0) {
+          alert("Out of stock");
+          return;
+        }
+        const existing = appState.cart.find((c) => c.product_id === id);
+        if (existing) {
+          existing.quantity = Math.min(existing.quantity + 1, stock);
+        } else {
+          appState.cart.push({ product_id: id, name: p.name, price: Number(p.selling_price || 0), quantity: 1 });
+        }
+        renderApp();
+        return;
+      }
+
+      if (target.getAttribute("data-act") === "remove-cart") {
+        const id = Number(target.getAttribute("data-id"));
+        appState.cart = appState.cart.filter((c) => c.product_id !== id);
+        renderApp();
+        return;
+      }
+
+      if (target.getAttribute("data-act") === "complete-sale") {
+        const db = loadDb();
+        if (!appState.cart.length) return;
+        if (!confirm("Complete this sale?")) return;
+
+        for (const item of appState.cart) {
+          const p = db.products.find((x) => x.id === item.product_id && Number(x.active) === 1);
+          if (!p) {
+            alert(`Product not active: ${item.name}`);
+            return;
+          }
+          if (Number(item.quantity) > Number(p.current_stock || 0)) {
+            alert(`Insufficient stock for ${item.name}`);
+            return;
+          }
+        }
+
+        const saleId = nextId(db.sales);
+        const total = appState.cart.reduce((sum, i) => sum + Number(i.price) * Number(i.quantity), 0);
+        db.sales.push({ id: saleId, sale_date: today(), total_amount: total, staff_name: appState.currentUser.name, user_id: appState.currentUser.id, created_at: nowIso() });
+
+        for (const item of appState.cart) {
+          const rowId = nextId(db.sale_items);
+          db.sale_items.push({ id: rowId, sale_id: saleId, product_id: item.product_id, quantity: Number(item.quantity), unit_price: Number(item.price) });
+          const p = db.products.find((x) => x.id === item.product_id);
+          p.current_stock = Number(p.current_stock || 0) - Number(item.quantity);
+          db.inventory_movements.push({
+            id: nextId(db.inventory_movements),
+            product_id: p.id,
+            movement_type: "STOCK_OUT",
+            quantity: Number(item.quantity),
+            created_at: nowIso()
+          });
+        }
+
+        saveDb(db);
+        appState.cart = [];
+        renderApp();
+        const msg = document.getElementById("pos-message");
+        if (msg) msg.textContent = `Sale completed (#${saleId})`;
+        return;
+      }
+    });
+
+    els.manageForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      els.manageError.textContent = "";
+      const name = els.fName.value.trim();
+      const category = els.fCategory.value.trim();
+      const price = Number(els.fPrice.value);
+      const stock = Number(els.fStock.value);
+
+      if (!name) {
+        els.manageError.textContent = "Product name is required.";
+        return;
+      }
+      if (Number.isNaN(price) || price < 0) {
+        els.manageError.textContent = "Price must be a valid non-negative number.";
+        return;
+      }
+      if (Number.isNaN(stock) || stock < 0) {
+        els.manageError.textContent = "Stock must be a valid non-negative number.";
+        return;
+      }
+
+      const db = loadDb();
+      if (appState.manageEditId) {
+        const p = db.products.find((x) => x.id === appState.manageEditId);
+        if (!p) {
+          els.manageError.textContent = "Product no longer exists.";
+          return;
+        }
+        if (!confirm("Save changes to this product?")) return;
+        p.name = name;
+        p.category = category || null;
+        p.selling_price = price;
+        p.current_stock = stock;
+      } else {
+        if (!confirm("Create this product?")) return;
+        db.products.push({
+          id: nextId(db.products),
+          name,
+          category: category || null,
+          selling_price: price,
+          current_stock: stock,
+          minimum_stock: 0,
+          active: 1
+        });
+      }
+
+      saveDb(db);
+      setManageForm(null);
+      renderManageTable();
+      renderApp();
+    });
+
+    els.btnCancelEdit.addEventListener("click", () => setManageForm(null));
+    els.btnCloseManage.addEventListener("click", hideManageModal);
+    els.manageBackdrop.addEventListener("click", (e) => {
+      if (e.target === els.manageBackdrop) hideManageModal();
+    });
+
+    document.addEventListener("input", (e) => {
+      const target = e.target;
+      if (!(target instanceof HTMLElement)) return;
+
+      if (target.id === "pos-search") {
+        window.__posSearch = target.value;
+        renderPos(appState.currentUser, loadDb());
+        return;
+      }
+
+      if (target.getAttribute("data-act") === "qty") {
+        const id = Number(target.getAttribute("data-id"));
+        const db = loadDb();
+        const p = db.products.find((x) => x.id === id && Number(x.active) === 1);
+        const max = p ? Number(p.current_stock || 0) : 0;
+        const next = Math.max(1, Number(target.value || 1));
+        const cartItem = appState.cart.find((c) => c.product_id === id);
+        if (cartItem) {
+          cartItem.quantity = Math.min(next, Math.max(1, max));
+          renderPos(appState.currentUser, db);
+        }
+      }
+    });
+
+    window.addEventListener("storage", (e) => {
+      if (e.key === DB_KEY && appState.currentUser) {
+        renderApp();
+      }
+    });
+
+    window.addEventListener("db-updated", () => {
+      if (appState.currentUser) renderApp();
+    });
+
+    syncView();
+  </script>
+</body>
+</html>
