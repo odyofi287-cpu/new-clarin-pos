@@ -321,7 +321,7 @@ test("Superadmin can update managed account information", async () => {
   assert.strictEqual(res.status, 200, 'Expected superadmin to delete the updated user');
 });
 
-test("Vendor accounts receive a vendor record and reject invalid assignments", async () => {
+test("Vendor accounts receive sequential system-assigned vendor records", async () => {
   const token = await login("superadmin@clarin.local", "Superadmin123!");
   const username = `supplier${Date.now()}`;
 
@@ -352,9 +352,19 @@ test("Vendor accounts receive a vendor record and reject invalid assignments", a
       vendor_id: 999999
     })
   });
-  assert.strictEqual(res.status, 400, 'Expected nonexistent vendor assignments to be rejected');
+  assert.strictEqual(res.status, 201, 'Expected vendor assignment input to be ignored for new vendor accounts');
+  const secondCreated = await res.json();
+  assert.ok(secondCreated.data.vendor_id, 'Expected the second account to receive a vendor ID');
+  assert.match(secondCreated.data.vendor_code, /^VND-\d{4}$/);
+  assert.notStrictEqual(secondCreated.data.vendor_code, created.data.vendor_code, 'Expected each new vendor account to receive a new vendor code');
 
   res = await fetch(`${base}/api/users/${created.data.id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  assert.strictEqual(res.status, 200);
+
+  res = await fetch(`${base}/api/users/${secondCreated.data.id}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` }
   });

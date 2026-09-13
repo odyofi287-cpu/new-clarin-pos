@@ -1,5 +1,6 @@
 import express from "express";
 import { createRequire } from "node:module";
+import { randomUUID } from "node:crypto";
 import { requireRole, requireSuperadmin } from "../middleware/auth.js";
 import { dbAll, dbGet, dbRun, isPostgresDb, withTransaction } from "./dbCompat.js";
 
@@ -22,8 +23,8 @@ async function createVendor(db, name, contact) {
   if (isPostgresDb(db)) {
     const created = await dbRun(
       db,
-      "INSERT INTO vendors (name, contact, vendor_code, active) VALUES ($1, $2, 'PENDING', 1) RETURNING id",
-      [name.trim(), contact ?? null]
+      "INSERT INTO vendors (name, contact, vendor_code, active) VALUES ($1, $2, $3, 1) RETURNING id",
+      [name.trim(), contact ?? null, `PENDING-${randomUUID()}`]
     );
     const vendorId = Number(created.lastInsertRowid);
     await dbRun(
@@ -44,8 +45,10 @@ async function createVendor(db, name, contact) {
   )).lastInsertRowid);
 }
 
-async function resolveVendorId(db, role, vendorId, name, contact) {
+async function resolveVendorId(db, role, vendorId, name, contact, forceCreate = false) {
   if (role !== "VENDOR") return null;
+
+  if (forceCreate) return await createVendor(db, name, contact);
 
   const requestedVendorId = Number(vendorId) || null;
   if (!requestedVendorId) return await createVendor(db, name, contact);
@@ -161,7 +164,7 @@ router.post("/", requireSuperadmin, async (req, res) => {
   let userId;
   try {
     await withTransaction(req.db, async () => {
-      const vendorId = await resolveVendorId(req.db, roleRecord.name, vendor_id, name, contact_number);
+      const vendorId = await resolveVendorId(req.db, roleRecord.name, vendor_id, name, contact_number, true);
       userId = (await dbRun(req.db, "INSERT INTO users (username, email, password, name, role_id, vendor_id, contact_person, contact_number, active) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1) RETURNING id", [normalizedUsername, finalEmail, hashPassword(password), name.trim(), roleRecord.id, vendorId, contact_person ?? null, contact_number ?? null], "INSERT INTO users (username, email, password, name, role_id, vendor_id, contact_person, contact_number, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)")).lastInsertRowid;
     });
   } catch (error) {
