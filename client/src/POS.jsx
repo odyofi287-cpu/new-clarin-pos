@@ -5,6 +5,15 @@ function formatCurrency(value) {
   return value == null ? "0.00" : Number(value).toLocaleString("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 });
 }
 
+function formatDeliveryDate(value) {
+  const text = String(value || "").slice(0, 10);
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return value || "-";
+  const [, year, month, day] = match;
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
+    .format(new Date(Date.UTC(Number(year), Number(month) - 1, Number(day))));
+}
+
 function POS({ token, role, vendorId, viewMode = "pos" }) {
   const REFRESH_INTERVAL_MS = 6000;
   const isPosEntryView = viewMode === "pos";
@@ -557,7 +566,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                     <tr key={`sales-history-${entry.id}`}>
                       <td data-label="Vendor ID">{getDisplayVendorId(entry)}</td>
                       <td data-label="Vendor">{entry.vendor_name || entry.vendor_id}</td>
-                      <td data-label="Date">{entry.delivery_date}</td>
+                      <td data-label="Date">{formatDeliveryDate(entry.delivery_date)}</td>
                       <td data-label="Total">{formatCurrency(entry.total_amount)}</td>
                     </tr>
                   ))}
@@ -592,7 +601,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                       <tr key={entry.id}>
                         <td data-label="Vendor ID">{getDisplayVendorId(entry)}</td>
                         <td data-label="Vendor">{entry.vendor_name || entry.vendor_id}</td>
-                        <td data-label="Date">{entry.delivery_date}</td>
+                        <td data-label="Date">{formatDeliveryDate(entry.delivery_date)}</td>
                         <td data-label="Total">{formatCurrency(entry.total_amount)}</td>
                         {canManagePickupEntries && (
                           <td data-label="Action" style={{ display: 'flex', gap: 8 }}>
