@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS users (
   vendor_id INTEGER REFERENCES vendors(id),
   contact_person TEXT,
   contact_number TEXT,
+  profile_picture TEXT,
   active INTEGER NOT NULL DEFAULT 1,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

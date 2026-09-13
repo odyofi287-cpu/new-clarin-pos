@@ -195,6 +195,14 @@ button:focus-visible,
   transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 
+.sidebar-account-avatar-image {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
 .sidebar-logo:hover {
   transform: rotate(-4deg) scale(1.04);
   box-shadow: 0 16px 30px rgba(24, 76, 186, 0.42);

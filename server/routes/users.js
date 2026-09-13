@@ -19,6 +19,13 @@ function hashPassword(password) {
   return password;
 }
 
+function normalizeProfilePicture(value) {
+  if (value == null || value === "") return null;
+  if (typeof value !== "string" || !value.startsWith("data:image/")) throw new Error("Profile picture must be a valid image file");
+  if (value.length > 2_000_000) throw new Error("Profile picture is too large");
+  return value;
+}
+
 async function createVendor(db, name, contact) {
   if (isPostgresDb(db)) {
     const created = await dbRun(
@@ -59,8 +66,9 @@ async function resolveVendorId(db, role, vendorId, name, contact, forceCreate = 
   return requestedVendorId;
 }
 
-router.get("/me", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), (req, res) => {
-  res.json({ data: { user_id: req.user.user_id, email: req.user.email, name: req.user.name, role: req.user.role, vendor_id: req.user.vendor_id } });
+router.get("/me", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
+  const user = await dbGet(req.db, "SELECT id, username, email, name, profile_picture FROM users WHERE id = $1", [req.user.user_id], "SELECT id, username, email, name, profile_picture FROM users WHERE id = ?");
+  res.json({ data: { user_id: user?.id ?? req.user.user_id, username: user?.username, email: user?.email ?? req.user.email, name: user?.name ?? req.user.name, profile_picture: user?.profile_picture || null, role: req.user.role, vendor_id: req.user.vendor_id } });
 });
 
 router.get("/vendors", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
@@ -104,7 +112,7 @@ router.get("/vendors", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), as
 router.get("/", requireSuperadmin, async (req, res) => {
   const users = await dbAll(
     req.db,
-    "SELECT u.id, u.username, u.email, u.name, u.role_id, r.name AS role, u.vendor_id, v.vendor_code, u.contact_person, u.contact_number, u.active, u.created_at FROM users u JOIN roles r ON u.role_id = r.id LEFT JOIN vendors v ON u.vendor_id = v.id ORDER BY u.id"
+    "SELECT u.id, u.username, u.email, u.name, u.role_id, r.name AS role, u.vendor_id, v.vendor_code, u.contact_person, u.contact_number, u.profile_picture, u.active, u.created_at FROM users u JOIN roles r ON u.role_id = r.id LEFT JOIN vendors v ON u.vendor_id = v.id ORDER BY u.id"
   );
 
   const data = [];
@@ -150,6 +158,7 @@ router.post("/verify-superadmin", requireSuperadmin, async (req, res) => {
 
 router.post("/", requireSuperadmin, async (req, res) => {
   const { username, email, password, name, role, vendor_id, contact_person, contact_number } = req.body;
+  const profilePicture = normalizeProfilePicture(req.body.profile_picture);
   const resolvedUsername = (username || email || "").trim();
 
   if (!resolvedUsername || !password || !name || !role) {
@@ -173,7 +182,7 @@ router.post("/", requireSuperadmin, async (req, res) => {
   try {
     await withTransaction(req.db, async () => {
       const vendorId = await resolveVendorId(req.db, roleRecord.name, vendor_id, name, contact_number, true);
-      userId = (await dbRun(req.db, "INSERT INTO users (username, email, password, name, role_id, vendor_id, contact_person, contact_number, active) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1) RETURNING id", [normalizedUsername, finalEmail, hashPassword(password), name.trim(), roleRecord.id, vendorId, contact_person ?? null, contact_number ?? null], "INSERT INTO users (username, email, password, name, role_id, vendor_id, contact_person, contact_number, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)")).lastInsertRowid;
+      userId = (await dbRun(req.db, "INSERT INTO users (username, email, password, name, role_id, vendor_id, contact_person, contact_number, profile_picture, active) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1) RETURNING id", [normalizedUsername, finalEmail, hashPassword(password), name.trim(), roleRecord.id, vendorId, contact_person ?? null, contact_number ?? null, profilePicture], "INSERT INTO users (username, email, password, name, role_id, vendor_id, contact_person, contact_number, profile_picture, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)")).lastInsertRowid;
     });
   } catch (error) {
     if (error.message === "Selected vendor was not found" || error.message === "Selected vendor is inactive") {
@@ -182,7 +191,7 @@ router.post("/", requireSuperadmin, async (req, res) => {
     throw error;
   }
 
-  const created = await dbGet(req.db, "SELECT u.id, u.username, u.email, u.name, u.role_id, r.name AS role, u.vendor_id, v.vendor_code, u.contact_person, u.contact_number, u.active, u.created_at FROM users u JOIN roles r ON u.role_id = r.id LEFT JOIN vendors v ON u.vendor_id = v.id WHERE u.id = $1", [userId], "SELECT u.id, u.username, u.email, u.name, u.role_id, r.name AS role, u.vendor_id, v.vendor_code, u.contact_person, u.contact_number, u.active, u.created_at FROM users u JOIN roles r ON u.role_id = r.id LEFT JOIN vendors v ON u.vendor_id = v.id WHERE u.id = ?");
+  const created = await dbGet(req.db, "SELECT u.id, u.username, u.email, u.name, u.role_id, r.name AS role, u.vendor_id, v.vendor_code, u.contact_person, u.contact_number, u.profile_picture, u.active, u.created_at FROM users u JOIN roles r ON u.role_id = r.id LEFT JOIN vendors v ON u.vendor_id = v.id WHERE u.id = $1", [userId], "SELECT u.id, u.username, u.email, u.name, u.role_id, r.name AS role, u.vendor_id, v.vendor_code, u.contact_person, u.contact_number, u.profile_picture, u.active, u.created_at FROM users u JOIN roles r ON u.role_id = r.id LEFT JOIN vendors v ON u.vendor_id = v.id WHERE u.id = ?");
 
   if (!created) {
     return res.status(500).json({ error: "User creation failed" });
@@ -201,6 +210,7 @@ router.put("/:id", requireSuperadmin, async (req, res) => {
   }
 
   const { username, email, password, name, role, vendor_id, contact_person, contact_number } = req.body;
+  const profilePicture = normalizeProfilePicture(req.body.profile_picture);
   if (!name || !role) {
     return res.status(400).json({ error: "Name and role are required" });
   }
@@ -226,7 +236,7 @@ router.put("/:id", requireSuperadmin, async (req, res) => {
   try {
     await withTransaction(req.db, async () => {
       const safeVendorId = await resolveVendorId(req.db, roleRecord.name, vendor_id, name, contact_number);
-      await dbRun(req.db, "UPDATE users SET username = $1, email = $2, password = $3, name = $4, role_id = $5, vendor_id = $6, contact_person = $7, contact_number = $8 WHERE id = $9 RETURNING id", [normalizedUsername, normalizedEmail, updatedPassword, name.trim(), roleRecord.id, safeVendorId, contact_person ?? null, contact_number ?? null, id], "UPDATE users SET username = ?, email = ?, password = ?, name = ?, role_id = ?, vendor_id = ?, contact_person = ?, contact_number = ? WHERE id = ?");
+      await dbRun(req.db, "UPDATE users SET username = $1, email = $2, password = $3, name = $4, role_id = $5, vendor_id = $6, contact_person = $7, contact_number = $8, profile_picture = COALESCE($9, profile_picture) WHERE id = $10 RETURNING id", [normalizedUsername, normalizedEmail, updatedPassword, name.trim(), roleRecord.id, safeVendorId, contact_person ?? null, contact_number ?? null, profilePicture, id], "UPDATE users SET username = ?, email = ?, password = ?, name = ?, role_id = ?, vendor_id = ?, contact_person = ?, contact_number = ?, profile_picture = COALESCE(?, profile_picture) WHERE id = ?");
     });
   } catch (error) {
     if (error.message === "Selected vendor was not found" || error.message === "Selected vendor is inactive") {
@@ -235,7 +245,7 @@ router.put("/:id", requireSuperadmin, async (req, res) => {
     throw error;
   }
 
-  const updated = await dbGet(req.db, "SELECT u.id, u.username, u.email, u.name, u.role_id, r.name AS role, u.vendor_id, u.contact_person, u.contact_number, u.active, u.created_at FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = $1", [id], "SELECT u.id, u.username, u.email, u.name, u.role_id, r.name AS role, u.vendor_id, u.contact_person, u.contact_number, u.active, u.created_at FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = ?");
+  const updated = await dbGet(req.db, "SELECT u.id, u.username, u.email, u.name, u.role_id, r.name AS role, u.vendor_id, u.contact_person, u.contact_number, u.profile_picture, u.active, u.created_at FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = $1", [id], "SELECT u.id, u.username, u.email, u.name, u.role_id, r.name AS role, u.vendor_id, u.contact_person, u.contact_number, u.profile_picture, u.active, u.created_at FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = ?");
 
   if (!updated) {
     return res.status(500).json({ error: "User update failed" });

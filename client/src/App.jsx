@@ -82,7 +82,7 @@ function NavIcon({ kind }) {
 
 function App() {
   const [status, setStatus] = useState("Loading...");
-  const { token, setToken, role, setRole, vendorId, setVendorId, clear } = useAuth();
+  const { token, setToken, role, setRole, vendorId, setVendorId, username, setUsername, profilePicture, setProfilePicture, clear } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -143,6 +143,22 @@ function App() {
     };
   }, [token]);
 
+  useEffect(() => {
+    if (!token) return undefined;
+    const loadCurrentUser = () => fetch(apiUrl("/api/users/me"), { headers: { Authorization: `Bearer ${token}` } })
+      .then((response) => response.ok ? response.json() : null)
+      .then((body) => {
+        if (body?.data) {
+          setUsername(body.data.username || body.data.email || "");
+          setProfilePicture(body.data.profile_picture || "");
+        }
+      })
+      .catch(() => {});
+    loadCurrentUser();
+    window.addEventListener("accountUpdated", loadCurrentUser);
+    return () => window.removeEventListener("accountUpdated", loadCurrentUser);
+  }, [token]);
+
   const login = async (event) => {
     event.preventDefault();
     setError(null);
@@ -162,6 +178,8 @@ function App() {
       setToken(authToken);
       setRole(body.data.role || "");
       setVendorId(body.data.vendor_id || null);
+      setUsername(body.data.username || body.data.email || "");
+      setProfilePicture(body.data.profile_picture || "");
       setEmail("");
       setPassword("");
     } catch (err) {
@@ -213,7 +231,7 @@ function App() {
     ...(role === "SUPERADMIN" ? [{ id: "users", label: "Users", description: "Account management", icon: "users", view: "users" }] : []),
   ];
 
-  const accountName = role === "SUPERADMIN" ? "Superadmin" : role === "ADMIN" ? "Admin" : role === "STAFF" ? "Staff" : "Vendor";
+  const accountName = username || "Account";
 
   const activeNavId = view;
 
@@ -443,7 +461,7 @@ function App() {
 
               <div className="sidebar-footer">
                 <div className="sidebar-account-card">
-                  <div className="sidebar-account-avatar" aria-hidden="true">{accountName.slice(0, 1)}</div>
+                    {profilePicture ? <img className="sidebar-account-avatar-image" src={profilePicture} alt="" /> : <div className="sidebar-account-avatar" aria-hidden="true">{accountName.slice(0, 1).toUpperCase()}</div>}
                   <div className="sidebar-account-copy">
                     <strong>{accountName}</strong>
                   </div>

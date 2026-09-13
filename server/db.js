@@ -115,9 +115,9 @@ class InMemoryDB {
     if (normalized.startsWith("INSERT INTO USERS")) {
       return {
         run: (...args) => {
-          const [username, email, password, name, role_id, vendor_id, contact_person, contact_number] = args.length === 8
+          const [username, email, password, name, role_id, vendor_id, contact_person, contact_number, profile_picture] = args.length === 9
             ? args
-            : [null, ...args];
+            : args.length === 8 ? [...args, null] : [null, ...args];
           const id = this.users.length + 1;
           this.users.push({
             id,
@@ -129,6 +129,7 @@ class InMemoryDB {
             vendor_id: vendor_id ?? null,
             contact_person: contact_person ?? null,
             contact_number: contact_number ?? null,
+            profile_picture: profile_picture ?? null,
             active: 1,
             created_at: new Date().toISOString()
           });
@@ -594,6 +595,7 @@ class PostgresDB {
     const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
     await this.pool.query(schema);
     await this.pool.query("ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS delivery_time TEXT");
+    await this.pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_picture TEXT");
     await this.seed();
   }
 
@@ -703,6 +705,10 @@ function migrateSchema(db) {
     db.exec("ALTER TABLE users ADD COLUMN contact_number TEXT");
   }
 
+  if (!userColumnNames.has("profile_picture")) {
+    db.exec("ALTER TABLE users ADD COLUMN profile_picture TEXT");
+  }
+
   if (!userColumnNames.has("username")) {
     db.exec("ALTER TABLE users ADD COLUMN username TEXT");
     db.exec("UPDATE users SET username = lower(substr(email, 1, instr(email, '@') - 1)) WHERE username IS NULL OR username = ''");
@@ -760,6 +766,7 @@ function createSchema(db) {
       vendor_id INTEGER,
       contact_person TEXT,
       contact_number TEXT,
+      profile_picture TEXT,
       active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (role_id) REFERENCES roles(id),

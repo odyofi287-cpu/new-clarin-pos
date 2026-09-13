@@ -11,6 +11,7 @@ const emptyAccount = () => ({
   vendor_id: null,
   contact_person: "",
   contact_number: "",
+  profile_picture: "",
 });
 
 function AccountFields({ form, isNew, onChange }) {
@@ -20,6 +21,13 @@ function AccountFields({ form, isNew, onChange }) {
       <label>Email address<input type="email" value={form.email} onChange={(event) => onChange("email", event.target.value)} required /></label>
       <label>{isNew ? "Password" : "New password"}<input type="password" value={form.password} onChange={(event) => onChange("password", event.target.value)} placeholder={isNew ? "Enter password" : "Leave blank to keep current password"} required={isNew} /></label>
       <label>Full name<input value={form.name} onChange={(event) => onChange("name", event.target.value)} required /></label>
+      <label>Profile picture<input type="file" accept="image/*" onChange={(event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => onChange("profile_picture", reader.result);
+        reader.readAsDataURL(file);
+      }} /></label>
       <label>Role<select value={form.role} onChange={(event) => onChange("role", event.target.value)}>{ROLES.map((role) => <option key={role}>{role}</option>)}</select></label>
       {form.role === "VENDOR" && <label>Vendor ID<input value={isNew ? "Automatically assigned" : form.vendor_code || "Assigned vendor"} readOnly /></label>}
       <label>Contact person<input value={form.contact_person} onChange={(event) => onChange("contact_person", event.target.value)} /></label>
@@ -81,6 +89,7 @@ export default function AccountManagement({ token }) {
       role: user.role,
       vendor_id: user.vendor_id,
       vendor_code: user.vendor_code || "",
+      profile_picture: user.profile_picture || "",
       contact_person: user.contact_person || "",
       contact_number: user.contact_number || "",
     });
@@ -98,6 +107,7 @@ export default function AccountManagement({ token }) {
       vendor_id: form.role === "VENDOR" ? form.vendor_id : null,
       contact_person: form.contact_person || null,
       contact_number: form.contact_number || null,
+      profile_picture: form.profile_picture || null,
     };
     if (!isNew && !payload.password) delete payload.password;
 
@@ -114,6 +124,7 @@ export default function AccountManagement({ token }) {
       closeModal();
       await loadUsers();
       window.dispatchEvent(new Event("vendorsUpdated"));
+      window.dispatchEvent(new Event("accountUpdated"));
       setMessage(isNew ? "User created successfully" : "User updated successfully");
     } catch (error) {
       setMessage(error.message);
@@ -132,6 +143,7 @@ export default function AccountManagement({ token }) {
       if (!response.ok) throw new Error(body.error || "Failed to delete user");
       await loadUsers();
       window.dispatchEvent(new Event("vendorsUpdated"));
+      window.dispatchEvent(new Event("accountUpdated"));
       setMessage("User deleted successfully");
     } catch (error) {
       setMessage(error.message);
