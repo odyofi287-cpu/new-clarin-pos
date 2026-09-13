@@ -218,6 +218,11 @@ async function vendorDashboard(req, res) {
       .map((delivery) => ({
         id: delivery.id,
         delivery_date: delivery.delivery_date,
+        delivery_time: delivery.delivery_time || null,
+        items: req.db.delivery_items
+          .filter((item) => item.delivery_id === delivery.id)
+          .map((item) => `${req.db.products.find((product) => product.id === item.product_id)?.name || "Unknown"} (${item.quantity})`)
+          .join(", "),
         total_amount: delivery.total_amount,
         created_at: delivery.created_at,
       }));
@@ -243,16 +248,24 @@ async function vendorDashboard(req, res) {
 
   const vendorDeliveries = await dbAll(
     req.db,
-    `SELECT id, delivery_date, total_amount, created_at
-      FROM deliveries
-      WHERE vendor_id = $1
-      ORDER BY created_at DESC
+    `SELECT d.id, d.delivery_date, d.delivery_time, d.total_amount, d.created_at,
+            COALESCE(STRING_AGG(p.name || ' (' || di.quantity || ')', ', '), '') AS items
+      FROM deliveries d
+      LEFT JOIN delivery_items di ON di.delivery_id = d.id
+      LEFT JOIN products p ON p.id = di.product_id
+      WHERE d.vendor_id = $1
+      GROUP BY d.id
+      ORDER BY d.created_at DESC
       LIMIT 10`,
     [req.user.vendor_id],
-    `SELECT id, delivery_date, total_amount, created_at
-      FROM deliveries
-      WHERE vendor_id = ?
-      ORDER BY created_at DESC
+    `SELECT d.id, d.delivery_date, d.delivery_time, d.total_amount, d.created_at,
+            COALESCE(GROUP_CONCAT(p.name || ' (' || di.quantity || ')', ', '), '') AS items
+      FROM deliveries d
+      LEFT JOIN delivery_items di ON di.delivery_id = d.id
+      LEFT JOIN products p ON p.id = di.product_id
+      WHERE d.vendor_id = ?
+      GROUP BY d.id
+      ORDER BY d.created_at DESC
       LIMIT 10`
   );
 

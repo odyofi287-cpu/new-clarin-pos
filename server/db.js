@@ -271,9 +271,9 @@ class InMemoryDB {
 
     if (normalized.startsWith("INSERT INTO DELIVERIES")) {
       return {
-        run: (vendor_id, delivery_date, total_amount, created_by) => {
+        run: (vendor_id, delivery_date, delivery_time, total_amount, created_by) => {
           const id = this.deliveries.length + 1;
-          const row = { id, vendor_id, delivery_date, total_amount, created_by, created_at: new Date().toISOString() };
+          const row = { id, vendor_id, delivery_date, delivery_time, total_amount, created_by, created_at: new Date().toISOString() };
           this.deliveries.push(row);
           return { lastInsertRowid: id };
         }
@@ -593,6 +593,7 @@ class PostgresDB {
   async initialize() {
     const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
     await this.pool.query(schema);
+    await this.pool.query("ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS delivery_time TEXT");
     await this.seed();
   }
 
@@ -721,6 +722,11 @@ function migrateSchema(db) {
   if (!productColumnNames.has("image_url")) {
     db.exec("ALTER TABLE products ADD COLUMN image_url TEXT");
   }
+
+  const deliveryColumns = db.prepare("PRAGMA table_info(deliveries)").all();
+  if (!deliveryColumns.some((column) => column.name === "delivery_time")) {
+    db.exec("ALTER TABLE deliveries ADD COLUMN delivery_time TEXT");
+  }
 }
 
 function createSchema(db) {
@@ -779,6 +785,7 @@ function createSchema(db) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       vendor_id INTEGER NOT NULL,
       delivery_date TEXT NOT NULL,
+      delivery_time TEXT,
       total_amount REAL NOT NULL,
       created_by INTEGER NOT NULL,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,

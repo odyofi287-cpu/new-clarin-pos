@@ -40,12 +40,12 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (re
     const sqliteWhereClause = sqliteFilters.length ? `WHERE ${sqliteFilters.join(" AND ")}` : "";
     const deliveries = await dbAll(
       req.db,
-      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.total_amount, d.created_at
+      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.delivery_time, d.total_amount, d.created_at
        FROM deliveries d
        JOIN vendors v ON d.vendor_id = v.id
        ${pgWhereClause}`,
       params,
-      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.total_amount, d.created_at
+      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.delivery_time, d.total_amount, d.created_at
        FROM deliveries d
        JOIN vendors v ON d.vendor_id = v.id
        ${sqliteWhereClause}`
@@ -125,6 +125,7 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
 
     const computedDate = delivery_date || (pickup_datetime ? pickup_datetime.split("T")[0] : "") || new Date().toISOString().split("T")[0];
     const deliveryDate = normalizeDeliveryDate(computedDate);
+    const deliveryTime = String(delivery_time || (pickup_datetime ? pickup_datetime.split("T")[1]?.slice(0, 5) : "") || "").slice(0, 5) || null;
 
     const vendor = await dbGet(req.db, "SELECT id FROM vendors WHERE id = $1", [vendorId], "SELECT id FROM vendors WHERE id = ?");
     if (!vendor) {
@@ -161,9 +162,9 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
 
       const result = await dbRun(
         req.db,
-        "INSERT INTO deliveries (vendor_id, delivery_date, total_amount, created_by) VALUES ($1, $2, $3, $4) RETURNING id",
-        [vendorId, deliveryDate, totalAmount, req.user.user_id],
-        "INSERT INTO deliveries (vendor_id, delivery_date, total_amount, created_by) VALUES (?, ?, ?, ?)"
+        "INSERT INTO deliveries (vendor_id, delivery_date, delivery_time, total_amount, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+        [vendorId, deliveryDate, deliveryTime, totalAmount, req.user.user_id],
+        "INSERT INTO deliveries (vendor_id, delivery_date, delivery_time, total_amount, created_by) VALUES (?, ?, ?, ?, ?)"
       );
 
       for (const item of itemPayloads) {
@@ -190,6 +191,7 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
         id: deliveryResult.lastInsertRowid,
         vendor_id: vendorId,
         delivery_date: deliveryDate,
+        delivery_time: deliveryTime,
         total_amount: totalAmount,
         items: itemPayloads.map((item) => ({
           product_id: item.productId,
@@ -208,7 +210,7 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
 router.put("/:id", requireRole("SUPERADMIN"), async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const existing = await dbGet(req.db, "SELECT id, vendor_id, delivery_date, total_amount FROM deliveries WHERE id = $1", [id], "SELECT id, vendor_id, delivery_date, total_amount FROM deliveries WHERE id = ?");
+    const existing = await dbGet(req.db, "SELECT id, vendor_id, delivery_date, delivery_time, total_amount FROM deliveries WHERE id = $1", [id], "SELECT id, vendor_id, delivery_date, delivery_time, total_amount FROM deliveries WHERE id = ?");
     if (!existing) {
       return res.status(404).json({ error: "Pickup not found" });
     }
@@ -220,6 +222,7 @@ router.put("/:id", requireRole("SUPERADMIN"), async (req, res) => {
     const normalizedItems = Array.isArray(items) && items.length ? items : [{ product_id: req.body.product_id, quantity: req.body.quantity, unit_cost: req.body.unit_price }];
     const computedDate = (delivery_date || (pickup_datetime ? pickup_datetime.split("T")[0] : "") || (delivery_time ? req.body.delivery_date : "") || existing.delivery_date || new Date().toISOString().split("T")[0]);
     const safeDeliveryDate = normalizeDeliveryDate(computedDate);
+    const safeDeliveryTime = String(delivery_time || (pickup_datetime ? pickup_datetime.split("T")[1]?.slice(0, 5) : "") || existing.delivery_time || "").slice(0, 5) || null;
 
     if (!safeVendorId || !normalizedItems.length) {
       return res.status(400).json({ error: "Vendor and at least one item are required" });
@@ -269,7 +272,7 @@ router.put("/:id", requireRole("SUPERADMIN"), async (req, res) => {
       }
 
       await dbRun(req.db, "DELETE FROM delivery_items WHERE delivery_id = $1 RETURNING id", [id], "DELETE FROM delivery_items WHERE delivery_id = ?");
-      await dbRun(req.db, "UPDATE deliveries SET vendor_id = $1, delivery_date = $2, total_amount = $3 WHERE id = $4 RETURNING id", [safeVendorId, safeDeliveryDate, totalAmount, id], "UPDATE deliveries SET vendor_id = ?, delivery_date = ?, total_amount = ? WHERE id = ?");
+      await dbRun(req.db, "UPDATE deliveries SET vendor_id = $1, delivery_date = $2, delivery_time = $3, total_amount = $4 WHERE id = $5 RETURNING id", [safeVendorId, safeDeliveryDate, safeDeliveryTime, totalAmount, id], "UPDATE deliveries SET vendor_id = ?, delivery_date = ?, delivery_time = ?, total_amount = ? WHERE id = ?");
 
       for (const item of itemPayloads) {
         await dbRun(req.db, "INSERT INTO delivery_items (delivery_id, product_id, quantity, unit_cost) VALUES ($1, $2, $3, $4) RETURNING id", [id, item.productId, item.quantity, item.unitCost], "INSERT INTO delivery_items (delivery_id, product_id, quantity, unit_cost) VALUES (?, ?, ?, ?)");
@@ -284,12 +287,12 @@ router.put("/:id", requireRole("SUPERADMIN"), async (req, res) => {
 
     const updatedDelivery = await dbGet(
       req.db,
-      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.total_amount, d.created_at
+      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.delivery_time, d.total_amount, d.created_at
        FROM deliveries d
        JOIN vendors v ON d.vendor_id = v.id
        WHERE d.id = $1`,
       [id],
-      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.total_amount, d.created_at
+      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.delivery_time, d.total_amount, d.created_at
        FROM deliveries d
        JOIN vendors v ON d.vendor_id = v.id
        WHERE d.id = ?`

@@ -14,6 +14,13 @@ function formatRecordDate(value) {
     .format(new Date(Date.UTC(Number(year), Number(month) - 1, Number(day))));
 }
 
+function formatRecordTime(value) {
+  const match = String(value || "").match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return "-";
+  const date = new Date(2000, 0, 1, Number(match[1]), Number(match[2]));
+  return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(date);
+}
+
 function readProductImage(file, onReady, onError) {
   if (!file) return;
   if (!file.type.startsWith("image/")) {
@@ -267,6 +274,8 @@ function Dashboard({ token, role, viewMode = "dashboard" }) {
                 <tr>
                   <th>ID</th>
                   <th>Date</th>
+                  <th>Time</th>
+                  <th>Items</th>
                   <th>Total</th>
                 </tr>
               </thead>
@@ -274,8 +283,10 @@ function Dashboard({ token, role, viewMode = "dashboard" }) {
                 {data.vendor_summary.recent_deliveries.map((delivery) => (
                   <tr key={delivery.id}>
                     <td>{delivery.id}</td>
-                    <td>{delivery.delivery_date}</td>
-                    <td>{formatCurrency(delivery.total_amount)}</td>
+                    <td data-label="Date">{formatRecordDate(delivery.delivery_date)}</td>
+                    <td data-label="Time">{formatRecordTime(delivery.delivery_time)}</td>
+                    <td data-label="Items">{delivery.items || "-"}</td>
+                    <td data-label="Total">{formatCurrency(delivery.total_amount)}</td>
                   </tr>
                 ))}
               </tbody>
