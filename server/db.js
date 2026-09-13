@@ -154,6 +154,16 @@ class InMemoryDB {
       };
     }
 
+    if (normalized.startsWith("DELETE FROM USERS")) {
+      return {
+        run: (id) => {
+          const idx = this.users.findIndex((u) => u.id === id);
+          if (idx >= 0) this.users.splice(idx, 1);
+          return { changes: idx >= 0 ? 1 : 0 };
+        }
+      };
+    }
+
     if (normalized.includes("FROM USERS")) {
       return {
         all: () => this.users.map((u) => {
@@ -183,16 +193,6 @@ class InMemoryDB {
           const role = this.roles.find((r) => r.id === role_id);
           return { lastInsertRowid: id, lastRow: { id, email, role: role ? role.name : undefined } };
         },
-      };
-    }
-
-    if (normalized.startsWith("DELETE FROM USERS")) {
-      return {
-        run: (id) => {
-          const idx = this.users.findIndex((u) => u.id === id);
-          if (idx >= 0) this.users.splice(idx, 1);
-          return { changes: idx >= 0 ? 1 : 0 };
-        }
       };
     }
 

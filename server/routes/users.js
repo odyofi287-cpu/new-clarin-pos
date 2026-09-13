@@ -2,7 +2,7 @@ import express from "express";
 import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
 import { requireRole, requireSuperadmin } from "../middleware/auth.js";
-import { dbAll, dbGet, dbRun, isPostgresDb, withTransaction } from "./dbCompat.js";
+import { dbAll, dbGet, dbRun, isInMemoryDb, isPostgresDb, withTransaction } from "./dbCompat.js";
 
 const router = express.Router();
 const require = createRequire(import.meta.url);
@@ -66,27 +66,35 @@ router.get("/me", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), (req, r
 router.get("/vendors", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     const params = [];
-    let whereClause = "";
+    let whereClause;
 
     if (req.user.role === "VENDOR") {
-      whereClause = isPostgresDb(req.db) ? "WHERE id = $1" : "WHERE id = ?";
+      whereClause = isPostgresDb(req.db)
+        ? "WHERE v.id = $1 AND v.active = 1 AND EXISTS (SELECT 1 FROM users u JOIN roles r ON r.id = u.role_id WHERE u.vendor_id = v.id AND u.active = 1 AND r.name = 'VENDOR')"
+        : "WHERE v.id = ? AND v.active = 1 AND EXISTS (SELECT 1 FROM users u JOIN roles r ON r.id = u.role_id WHERE u.vendor_id = v.id AND u.active = 1 AND r.name = 'VENDOR')";
       params.push(req.user.vendor_id);
+    } else {
+      whereClause = "WHERE v.active = 1 AND EXISTS (SELECT 1 FROM users u JOIN roles r ON r.id = u.role_id WHERE u.vendor_id = v.id AND u.active = 1 AND r.name = 'VENDOR')";
     }
 
     const vendors = await dbAll(
       req.db,
-      `SELECT id, name, vendor_code, active, created_at
-       FROM vendors
+      `SELECT v.id, v.name, v.vendor_code, v.active, v.created_at
+       FROM vendors v
        ${whereClause}
-       ORDER BY name ASC`,
+       ORDER BY v.name ASC`,
       params,
-      `SELECT id, name, vendor_code, active, created_at
-       FROM vendors
+      `SELECT v.id, v.name, v.vendor_code, v.active, v.created_at
+       FROM vendors v
        ${whereClause}
-       ORDER BY name ASC`
+       ORDER BY v.name ASC`
     );
 
-    res.json({ data: vendors });
+    const activeVendors = isInMemoryDb(req.db)
+      ? vendors.filter((vendor) => req.db.users.some((user) => user.vendor_id === vendor.id && user.active !== 0 && req.db.roles.find((role) => role.id === user.role_id)?.name === "VENDOR"))
+      : vendors;
+
+    res.json({ data: activeVendors });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to load vendors" });

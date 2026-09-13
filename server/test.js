@@ -358,6 +358,12 @@ test("Vendor accounts receive sequential system-assigned vendor records", async 
   assert.match(secondCreated.data.vendor_code, /^VND-\d{4}$/);
   assert.notStrictEqual(secondCreated.data.vendor_code, created.data.vendor_code, 'Expected each new vendor account to receive a new vendor code');
 
+  res = await fetch(`${base}/api/users/vendors`, { headers: { Authorization: `Bearer ${token}` } });
+  assert.strictEqual(res.status, 200);
+  let vendorList = await res.json();
+  assert(vendorList.data.some((vendor) => vendor.vendor_code === created.data.vendor_code));
+  assert(vendorList.data.some((vendor) => vendor.vendor_code === secondCreated.data.vendor_code));
+
   res = await fetch(`${base}/api/users/${created.data.id}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` }
@@ -369,6 +375,12 @@ test("Vendor accounts receive sequential system-assigned vendor records", async 
     headers: { Authorization: `Bearer ${token}` }
   });
   assert.strictEqual(res.status, 200);
+
+  res = await fetch(`${base}/api/users/vendors`, { headers: { Authorization: `Bearer ${token}` } });
+  assert.strictEqual(res.status, 200);
+  vendorList = await res.json();
+  assert(!vendorList.data.some((vendor) => vendor.vendor_code === created.data.vendor_code));
+  assert(!vendorList.data.some((vendor) => vendor.vendor_code === secondCreated.data.vendor_code));
 });
 
 test("Vendor cannot access admin product creation endpoint", async () => {
