@@ -132,6 +132,25 @@ test("Staff can record and list vendor returns and exclude them from sales total
   }
 });
 
+test("Vendor can view returns but cannot create or delete them", async () => {
+  const token = await login("vendor@clarin.local", "Vendor123!");
+  const listRes = await fetch(`${base}/api/vendor-returns`, { headers: { Authorization: `Bearer ${token}` } });
+  assert.strictEqual(listRes.status, 200);
+
+  const createRes = await fetch(`${base}/api/vendor-returns`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ vendor_id: 1, return_date: '2026-08-20', return_time: '09:45', product_id: 1, quantity: 1, total_product_price_returned: 35 }),
+  });
+  assert.strictEqual(createRes.status, 403);
+
+  const deleteRes = await fetch(`${base}/api/vendor-returns/1`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assert.strictEqual(deleteRes.status, 403);
+});
+
 test("Superadmin can update a pickup after password verification", async () => {
   const token = await login("superadmin@clarin.local", "Superadmin123!");
   const verify = await fetch(`${base}/api/users/verify-superadmin`, {

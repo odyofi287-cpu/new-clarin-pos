@@ -531,7 +531,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                 Vendor Pickup List
               </button>
             )}
-            {isDeliveriesView && (
+            {isDeliveriesView && role !== "VENDOR" && (
               <button className="small-button" onClick={() => setReturnsOpen(true)}>
                 Record Return
               </button>

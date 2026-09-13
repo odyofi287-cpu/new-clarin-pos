@@ -38,7 +38,7 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (re
   }
 });
 
-router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
+router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
   try {
     const {
       vendor_id,
@@ -114,7 +114,7 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (r
   }
 });
 
-router.delete("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
+router.delete("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const existing = await dbGet(req.db, "SELECT id, vendor_id FROM vendor_returns WHERE id = $1", [id], "SELECT id, vendor_id FROM vendor_returns WHERE id = ?");
