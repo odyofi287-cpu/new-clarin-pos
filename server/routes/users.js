@@ -22,19 +22,16 @@ async function createVendor(db, name, contact) {
   if (isPostgresDb(db)) {
     const created = await dbRun(
       db,
-      `WITH inserted AS (
-        INSERT INTO vendors (name, contact, vendor_code, active)
-        VALUES ($1, $2, 'PENDING', 1)
-        RETURNING id
-      )
-      UPDATE vendors
-      SET vendor_code = 'VND-' || LPAD(inserted.id::text, 4, '0')
-      FROM inserted
-      WHERE vendors.id = inserted.id
-      RETURNING vendors.id`,
+      "INSERT INTO vendors (name, contact, vendor_code, active) VALUES ($1, $2, 'PENDING', 1) RETURNING id",
       [name.trim(), contact ?? null]
     );
-    return Number(created.lastInsertRowid);
+    const vendorId = Number(created.lastInsertRowid);
+    await dbRun(
+      db,
+      "UPDATE vendors SET vendor_code = 'VND-' || LPAD(id::text, 4, '0') WHERE id = $1 RETURNING id",
+      [vendorId]
+    );
+    return vendorId;
   }
 
   const nextVendor = (await dbGet(db, "SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM vendors", [], "SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM vendors")).next_id;
