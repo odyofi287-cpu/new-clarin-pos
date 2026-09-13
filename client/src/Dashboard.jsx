@@ -5,6 +5,15 @@ function formatCurrency(value) {
   return value == null ? "0.00" : Number(value).toLocaleString("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 });
 }
 
+function formatRecordDate(value) {
+  const text = String(value || "").slice(0, 10);
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return value || "-";
+  const [, year, month, day] = match;
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
+    .format(new Date(Date.UTC(Number(year), Number(month) - 1, Number(day))));
+}
+
 function readProductImage(file, onReady, onError) {
   if (!file) return;
   if (!file.type.startsWith("image/")) {
@@ -386,7 +395,7 @@ function Dashboard({ token, role, viewMode = "dashboard" }) {
                       {data.recent_sales.map((sale) => (
                         <tr key={sale.id}>
                           <td>{sale.id}</td>
-                          <td>{sale.sale_date}</td>
+                          <td>{formatRecordDate(sale.sale_date)}</td>
                           <td>{sale.item_count}</td>
                           <td>{formatCurrency(sale.total_amount)}</td>
                         </tr>
@@ -414,7 +423,7 @@ function Dashboard({ token, role, viewMode = "dashboard" }) {
                       {data.recent_deliveries.map((delivery) => (
                         <tr key={delivery.id}>
                           <td>{delivery.id}</td>
-                          <td>{delivery.delivery_date}</td>
+                          <td>{formatRecordDate(delivery.delivery_date)}</td>
                           <td>{delivery.vendor_name}</td>
                           <td>{formatCurrency(delivery.total_amount)}</td>
                         </tr>

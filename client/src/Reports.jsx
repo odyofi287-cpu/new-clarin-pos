@@ -7,6 +7,15 @@ function formatCurrency(value) {
   return value == null ? "0.00" : Number(value).toLocaleString("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 });
 }
 
+function formatReportDate(value) {
+  const text = String(value || "").slice(0, 10);
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return value || "-";
+  const [, year, month, day] = match;
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
+    .format(new Date(Date.UTC(Number(year), Number(month) - 1, Number(day))));
+}
+
 function Reports({ token, role, vendorId, initialMode }) {
   const REFRESH_INTERVAL_MS = 6000;
   const resolvedDefaultMode = initialMode || (role === "VENDOR" ? "vendor-deliveries" : "sales");
@@ -128,7 +137,7 @@ function Reports({ token, role, vendorId, initialMode }) {
             {data.map((row) => (
               <tr key={row.transaction_id}>
                 <td data-label="Transaction ID">{row.transaction_id}</td>
-                <td data-label="Date">{row.sale_date}</td>
+                <td data-label="Date">{formatReportDate(row.sale_date)}</td>
                 <td data-label="Staff">{row.staff}</td>
                 <td data-label="Items">{row.items}</td>
                 <td data-label="Quantity">{row.quantity}</td>
@@ -184,7 +193,7 @@ function Reports({ token, role, vendorId, initialMode }) {
           {data.map((row, idx) => (
             <tr key={`${row.vendor}-${idx}`}>
               <td data-label="Vendor">{row.vendor}</td>
-              <td data-label="Delivery date">{row.delivery_date}</td>
+              <td data-label="Delivery date">{formatReportDate(row.delivery_date)}</td>
               <td data-label="Products">{row.products}</td>
               <td data-label="Quantity">{row.quantity}</td>
               <td data-label="Amount">{formatCurrency(row.amount)}</td>
