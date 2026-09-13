@@ -1,6 +1,7 @@
 import express from "express";
 import { requireRole } from "../middleware/auth.js";
 import { publishDataChange } from "../events.js";
+import { dbAll, dbGet, dbRun, withTransaction } from "./dbCompat.js";
 
 const router = express.Router();
 
@@ -13,39 +14,42 @@ function normalizeDeliveryDate(value) {
   return Number.isNaN(parsed.getTime()) ? new Date().toISOString().slice(0, 10) : parsed.toISOString().slice(0, 10);
 }
 
-function executeTransaction(db, fn) {
-  if (db && typeof db.transaction === "function") {
-    const transaction = db.transaction(fn);
-    return typeof transaction === "function" ? transaction() : fn();
-  }
-  return fn();
-}
-
-router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), (req, res) => {
+router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
-    const filters = [];
+    const pgFilters = [];
+    const sqliteFilters = [];
     const params = [];
     if (req.user.role === "VENDOR") {
-      filters.push("d.vendor_id = ?");
+      pgFilters.push(`d.vendor_id = $${params.length + 1}`);
+      sqliteFilters.push("d.vendor_id = ?");
       params.push(req.user.vendor_id);
     }
 
     if (req.query.start_date) {
-      filters.push("d.delivery_date >= ?");
+      pgFilters.push(`d.delivery_date >= $${params.length + 1}`);
+      sqliteFilters.push("d.delivery_date >= ?");
       params.push(req.query.start_date);
     }
     if (req.query.end_date) {
-      filters.push("d.delivery_date <= ?");
+      pgFilters.push(`d.delivery_date <= $${params.length + 1}`);
+      sqliteFilters.push("d.delivery_date <= ?");
       params.push(req.query.end_date);
     }
 
-    const whereClause = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
-    const deliveries = req.db.prepare(
+    const pgWhereClause = pgFilters.length ? `WHERE ${pgFilters.join(" AND ")}` : "";
+    const sqliteWhereClause = sqliteFilters.length ? `WHERE ${sqliteFilters.join(" AND ")}` : "";
+    const deliveries = await dbAll(
+      req.db,
       `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.total_amount, d.created_at
        FROM deliveries d
        JOIN vendors v ON d.vendor_id = v.id
-       ${whereClause}`
-    ).all(...params);
+       ${pgWhereClause}`,
+      params,
+      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.total_amount, d.created_at
+       FROM deliveries d
+       JOIN vendors v ON d.vendor_id = v.id
+       ${sqliteWhereClause}`
+    );
 
     res.json({ data: deliveries });
   } catch (error) {
@@ -54,26 +58,34 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), (req, res
   }
 });
 
-router.get("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), (req, res) => {
+router.get("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const params = [id];
-    let vendorFilter = "";
+    let pgVendorFilter = "";
+    let sqliteVendorFilter = "";
     if (req.user.role === "VENDOR") {
-      vendorFilter = "AND d.vendor_id = ?";
+      pgVendorFilter = `AND d.vendor_id = $${params.length + 1}`;
+      sqliteVendorFilter = "AND d.vendor_id = ?";
       params.push(req.user.vendor_id);
     }
 
-    const delivery = req.db.prepare(
+    const delivery = await dbGet(
+      req.db,
       `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.total_amount, d.created_at
        FROM deliveries d
        JOIN vendors v ON d.vendor_id = v.id
-       WHERE d.id = ? ${vendorFilter}`
-    ).get(...params);
+       WHERE d.id = $1 ${pgVendorFilter}`,
+      params,
+      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.total_amount, d.created_at
+       FROM deliveries d
+       JOIN vendors v ON d.vendor_id = v.id
+       WHERE d.id = ? ${sqliteVendorFilter}`
+    );
 
     if (!delivery) {
       if (req.user.role === "VENDOR") {
-        const exists = req.db.prepare("SELECT 1 FROM deliveries WHERE id = ?").get(id);
+        const exists = await dbGet(req.db, "SELECT 1 FROM deliveries WHERE id = $1", [id], "SELECT 1 FROM deliveries WHERE id = ?");
         if (exists) {
           return res.status(403).json({ error: "Forbidden" });
         }
@@ -81,12 +93,18 @@ router.get("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), (req, 
       return res.status(404).json({ error: "Delivery not found" });
     }
 
-    const items = req.db.prepare(
+    const items = await dbAll(
+      req.db,
+      `SELECT di.id, di.product_id, p.name AS product_name, di.quantity, di.unit_cost
+       FROM delivery_items di
+       JOIN products p ON di.product_id = p.id
+       WHERE di.delivery_id = $1`,
+      [id],
       `SELECT di.id, di.product_id, p.name AS product_name, di.quantity, di.unit_cost
        FROM delivery_items di
        JOIN products p ON di.product_id = p.id
        WHERE di.delivery_id = ?`
-    ).all(id);
+    );
 
     res.json({ data: { ...delivery, items } });
   } catch (error) {
@@ -95,7 +113,7 @@ router.get("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), (req, 
   }
 });
 
-router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), (req, res) => {
+router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
   try {
     const { vendor_id, pickup_datetime, delivery_date, delivery_time, items } = req.body;
     const vendorId = Number(vendor_id);
@@ -108,47 +126,60 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), (req, res) => {
     const computedDate = delivery_date || (pickup_datetime ? pickup_datetime.split("T")[0] : "") || new Date().toISOString().split("T")[0];
     const deliveryDate = normalizeDeliveryDate(computedDate);
 
-    const vendor = req.db.prepare("SELECT id FROM vendors WHERE id = ?").get(vendorId);
+    const vendor = await dbGet(req.db, "SELECT id FROM vendors WHERE id = $1", [vendorId], "SELECT id FROM vendors WHERE id = ?");
     if (!vendor) {
       return res.status(404).json({ error: "Vendor not found" });
     }
 
-    const itemPayloads = normalizedItems.map((item) => {
+    const itemPayloads = [];
+    for (const item of normalizedItems) {
       const productId = Number(item.product_id);
       const quantity = Number(item.quantity);
       const unitCost = Number(item.unit_cost ?? 0);
       if (!productId || !Number.isFinite(quantity) || quantity <= 0) {
         throw new Error("Each pickup item must include a valid product and quantity");
       }
-      const product = req.db.prepare("SELECT id, current_stock, selling_price FROM products WHERE id = ?").get(productId);
+      const product = await dbGet(req.db, "SELECT id, current_stock, selling_price FROM products WHERE id = $1", [productId], "SELECT id, current_stock, selling_price FROM products WHERE id = ?");
       if (!product) {
         throw new Error(`Product ${productId} not found`);
       }
       const resolvedUnitCost = Number.isFinite(unitCost) && unitCost > 0 ? unitCost : Number(product.selling_price || 0);
-      return { productId, quantity, unitCost: resolvedUnitCost, product };
-    });
+      itemPayloads.push({ productId, quantity, unitCost: resolvedUnitCost, product });
+    }
 
     const totalAmount = itemPayloads.reduce((sum, item) => sum + item.quantity * item.unitCost, 0);
-    const deliveryResult = executeTransaction(req.db, () => {
+    const deliveryResult = await withTransaction(req.db, async () => {
       for (const item of itemPayloads) {
-        const stockUpdate = req.db.prepare(
+        const stockUpdate = await dbRun(
+          req.db,
+          "UPDATE products SET current_stock = current_stock - $1 WHERE id = $2 AND current_stock >= $1 RETURNING id",
+          [item.quantity, item.productId],
           "UPDATE products SET current_stock = current_stock - ? WHERE id = ? AND current_stock >= ?"
-        ).run(item.quantity, item.productId, item.quantity);
+        );
         if (!stockUpdate.changes) throw new Error(`Insufficient stock for product ${item.productId}`);
       }
 
-      const result = req.db.prepare(
+      const result = await dbRun(
+        req.db,
+        "INSERT INTO deliveries (vendor_id, delivery_date, total_amount, created_by) VALUES ($1, $2, $3, $4) RETURNING id",
+        [vendorId, deliveryDate, totalAmount, req.user.user_id],
         "INSERT INTO deliveries (vendor_id, delivery_date, total_amount, created_by) VALUES (?, ?, ?, ?)"
-      ).run(vendorId, deliveryDate, totalAmount, req.user.user_id);
+      );
 
-      itemPayloads.forEach((item) => {
-        const itemId = req.db.prepare(
+      for (const item of itemPayloads) {
+        const insertedItem = await dbRun(
+          req.db,
+          "INSERT INTO delivery_items (delivery_id, product_id, quantity, unit_cost) VALUES ($1, $2, $3, $4) RETURNING id",
+          [result.lastInsertRowid, item.productId, item.quantity, item.unitCost],
           "INSERT INTO delivery_items (delivery_id, product_id, quantity, unit_cost) VALUES (?, ?, ?, ?)"
-        ).run(result.lastInsertRowid, item.productId, item.quantity, item.unitCost).lastInsertRowid;
-        req.db.prepare(
+        );
+        await dbRun(
+          req.db,
+          "INSERT INTO inventory_movements (product_id, movement_type, quantity, reference_type, reference_id, user_id, created_at) VALUES ($1, 'STOCK_OUT', $2, 'pickup', $3, $4, CURRENT_TIMESTAMP) RETURNING id",
+          [item.productId, item.quantity, insertedItem.lastInsertRowid, req.user.user_id],
           "INSERT INTO inventory_movements (product_id, movement_type, quantity, reference_type, reference_id, user_id, created_at) VALUES (?, 'STOCK_OUT', ?, 'pickup', ?, ?, datetime('now'))"
-        ).run(item.productId, item.quantity, itemId, req.user.user_id);
-      });
+        );
+      }
       return result;
     });
 
@@ -174,17 +205,15 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), (req, res) => {
   }
 });
 
-router.put("/:id", requireRole("SUPERADMIN"), (req, res) => {
+router.put("/:id", requireRole("SUPERADMIN"), async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const existing = req.db.prepare("SELECT id, vendor_id, delivery_date, total_amount FROM deliveries WHERE id = ?").get(id);
+    const existing = await dbGet(req.db, "SELECT id, vendor_id, delivery_date, total_amount FROM deliveries WHERE id = $1", [id], "SELECT id, vendor_id, delivery_date, total_amount FROM deliveries WHERE id = ?");
     if (!existing) {
       return res.status(404).json({ error: "Pickup not found" });
     }
 
-    const previousItems = req.db.prepare(
-      "SELECT product_id, quantity FROM delivery_items WHERE delivery_id = ?"
-    ).all(id);
+    const previousItems = await dbAll(req.db, "SELECT product_id, quantity FROM delivery_items WHERE delivery_id = $1", [id], "SELECT product_id, quantity FROM delivery_items WHERE delivery_id = ?");
 
     const { vendor_id, pickup_datetime, delivery_date, delivery_time, items } = req.body;
     const safeVendorId = Number(vendor_id ?? existing.vendor_id);
@@ -196,65 +225,87 @@ router.put("/:id", requireRole("SUPERADMIN"), (req, res) => {
       return res.status(400).json({ error: "Vendor and at least one item are required" });
     }
 
-    const vendor = req.db.prepare("SELECT id FROM vendors WHERE id = ?").get(safeVendorId);
+    const vendor = await dbGet(req.db, "SELECT id FROM vendors WHERE id = $1", [safeVendorId], "SELECT id FROM vendors WHERE id = ?");
     if (!vendor) {
       return res.status(404).json({ error: "Vendor not found" });
     }
 
-    const itemPayloads = normalizedItems.map((item) => {
+    const itemPayloads = [];
+    for (const item of normalizedItems) {
       const productId = Number(item.product_id);
       const quantity = Number(item.quantity);
       const unitCost = Number(item.unit_cost ?? 0);
       if (!productId || !Number.isFinite(quantity) || quantity <= 0) {
         throw new Error("Each pickup item must include a valid product and quantity");
       }
-      const product = req.db.prepare("SELECT id, selling_price FROM products WHERE id = ?").get(productId);
+      const product = await dbGet(req.db, "SELECT id, selling_price FROM products WHERE id = $1", [productId], "SELECT id, selling_price FROM products WHERE id = ?");
       if (!product) {
         throw new Error(`Product ${productId} not found`);
       }
       const resolvedUnitCost = Number.isFinite(unitCost) && unitCost > 0 ? unitCost : Number(product.selling_price || 0);
-      return { productId, quantity, unitCost: resolvedUnitCost };
-    });
+      itemPayloads.push({ productId, quantity, unitCost: resolvedUnitCost });
+    }
 
     const totalAmount = itemPayloads.reduce((sum, item) => sum + item.quantity * item.unitCost, 0);
-    executeTransaction(req.db, () => {
-      previousItems.forEach((item) => {
-        req.db.prepare("UPDATE products SET current_stock = current_stock + ? WHERE id = ?").run(item.quantity, item.product_id);
-        req.db.prepare(
+    await withTransaction(req.db, async () => {
+      for (const item of previousItems) {
+        await dbRun(req.db, "UPDATE products SET current_stock = current_stock + $1 WHERE id = $2 RETURNING id", [item.quantity, item.product_id], "UPDATE products SET current_stock = current_stock + ? WHERE id = ?");
+        await dbRun(
+          req.db,
+          "INSERT INTO inventory_movements (product_id, movement_type, quantity, reference_type, reference_id, user_id, created_at) VALUES ($1, 'STOCK_IN', $2, 'pickup_update_restore', $3, $4, CURRENT_TIMESTAMP) RETURNING id",
+          [item.product_id, item.quantity, id, req.user.user_id],
           "INSERT INTO inventory_movements (product_id, movement_type, quantity, reference_type, reference_id, user_id, created_at) VALUES (?, 'STOCK_IN', ?, 'pickup_update_restore', ?, ?, datetime('now'))"
-        ).run(item.product_id, item.quantity, id, req.user.user_id);
-      });
+        );
+      }
 
       for (const item of itemPayloads) {
-        const stockUpdate = req.db.prepare(
+        const stockUpdate = await dbRun(
+          req.db,
+          "UPDATE products SET current_stock = current_stock - $1 WHERE id = $2 AND current_stock >= $1 RETURNING id",
+          [item.quantity, item.productId],
           "UPDATE products SET current_stock = current_stock - ? WHERE id = ? AND current_stock >= ?"
-        ).run(item.quantity, item.productId, item.quantity);
+        );
         if (!stockUpdate.changes) throw new Error(`Insufficient stock for product ${item.productId}`);
       }
 
-      req.db.prepare("DELETE FROM delivery_items WHERE delivery_id = ?").run(id);
-      req.db.prepare("UPDATE deliveries SET vendor_id = ?, delivery_date = ?, total_amount = ? WHERE id = ?").run(safeVendorId, safeDeliveryDate, totalAmount, id);
+      await dbRun(req.db, "DELETE FROM delivery_items WHERE delivery_id = $1 RETURNING id", [id], "DELETE FROM delivery_items WHERE delivery_id = ?");
+      await dbRun(req.db, "UPDATE deliveries SET vendor_id = $1, delivery_date = $2, total_amount = $3 WHERE id = $4 RETURNING id", [safeVendorId, safeDeliveryDate, totalAmount, id], "UPDATE deliveries SET vendor_id = ?, delivery_date = ?, total_amount = ? WHERE id = ?");
 
-      itemPayloads.forEach((item) => {
-        req.db.prepare("INSERT INTO delivery_items (delivery_id, product_id, quantity, unit_cost) VALUES (?, ?, ?, ?)").run(id, item.productId, item.quantity, item.unitCost);
-        req.db.prepare(
+      for (const item of itemPayloads) {
+        await dbRun(req.db, "INSERT INTO delivery_items (delivery_id, product_id, quantity, unit_cost) VALUES ($1, $2, $3, $4) RETURNING id", [id, item.productId, item.quantity, item.unitCost], "INSERT INTO delivery_items (delivery_id, product_id, quantity, unit_cost) VALUES (?, ?, ?, ?)");
+        await dbRun(
+          req.db,
+          "INSERT INTO inventory_movements (product_id, movement_type, quantity, reference_type, reference_id, user_id, created_at) VALUES ($1, 'STOCK_OUT', $2, 'pickup_update', $3, $4, CURRENT_TIMESTAMP) RETURNING id",
+          [item.productId, item.quantity, id, req.user.user_id],
           "INSERT INTO inventory_movements (product_id, movement_type, quantity, reference_type, reference_id, user_id, created_at) VALUES (?, 'STOCK_OUT', ?, 'pickup_update', ?, ?, datetime('now'))"
-        ).run(item.productId, item.quantity, id, req.user.user_id);
-      });
+        );
+      }
     });
 
-    const updatedDelivery = req.db.prepare(
+    const updatedDelivery = await dbGet(
+      req.db,
+      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.total_amount, d.created_at
+       FROM deliveries d
+       JOIN vendors v ON d.vendor_id = v.id
+       WHERE d.id = $1`,
+      [id],
       `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.total_amount, d.created_at
        FROM deliveries d
        JOIN vendors v ON d.vendor_id = v.id
        WHERE d.id = ?`
-    ).get(id);
-    const updatedItems = req.db.prepare(
+    );
+    const updatedItems = await dbAll(
+      req.db,
+      `SELECT di.id, di.product_id, p.name AS product_name, di.quantity, di.unit_cost
+       FROM delivery_items di
+       JOIN products p ON di.product_id = p.id
+       WHERE di.delivery_id = $1`,
+      [id],
       `SELECT di.id, di.product_id, p.name AS product_name, di.quantity, di.unit_cost
        FROM delivery_items di
        JOIN products p ON di.product_id = p.id
        WHERE di.delivery_id = ?`
-    ).all(id);
+    );
 
     publishDataChange("delivery");
     res.json({ data: { ...updatedDelivery, items: updatedItems } });
@@ -264,28 +315,29 @@ router.put("/:id", requireRole("SUPERADMIN"), (req, res) => {
   }
 });
 
-router.delete("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), (req, res) => {
+router.delete("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const delivery = req.db.prepare("SELECT id, vendor_id, total_amount FROM deliveries WHERE id = ?").get(id);
+    const delivery = await dbGet(req.db, "SELECT id, vendor_id, total_amount FROM deliveries WHERE id = $1", [id], "SELECT id, vendor_id, total_amount FROM deliveries WHERE id = ?");
     if (!delivery) {
       return res.status(404).json({ error: "Pickup not found" });
     }
 
-    const items = req.db.prepare(
-      "SELECT product_id, quantity FROM delivery_items WHERE delivery_id = ?"
-    ).all(id);
+    const items = await dbAll(req.db, "SELECT product_id, quantity FROM delivery_items WHERE delivery_id = $1", [id], "SELECT product_id, quantity FROM delivery_items WHERE delivery_id = ?");
 
-    executeTransaction(req.db, () => {
-      items.forEach((item) => {
-        req.db.prepare("UPDATE products SET current_stock = current_stock + ? WHERE id = ?").run(item.quantity, item.product_id);
-        req.db.prepare(
+    await withTransaction(req.db, async () => {
+      for (const item of items) {
+        await dbRun(req.db, "UPDATE products SET current_stock = current_stock + $1 WHERE id = $2 RETURNING id", [item.quantity, item.product_id], "UPDATE products SET current_stock = current_stock + ? WHERE id = ?");
+        await dbRun(
+          req.db,
+          "INSERT INTO inventory_movements (product_id, movement_type, quantity, reference_type, reference_id, user_id, created_at) VALUES ($1, 'STOCK_IN', $2, 'pickup_delete_restore', $3, $4, CURRENT_TIMESTAMP) RETURNING id",
+          [item.product_id, item.quantity, id, req.user.user_id],
           "INSERT INTO inventory_movements (product_id, movement_type, quantity, reference_type, reference_id, user_id, created_at) VALUES (?, 'STOCK_IN', ?, 'pickup_delete_restore', ?, ?, datetime('now'))"
-        ).run(item.product_id, item.quantity, id, req.user.user_id);
-      });
+        );
+      }
 
-      req.db.prepare("DELETE FROM delivery_items WHERE delivery_id = ?").run(id);
-      req.db.prepare("DELETE FROM deliveries WHERE id = ?").run(id);
+      await dbRun(req.db, "DELETE FROM delivery_items WHERE delivery_id = $1 RETURNING id", [id], "DELETE FROM delivery_items WHERE delivery_id = ?");
+      await dbRun(req.db, "DELETE FROM deliveries WHERE id = $1 RETURNING id", [id], "DELETE FROM deliveries WHERE id = ?");
     });
 
     publishDataChange("delivery");

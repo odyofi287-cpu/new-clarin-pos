@@ -2,6 +2,8 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { createRequire } from 'module';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import pg from 'pg';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = path.join(__dirname, "data");
@@ -578,6 +580,102 @@ class InMemoryDB {
   }
 }
 
+class PostgresDB {
+  constructor(databaseUrl) {
+    this.pool = new pg.Pool({
+      connectionString: databaseUrl,
+      ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined,
+    });
+    this.transactionContext = new AsyncLocalStorage();
+    this.ready = this.initialize();
+  }
+
+  async initialize() {
+    const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
+    await this.pool.query(schema);
+    await this.seed();
+  }
+
+  client() {
+    return this.transactionContext.getStore() || this.pool;
+  }
+
+  prepare(sql) {
+    const query = sql
+      .replace(/datetime\('now'\)/gi, "CURRENT_TIMESTAMP")
+      .replace(/\?\s*$/g, "?");
+    let index = 0;
+    let text = query.replace(/\?/g, () => `$${++index}`);
+    if (/^INSERT\s+INTO/i.test(text) && !/\bRETURNING\b/i.test(text)) text += " RETURNING id";
+    const db = this;
+    return {
+      async all(...params) {
+        const result = await db.client().query(text, params);
+        return result.rows;
+      },
+      async get(...params) {
+        const result = await db.client().query(text, params);
+        return result.rows[0];
+      },
+      async run(...params) {
+        const result = await db.client().query(text, params);
+        const firstRow = result.rows[0];
+        return {
+          changes: result.rowCount,
+          lastInsertRowid: firstRow?.id,
+          ...firstRow,
+        };
+      },
+      client: () => db.client(),
+    };
+  }
+
+  async transaction(fn) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await this.transactionContext.run(client, fn);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async seed() {
+    const require = createRequire(import.meta.url);
+    const bcrypt = require("bcrypt");
+    const roleNames = ["SUPERADMIN", "ADMIN", "STAFF", "VENDOR"];
+    for (const role of roleNames) {
+      await this.pool.query("INSERT INTO roles (name) VALUES ($1) ON CONFLICT (name) DO NOTHING", [role]);
+    }
+    const vendorResult = await this.pool.query(
+      "INSERT INTO vendors (name, contact, vendor_code, active) VALUES ($1, $2, $3, 1) ON CONFLICT (vendor_code) DO UPDATE SET name = EXCLUDED.name RETURNING id",
+      ["Clarin Beverages", "0917-555-0101", "VND-0001"]
+    );
+    const vendor2Result = await this.pool.query(
+      "INSERT INTO vendors (name, contact, vendor_code, active) VALUES ($1, $2, $3, 1) ON CONFLICT (vendor_code) DO UPDATE SET name = EXCLUDED.name RETURNING id",
+      ["Arena Drinks Supplier", "0917-555-0202", "VND-0002"]
+    );
+    const products = [["Cola", "Soft Drink", 35, 50, 10, "bottle"], ["Mineral Water", "Water", 25, 70, 20, "bottle"]];
+    for (const product of products) {
+      await this.pool.query(
+        `INSERT INTO products (name, category, selling_price, current_stock, minimum_stock, unit, active)
+         SELECT $1, $2, $3, $4, $5, $6, 1
+         WHERE NOT EXISTS (SELECT 1 FROM products WHERE name = $1)`,
+        product
+      );
+    }
+    const users = [["superadmin", "superadmin@clarin.local", bcrypt.hashSync("Superadmin123!", 10), "System Owner", "SUPERADMIN", null], ["admin", "admin@clarin.local", bcrypt.hashSync("Admin123!", 10), "Arena Owner", "ADMIN", null], ["staff", "staff@clarin.local", bcrypt.hashSync("Staff123!", 10), "POS Staff", "STAFF", null], ["vendor", "vendor@clarin.local", bcrypt.hashSync("Vendor123!", 10), "Vendor User", "VENDOR", vendorResult.rows[0].id], ["vendor2", "vendor2@clarin.local", bcrypt.hashSync("Vendor123!", 10), "Vendor Two", "VENDOR", vendor2Result.rows[0].id]];
+    for (const [username, email, password, name, role, vendorId] of users) {
+      await this.pool.query("INSERT INTO users (username, email, password, name, role_id, vendor_id, active) SELECT $1, $2, $3, $4, id, $6, 1 FROM roles WHERE name = $5 ON CONFLICT (email) DO NOTHING", [username, email, password, name, role, vendorId]);
+    }
+  }
+}
+
 function migrateSchema(db) {
   if (process.env.NODE_ENV === "test") return;
 
@@ -942,7 +1040,6 @@ function seedInitialData(db) {
 }
 
 export function initDb() {
-  ensureDataDirectory();
   if (process.env.NODE_ENV === "test") {
     const mem = new InMemoryDB();
     if (shouldSeedInitialData()) {
@@ -950,6 +1047,13 @@ export function initDb() {
     }
     return mem;
   }
+  if (process.env.POSTGRES_ENABLED === "true" && !process.env.DATABASE_URL) {
+    throw new Error("DATABASE_URL is required when POSTGRES_ENABLED=true");
+  }
+  if (process.env.DATABASE_URL && process.env.POSTGRES_ENABLED === "true") {
+    return new PostgresDB(process.env.DATABASE_URL);
+  }
+  ensureDataDirectory();
   let Database = null;
   try {
     const require = createRequire(import.meta.url);

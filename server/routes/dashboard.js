@@ -1,5 +1,6 @@
 import express from "express";
 import { requireRole } from "../middleware/auth.js";
+import { dbAll, dbGet, isInMemoryDb } from "./dbCompat.js";
 
 const router = express.Router();
 
@@ -7,23 +8,19 @@ function getTodayString() {
   return new Date().toISOString().split("T")[0];
 }
 
-function isInMemoryDb(db) {
-  return db && Array.isArray(db.sales) && Array.isArray(db.sale_items);
-}
-
-router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), (req, res) => {
+router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     if (req.user.role === "VENDOR") {
-      return vendorDashboard(req, res);
+      return await vendorDashboard(req, res);
     }
-    return operationalDashboard(req, res);
+    return await operationalDashboard(req, res);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to load dashboard" });
   }
 });
 
-function operationalDashboard(req, res) {
+async function operationalDashboard(req, res) {
   const today = getTodayString();
 
   if (isInMemoryDb(req.db)) {
@@ -102,47 +99,77 @@ function operationalDashboard(req, res) {
     });
   }
 
-  const todaysTotalSales = req.db.prepare(
+  const todaysTotalSales = (await dbGet(
+    req.db,
+    "SELECT COALESCE(SUM(total_amount), 0) AS total FROM sales WHERE sale_date = $1",
+    [today],
     "SELECT COALESCE(SUM(total_amount), 0) AS total FROM sales WHERE sale_date = ?"
-  ).get(today).total;
+  )).total;
 
-  const todaysTransactionCount = req.db.prepare(
+  const todaysTransactionCount = (await dbGet(
+    req.db,
+    "SELECT COUNT(*) AS count FROM sales WHERE sale_date = $1",
+    [today],
     "SELECT COUNT(*) AS count FROM sales WHERE sale_date = ?"
-  ).get(today).count;
+  )).count;
 
-  const todaysTotalDeliveries = req.db.prepare(
+  const todaysTotalDeliveries = (await dbGet(
+    req.db,
+    "SELECT COALESCE(SUM(total_amount), 0) AS total FROM deliveries WHERE delivery_date = $1",
+    [today],
     "SELECT COALESCE(SUM(total_amount), 0) AS total FROM deliveries WHERE delivery_date = ?"
-  ).get(today).total;
+  )).total;
 
-  const todaysTotalVendorReturns = req.db.prepare(
+  const todaysTotalVendorReturns = (await dbGet(
+    req.db,
+    "SELECT COALESCE(SUM(total_product_price_returned), 0) AS total FROM vendor_returns WHERE return_date = $1",
+    [today],
     "SELECT COALESCE(SUM(total_product_price_returned), 0) AS total FROM vendor_returns WHERE return_date = ?"
-  ).get(today).total;
+  )).total;
 
   const calculatedTodaysSales = Number(todaysTotalSales) + Number(todaysTotalDeliveries) - Number(todaysTotalVendorReturns);
 
-  const itemsSoldToday = req.db.prepare(
+  const itemsSoldToday = (await dbGet(
+    req.db,
+    `SELECT COALESCE(SUM(si.quantity), 0) AS count
+      FROM sale_items si
+      JOIN sales s ON si.sale_id = s.id
+      WHERE s.sale_date = $1`,
+    [today],
     `SELECT COALESCE(SUM(si.quantity), 0) AS count
       FROM sale_items si
       JOIN sales s ON si.sale_id = s.id
       WHERE s.sale_date = ?`
-  ).get(today).count;
+  )).count;
 
-  const totalCurrentInventory = req.db.prepare(
+  const totalCurrentInventory = (await dbGet(
+    req.db,
     "SELECT COALESCE(SUM(current_stock), 0) AS total FROM products WHERE active = 1"
-  ).get().total;
+  )).total;
 
-  const lowStockProducts = req.db.prepare(
+  const lowStockProducts = await dbAll(
+    req.db,
     `SELECT id, name, category, image_url, current_stock, minimum_stock, unit
       FROM products WHERE active = 1 AND current_stock > 0 AND current_stock <= 10
       ORDER BY current_stock ASC LIMIT 10`
-  ).all();
+  );
 
   const lowStockCount = lowStockProducts.length;
-  const outOfStockCount = req.db.prepare(
+  const outOfStockCount = (await dbGet(
+    req.db,
     "SELECT COUNT(*) AS count FROM products WHERE active = 1 AND current_stock <= 0"
-  ).get().count;
+  )).count;
 
-  const recentSales = req.db.prepare(
+  const recentSales = await dbAll(
+    req.db,
+    `SELECT s.id, s.sale_date, s.total_amount, u.name AS sold_by, COALESCE(SUM(si.quantity), 0) AS item_count
+      FROM sales s
+      LEFT JOIN sale_items si ON si.sale_id = s.id
+      JOIN users u ON s.user_id = u.id
+      GROUP BY s.id, s.sale_date, s.total_amount, u.name, s.created_at
+      ORDER BY s.created_at DESC
+      LIMIT 5`,
+    [],
     `SELECT s.id, s.sale_date, s.total_amount, u.name AS sold_by, COALESCE(SUM(si.quantity), 0) AS item_count
       FROM sales s
       LEFT JOIN sale_items si ON si.sale_id = s.id
@@ -150,15 +177,16 @@ function operationalDashboard(req, res) {
       GROUP BY s.id
       ORDER BY s.created_at DESC
       LIMIT 5`
-  ).all();
+  );
 
-  const recentDeliveries = req.db.prepare(
+  const recentDeliveries = await dbAll(
+    req.db,
     `SELECT d.id, d.delivery_date, d.total_amount, v.name AS vendor_name
       FROM deliveries d
       JOIN vendors v ON d.vendor_id = v.id
       ORDER BY d.created_at DESC
       LIMIT 5`
-  ).all();
+  );
 
   return res.json({
     data: {
@@ -178,7 +206,7 @@ function operationalDashboard(req, res) {
   });
 }
 
-function vendorDashboard(req, res) {
+async function vendorDashboard(req, res) {
   const today = getTodayString();
 
   if (isInMemoryDb(req.db)) {
@@ -213,21 +241,34 @@ function vendorDashboard(req, res) {
     });
   }
 
-  const vendorDeliveries = req.db.prepare(
+  const vendorDeliveries = await dbAll(
+    req.db,
+    `SELECT id, delivery_date, total_amount, created_at
+      FROM deliveries
+      WHERE vendor_id = $1
+      ORDER BY created_at DESC
+      LIMIT 10`,
+    [req.user.vendor_id],
     `SELECT id, delivery_date, total_amount, created_at
       FROM deliveries
       WHERE vendor_id = ?
       ORDER BY created_at DESC
       LIMIT 10`
-  ).all(req.user.vendor_id);
+  );
 
-  const todayDeliveryCount = req.db.prepare(
+  const todayDeliveryCount = (await dbGet(
+    req.db,
+    "SELECT COUNT(*) AS count FROM deliveries WHERE vendor_id = $1 AND delivery_date = $2",
+    [req.user.vendor_id, today],
     "SELECT COUNT(*) AS count FROM deliveries WHERE vendor_id = ? AND delivery_date = ?"
-  ).get(req.user.vendor_id, today).count;
+  )).count;
 
-  const todayDeliveryTotal = req.db.prepare(
+  const todayDeliveryTotal = (await dbGet(
+    req.db,
+    "SELECT COALESCE(SUM(total_amount), 0) AS total FROM deliveries WHERE vendor_id = $1 AND delivery_date = $2",
+    [req.user.vendor_id, today],
     "SELECT COALESCE(SUM(total_amount), 0) AS total FROM deliveries WHERE vendor_id = ? AND delivery_date = ?"
-  ).get(req.user.vendor_id, today).total;
+  )).total;
 
   return res.json({
     data: {

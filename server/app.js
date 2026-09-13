@@ -40,8 +40,21 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use(async (req, res, next) => {
+  try {
+    await db.ready;
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", environment: process.env.NODE_ENV || "development" });
+  res.json({
+    status: "ok",
+    environment: process.env.NODE_ENV || "development",
+    database: db.pool ? "postgresql" : "sqlite",
+  });
 });
 
 app.get("/api/events", authMiddleware, (req, res) => {

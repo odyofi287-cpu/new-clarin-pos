@@ -127,12 +127,12 @@ function Reports({ token, role, vendorId, initialMode }) {
           <tbody>
             {data.map((row) => (
               <tr key={row.transaction_id}>
-                <td>{row.transaction_id}</td>
-                <td>{row.sale_date}</td>
-                <td>{row.staff}</td>
-                <td>{row.items}</td>
-                <td>{row.quantity}</td>
-                <td>{formatCurrency(row.total_amount)}</td>
+                <td data-label="Transaction ID">{row.transaction_id}</td>
+                <td data-label="Date">{row.sale_date}</td>
+                <td data-label="Staff">{row.staff}</td>
+                <td data-label="Items">{row.items}</td>
+                <td data-label="Quantity">{row.quantity}</td>
+                <td data-label="Total">{formatCurrency(row.total_amount)}</td>
               </tr>
             ))}
           </tbody>
@@ -156,12 +156,12 @@ function Reports({ token, role, vendorId, initialMode }) {
           <tbody>
             {data.map((row, idx) => (
               <tr key={`${row.product}-${idx}`}>
-                <td>{row.product}</td>
-                <td>{row.stock_in}</td>
-                <td>{row.stock_out}</td>
-                <td>{row.current_stock}</td>
-                <td>{row.minimum_stock}</td>
-                <td>{row.stock_status}</td>
+                <td data-label="Product">{row.product}</td>
+                <td data-label="Stock-in">{row.stock_in}</td>
+                <td data-label="Stock-out">{row.stock_out}</td>
+                <td data-label="Current stock">{row.current_stock}</td>
+                <td data-label="Minimum stock">{row.minimum_stock}</td>
+                <td data-label="Status">{row.stock_status}</td>
               </tr>
             ))}
           </tbody>
@@ -183,11 +183,11 @@ function Reports({ token, role, vendorId, initialMode }) {
         <tbody>
           {data.map((row, idx) => (
             <tr key={`${row.vendor}-${idx}`}>
-              <td>{row.vendor}</td>
-              <td>{row.delivery_date}</td>
-              <td>{row.products}</td>
-              <td>{row.quantity}</td>
-              <td>{formatCurrency(row.amount)}</td>
+              <td data-label="Vendor">{row.vendor}</td>
+              <td data-label="Delivery date">{row.delivery_date}</td>
+              <td data-label="Products">{row.products}</td>
+              <td data-label="Quantity">{row.quantity}</td>
+              <td data-label="Amount">{formatCurrency(row.amount)}</td>
             </tr>
           ))}
         </tbody>
@@ -293,7 +293,7 @@ function Reports({ token, role, vendorId, initialMode }) {
         .reports-preview-card td { color:#3e5170; font-size:.88rem; }
         .reports-empty { align-items:center; color:#71819d; display:flex; flex-direction:column; gap:.25rem; padding:3rem 1rem; text-align:center; }
         .reports-empty strong { color:#344b70; }
-        @media (max-width:700px) { .reports-page { padding:1rem; } .reports-hero,.reports-export-row { align-items:stretch; flex-direction:column; } .reports-summary { border-left:0; border-top:1px solid #d6e2f1; padding-left:0; padding-top:.8rem; text-align:left; } .reports-type-grid { grid-template-columns:1fr; } .reports-export-button { justify-content:center; width:100%; } }
+        @media (max-width:700px) { .reports-page { padding:.75rem 0; } .reports-hero,.reports-export-row,.reports-section-heading,.reports-preview-heading { align-items:stretch; flex-direction:column; } .reports-summary { border-left:0; border-top:1px solid #d6e2f1; padding-left:0; padding-top:.8rem; text-align:left; } .reports-type-grid,.reports-date-fields { grid-template-columns:1fr; display:grid; } .reports-export-button { justify-content:center; width:100%; } .reports-table-scroll { overflow:visible; } .reports-preview-card table { display:block; min-width:0; width:100%; } .reports-preview-card thead { display:none; } .reports-preview-card tbody,.reports-preview-card tr,.reports-preview-card td { display:block; width:100%; } .reports-preview-card tr { background:#fff; border:1px solid #dce7f5; border-radius:8px; box-shadow:0 5px 14px rgba(38,75,122,.05); margin:0 0 .7rem; padding:.55rem; } .reports-preview-card td { border:0; display:grid; gap:.35rem; grid-template-columns:minmax(92px,34%) minmax(0,1fr); padding:.48rem .55rem; overflow-wrap:anywhere; } .reports-preview-card td::before { color:#6b7e9d; content:attr(data-label); font-size:.68rem; font-weight:800; letter-spacing:.05em; text-transform:uppercase; } }
       `}</style>
     </div>
   );

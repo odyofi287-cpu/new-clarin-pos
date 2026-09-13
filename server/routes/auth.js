@@ -9,6 +9,7 @@ try {
 }
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
+import { dbGet } from "./dbCompat.js";
 
 dotenv.config();
 
@@ -20,16 +21,19 @@ if (process.env.NODE_ENV === "production" && (!JWT_SECRET || JWT_SECRET === "cha
 }
 const JWT_EXPIRATION = "8h";
 
-router.post("/login", (req, res) => {
+router.post("/login", async (req, res) => {
   const { email, username, password } = req.body;
   const identity = String(email || username || "").trim().toLowerCase();
   if (!identity || !password) {
     return res.status(400).json({ error: "Username or email and password are required" });
   }
 
-  const user = req.db.prepare(
+  const user = await dbGet(
+    req.db,
+    "SELECT u.id, u.email, u.password, u.name, u.role_id, u.vendor_id, r.name AS role FROM users u JOIN roles r ON u.role_id = r.id WHERE (lower(u.email) = $1 OR lower(u.username) = $1) AND u.active = 1",
+    [identity],
     "SELECT u.id, u.email, u.password, u.name, u.role_id, u.vendor_id, r.name AS role FROM users u JOIN roles r ON u.role_id = r.id WHERE (lower(u.email) = ? OR lower(u.username) = ?) AND u.active = 1"
-  ).get(identity, identity);
+  );
 
   let valid = false;
   if (bcrypt && user && typeof user.password === 'string' && user.password.startsWith('$2')) {

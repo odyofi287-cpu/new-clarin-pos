@@ -1,10 +1,11 @@
 import express from "express";
 import { requireRole } from "../middleware/auth.js";
 import { publishDataChange } from "../events.js";
+import { dbAll, dbGet, dbRun } from "./dbCompat.js";
 
 const router = express.Router();
 
-router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), (req, res) => {
+router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     let sql = `
       SELECT vr.id, vr.vendor_id, v.name AS vendor_name, vr.product_id, p.name AS product_name,
@@ -16,12 +17,20 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), (req, res
     const params = [];
 
     if (req.user.role === "VENDOR") {
-      sql += " WHERE vr.vendor_id = ?";
+      sql += ` WHERE vr.vendor_id = $${params.length + 1}`;
       params.push(req.user.vendor_id);
     }
 
     sql += " ORDER BY vr.return_date DESC, vr.return_time DESC";
-    const rows = req.db.prepare(sql).all(...params);
+    const rows = await dbAll(req.db, sql, params, `
+      SELECT vr.id, vr.vendor_id, v.name AS vendor_name, vr.product_id, p.name AS product_name,
+             vr.return_date, vr.return_time, vr.quantity, vr.total_product_price_returned
+      FROM vendor_returns vr
+      JOIN vendors v ON v.id = vr.vendor_id
+      JOIN products p ON p.id = vr.product_id
+      ${req.user.role === "VENDOR" ? "WHERE vr.vendor_id = ?" : ""}
+      ORDER BY vr.return_date DESC, vr.return_time DESC
+    `);
     res.json({ data: rows });
   } catch (error) {
     console.error(error);
@@ -29,7 +38,7 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), (req, res
   }
 });
 
-router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), (req, res) => {
+router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     const {
       vendor_id,
@@ -58,7 +67,7 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), (req, re
       return res.status(400).json({ error: "Return total must be a valid non-negative value" });
     }
 
-    const vendor = req.db.prepare("SELECT id, name FROM vendors WHERE id = ?").get(vendorId);
+    const vendor = await dbGet(req.db, "SELECT id, name FROM vendors WHERE id = $1", [vendorId], "SELECT id, name FROM vendors WHERE id = ?");
     if (!vendor) {
       return res.status(404).json({ error: "Vendor not found" });
     }
@@ -66,24 +75,36 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), (req, re
       return res.status(403).json({ error: "You can only record returns for your own vendor profile" });
     }
 
-    const product = req.db.prepare("SELECT id, name FROM products WHERE id = ?").get(productId);
+    const product = await dbGet(req.db, "SELECT id, name FROM products WHERE id = $1", [productId], "SELECT id, name FROM products WHERE id = ?");
     if (!product) {
       return res.status(404).json({ error: "Product not found" });
     }
 
-    const result = req.db.prepare(
+    const result = await dbRun(
+      req.db,
+      `INSERT INTO vendor_returns (vendor_id, product_id, quantity, total_product_price_returned, return_date, return_time, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+      [vendorId, productId, qty, totalPrice, return_date, return_time, req.user.user_id || req.user.id],
       `INSERT INTO vendor_returns (vendor_id, product_id, quantity, total_product_price_returned, return_date, return_time, created_by)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).run(vendorId, productId, qty, totalPrice, return_date, return_time, req.user.user_id || req.user.id);
+    );
 
-    const row = req.db.prepare(
+    const row = await dbGet(
+      req.db,
+      `SELECT vr.id, vr.vendor_id, v.name AS vendor_name, vr.product_id, p.name AS product_name,
+              vr.return_date, vr.return_time, vr.quantity, vr.total_product_price_returned
+       FROM vendor_returns vr
+       JOIN vendors v ON v.id = vr.vendor_id
+       JOIN products p ON p.id = vr.product_id
+       WHERE vr.id = $1`,
+      [result.lastInsertRowid],
       `SELECT vr.id, vr.vendor_id, v.name AS vendor_name, vr.product_id, p.name AS product_name,
               vr.return_date, vr.return_time, vr.quantity, vr.total_product_price_returned
        FROM vendor_returns vr
        JOIN vendors v ON v.id = vr.vendor_id
        JOIN products p ON p.id = vr.product_id
        WHERE vr.id = ?`
-    ).get(result.lastInsertRowid);
+    );
 
     publishDataChange("vendor-return");
     res.status(201).json({ data: row });
@@ -93,10 +114,10 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), (req, re
   }
 });
 
-router.delete("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), (req, res) => {
+router.delete("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const existing = req.db.prepare("SELECT id, vendor_id FROM vendor_returns WHERE id = ?").get(id);
+    const existing = await dbGet(req.db, "SELECT id, vendor_id FROM vendor_returns WHERE id = $1", [id], "SELECT id, vendor_id FROM vendor_returns WHERE id = ?");
     if (!existing) {
       return res.status(404).json({ error: "Vendor return not found" });
     }
@@ -104,7 +125,7 @@ router.delete("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), (re
       return res.status(403).json({ error: "You can only remove your own vendor returns" });
     }
 
-    req.db.prepare("DELETE FROM vendor_returns WHERE id = ?").run(id);
+    await dbRun(req.db, "DELETE FROM vendor_returns WHERE id = $1 RETURNING id", [id], "DELETE FROM vendor_returns WHERE id = ?");
 
     publishDataChange("vendor-return");
     res.json({ data: { deleted: true, id } });

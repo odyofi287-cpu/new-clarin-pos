@@ -1,14 +1,11 @@
 import express from "express";
 import { requireRole } from "../middleware/auth.js";
+import { dbAll, isInMemoryDb } from "./dbCompat.js";
 
 const router = express.Router();
 
 function getTodayString() {
   return new Date().toISOString().split("T")[0];
-}
-
-function isInMemoryDb(db) {
-  return db && Array.isArray(db.sales) && Array.isArray(db.sale_items);
 }
 
 function dateRange(req) {
@@ -40,7 +37,7 @@ function toCsv(rows, headers) {
   return lines.join("\n");
 }
 
-router.get("/sales", requireRole("SUPERADMIN", "ADMIN", "STAFF"), (req, res) => {
+router.get("/sales", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
   try {
     const { start, end } = dateRange(req);
     if (isInMemoryDb(req.db)) {
@@ -71,7 +68,20 @@ router.get("/sales", requireRole("SUPERADMIN", "ADMIN", "STAFF"), (req, res) => 
       return res.json({ data: sales });
     }
 
-    const rows = req.db.prepare(
+    const rows = await dbAll(
+      req.db,
+      `SELECT s.id AS transaction_id, s.sale_date, u.name AS staff,
+        COALESCE(STRING_AGG(p.name || ' (' || si.quantity::text || ')', ', ' ORDER BY p.name), '') AS items,
+        COALESCE(SUM(si.quantity), 0) AS quantity,
+        s.total_amount
+      FROM sales s
+      LEFT JOIN sale_items si ON si.sale_id = s.id
+      LEFT JOIN products p ON p.id = si.product_id
+      JOIN users u ON u.id = s.user_id
+      WHERE s.sale_date BETWEEN $1 AND $2
+      GROUP BY s.id, s.sale_date, u.name, s.total_amount
+      ORDER BY s.sale_date DESC`,
+      [start, end],
       `SELECT s.id AS transaction_id, s.sale_date, u.name AS staff,
         GROUP_CONCAT(p.name || ' (' || si.quantity || ')', ', ') AS items,
         COALESCE(SUM(si.quantity), 0) AS quantity,
@@ -83,7 +93,7 @@ router.get("/sales", requireRole("SUPERADMIN", "ADMIN", "STAFF"), (req, res) => 
       WHERE s.sale_date BETWEEN ? AND ?
       GROUP BY s.id
       ORDER BY s.sale_date DESC`
-    ).all(start, end);
+    );
 
     res.json({ data: rows });
   } catch (error) {
@@ -92,7 +102,7 @@ router.get("/sales", requireRole("SUPERADMIN", "ADMIN", "STAFF"), (req, res) => 
   }
 });
 
-router.get("/sales/csv", requireRole("SUPERADMIN", "ADMIN", "STAFF"), (req, res) => {
+router.get("/sales/csv", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
   try {
     const { start, end } = dateRange(req);
     let rows;
@@ -113,8 +123,21 @@ router.get("/sales/csv", requireRole("SUPERADMIN", "ADMIN", "STAFF"), (req, res)
           };
         });
     } else {
-      rows = req.db.prepare(
+      rows = await dbAll(
+        req.db,
           `SELECT s.id AS transaction_id, s.sale_date, u.name AS staff,
+            COALESCE(STRING_AGG(p.name || ' (' || si.quantity::text || ')', ', ' ORDER BY p.name), '') AS items,
+            COALESCE(SUM(si.quantity), 0) AS quantity,
+            s.total_amount
+          FROM sales s
+          LEFT JOIN sale_items si ON si.sale_id = s.id
+          LEFT JOIN products p ON p.id = si.product_id
+          JOIN users u ON u.id = s.user_id
+          WHERE s.sale_date BETWEEN $1 AND $2
+          GROUP BY s.id, s.sale_date, u.name, s.total_amount
+          ORDER BY s.sale_date DESC`,
+        [start, end],
+        `SELECT s.id AS transaction_id, s.sale_date, u.name AS staff,
             GROUP_CONCAT(p.name || ' (' || si.quantity || ')', ', ') AS items,
             COALESCE(SUM(si.quantity), 0) AS quantity,
             s.total_amount
@@ -125,7 +148,7 @@ router.get("/sales/csv", requireRole("SUPERADMIN", "ADMIN", "STAFF"), (req, res)
           WHERE s.sale_date BETWEEN ? AND ?
           GROUP BY s.id
           ORDER BY s.sale_date DESC`
-        ).all(start, end)
+      )
     }
 
     const csv = toCsv(rows, [
@@ -146,7 +169,7 @@ router.get("/sales/csv", requireRole("SUPERADMIN", "ADMIN", "STAFF"), (req, res)
   }
 });
 
-router.get("/inventory", requireRole("SUPERADMIN", "ADMIN", "STAFF"), (req, res) => {
+router.get("/inventory", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
   try {
     const { start, end } = dateRange(req);
     if (isInMemoryDb(req.db)) {
@@ -174,7 +197,19 @@ router.get("/inventory", requireRole("SUPERADMIN", "ADMIN", "STAFF"), (req, res)
       return res.json({ data: rows });
     }
 
-    const rows = req.db.prepare(
+    const rows = await dbAll(
+      req.db,
+      `SELECT p.name AS product, 
+        COALESCE(SUM(CASE WHEN im.movement_type = 'STOCK_IN' THEN im.quantity ELSE 0 END), 0) AS stock_in,
+        COALESCE(SUM(CASE WHEN im.movement_type = 'STOCK_OUT' THEN im.quantity ELSE 0 END), 0) AS stock_out,
+        p.current_stock,
+        p.minimum_stock
+      FROM products p
+      LEFT JOIN inventory_movements im ON im.product_id = p.id AND DATE(im.created_at) BETWEEN $1 AND $2
+      WHERE p.active = 1
+      GROUP BY p.id, p.name, p.current_stock, p.minimum_stock
+      ORDER BY p.name ASC`,
+      [start, end],
       `SELECT p.name AS product, 
         COALESCE(SUM(CASE WHEN im.movement_type = 'STOCK_IN' THEN im.quantity ELSE 0 END), 0) AS stock_in,
         COALESCE(SUM(CASE WHEN im.movement_type = 'STOCK_OUT' THEN im.quantity ELSE 0 END), 0) AS stock_out,
@@ -185,7 +220,7 @@ router.get("/inventory", requireRole("SUPERADMIN", "ADMIN", "STAFF"), (req, res)
       WHERE p.active = 1
       GROUP BY p.id
       ORDER BY p.name ASC`
-    ).all(start, end);
+    );
 
     const formatted = rows.map((row) => ({
       ...row,
@@ -198,7 +233,7 @@ router.get("/inventory", requireRole("SUPERADMIN", "ADMIN", "STAFF"), (req, res)
   }
 });
 
-router.get("/inventory/csv", requireRole("SUPERADMIN", "ADMIN", "STAFF"), (req, res) => {
+router.get("/inventory/csv", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
   try {
     const { start, end } = dateRange(req);
     let rows;
@@ -222,8 +257,20 @@ router.get("/inventory/csv", requireRole("SUPERADMIN", "ADMIN", "STAFF"), (req, 
         })
         .sort((a, b) => a.product.localeCompare(b.product));
     } else {
-      rows = req.db.prepare(
+      rows = await dbAll(
+        req.db,
           `SELECT p.name AS product, 
+            COALESCE(SUM(CASE WHEN im.movement_type = 'STOCK_IN' THEN im.quantity ELSE 0 END), 0) AS stock_in,
+            COALESCE(SUM(CASE WHEN im.movement_type = 'STOCK_OUT' THEN im.quantity ELSE 0 END), 0) AS stock_out,
+            p.current_stock,
+            p.minimum_stock
+          FROM products p
+          LEFT JOIN inventory_movements im ON im.product_id = p.id AND DATE(im.created_at) BETWEEN $1 AND $2
+          WHERE p.active = 1
+          GROUP BY p.id, p.name, p.current_stock, p.minimum_stock
+          ORDER BY p.name ASC`,
+        [start, end],
+        `SELECT p.name AS product, 
             COALESCE(SUM(CASE WHEN im.movement_type = 'STOCK_IN' THEN im.quantity ELSE 0 END), 0) AS stock_in,
             COALESCE(SUM(CASE WHEN im.movement_type = 'STOCK_OUT' THEN im.quantity ELSE 0 END), 0) AS stock_out,
             p.current_stock,
@@ -233,7 +280,7 @@ router.get("/inventory/csv", requireRole("SUPERADMIN", "ADMIN", "STAFF"), (req, 
           WHERE p.active = 1
           GROUP BY p.id
           ORDER BY p.name ASC`
-        ).all(start, end)
+      )
     }
 
     const formatted = rows.map((row) => ({
@@ -259,7 +306,7 @@ router.get("/inventory/csv", requireRole("SUPERADMIN", "ADMIN", "STAFF"), (req, 
   }
 });
 
-router.get("/vendor-deliveries", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), (req, res) => {
+router.get("/vendor-deliveries", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     const { start, end } = dateRange(req);
     if (isInMemoryDb(req.db)) {
@@ -293,20 +340,28 @@ router.get("/vendor-deliveries", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VE
       return res.json({ data: rows });
     }
 
-    let sql = `SELECT v.name AS vendor, d.delivery_date, COALESCE(GROUP_CONCAT(p.name || ' (' || di.quantity || ')', ', '), '') AS products, COALESCE(SUM(di.quantity), 0) AS quantity, d.total_amount AS amount
+    let sql = `SELECT v.name AS vendor, d.delivery_date, COALESCE(STRING_AGG(p.name || ' (' || di.quantity::text || ')', ', ' ORDER BY p.name), '') AS products, COALESCE(SUM(di.quantity), 0) AS quantity, d.total_amount AS amount
       FROM deliveries d
       JOIN vendors v ON v.id = d.vendor_id
       LEFT JOIN delivery_items di ON di.delivery_id = d.id
       LEFT JOIN products p ON p.id = di.product_id
-      WHERE d.delivery_date BETWEEN ? AND ?`;
+      WHERE d.delivery_date BETWEEN $1 AND $2`;
     const params = [start, end];
     if (req.user.role === "VENDOR") {
-      sql += " AND d.vendor_id = ?";
+      sql += ` AND d.vendor_id = $${params.length + 1}`;
       params.push(req.user.vendor_id);
     }
-    sql += " GROUP BY d.id ORDER BY d.delivery_date DESC";
+    sql += " GROUP BY d.id, v.name, d.delivery_date, d.total_amount ORDER BY d.delivery_date DESC";
 
-    const rows = req.db.prepare(sql).all(...params);
+    const sqliteSql = `SELECT v.name AS vendor, d.delivery_date, COALESCE(GROUP_CONCAT(p.name || ' (' || di.quantity || ')', ', '), '') AS products, COALESCE(SUM(di.quantity), 0) AS quantity, d.total_amount AS amount
+      FROM deliveries d
+      JOIN vendors v ON v.id = d.vendor_id
+      LEFT JOIN delivery_items di ON di.delivery_id = d.id
+      LEFT JOIN products p ON p.id = di.product_id
+      WHERE d.delivery_date BETWEEN ? AND ?${req.user.role === "VENDOR" ? " AND d.vendor_id = ?" : ""}
+      GROUP BY d.id ORDER BY d.delivery_date DESC`;
+
+    const rows = await dbAll(req.db, sql, params, sqliteSql);
     res.json({ data: rows });
   } catch (error) {
     console.error(error);
@@ -314,7 +369,7 @@ router.get("/vendor-deliveries", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VE
   }
 });
 
-router.get("/vendor-deliveries/csv", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), (req, res) => {
+router.get("/vendor-deliveries/csv", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     const { start, end } = dateRange(req);
     let rows;
@@ -336,18 +391,24 @@ router.get("/vendor-deliveries/csv", requireRole("SUPERADMIN", "ADMIN", "STAFF",
         });
     } else {
       const params = [start, end];
-      let sql = `SELECT v.name AS vendor, d.delivery_date, COALESCE(GROUP_CONCAT(p.name || ' (' || di.quantity || ')', ', '), '') AS products, COALESCE(SUM(di.quantity), 0) AS quantity, d.total_amount AS amount
+      let sql = `SELECT v.name AS vendor, d.delivery_date, COALESCE(STRING_AGG(p.name || ' (' || di.quantity::text || ')', ', ' ORDER BY p.name), '') AS products, COALESCE(SUM(di.quantity), 0) AS quantity, d.total_amount AS amount
       FROM deliveries d
       JOIN vendors v ON v.id = d.vendor_id
       LEFT JOIN delivery_items di ON di.delivery_id = d.id
       LEFT JOIN products p ON p.id = di.product_id
-      WHERE d.delivery_date BETWEEN ? AND ?`;
+      WHERE d.delivery_date BETWEEN $1 AND $2`;
     if (req.user.role === "VENDOR") {
-      sql += " AND d.vendor_id = ?";
+      sql += ` AND d.vendor_id = $${params.length + 1}`;
       params.push(req.user.vendor_id);
     }
-    sql += " GROUP BY d.id ORDER BY d.delivery_date DESC";
-      rows = req.db.prepare(sql).all(...params);
+    sql += " GROUP BY d.id, v.name, d.delivery_date, d.total_amount ORDER BY d.delivery_date DESC";
+      rows = await dbAll(req.db, sql, params, `SELECT v.name AS vendor, d.delivery_date, COALESCE(GROUP_CONCAT(p.name || ' (' || di.quantity || ')', ', '), '') AS products, COALESCE(SUM(di.quantity), 0) AS quantity, d.total_amount AS amount
+      FROM deliveries d
+      JOIN vendors v ON v.id = d.vendor_id
+      LEFT JOIN delivery_items di ON di.delivery_id = d.id
+      LEFT JOIN products p ON p.id = di.product_id
+      WHERE d.delivery_date BETWEEN ? AND ?${req.user.role === "VENDOR" ? " AND d.vendor_id = ?" : ""}
+      GROUP BY d.id ORDER BY d.delivery_date DESC`);
     }
     const csv = toCsv(rows, [
       { label: "Vendor", key: "vendor" },
