@@ -251,7 +251,6 @@ function App() {
             <div>
               <span className="app-header-kicker">New Clarin Sports Arena</span>
               <h1>Sports Arena <em>POS</em></h1>
-              <p>Backend status: {status}</p>
             </div>
           </div>
         </header>
@@ -298,7 +297,6 @@ function App() {
                   </article>
                 </div>
 
-                <p className="login-hero-footer">© 2026 New Clarin Sports Arena POS. All rights reserved.</p>
               </div>
             </div>
 
@@ -372,10 +370,6 @@ function App() {
                   {error && <p className="error-message">{error}</p>}
                 </form>
 
-                <div className="login-card-footnote">
-                  <span>Secure login</span>
-                  <span className="backend-pill">Backend: {status}</span>
-                </div>
               </section>
             </div>
           </section>
@@ -447,7 +441,6 @@ function App() {
                   <div className="sidebar-account-avatar" aria-hidden="true">{accountName.slice(0, 1)}</div>
                   <div className="sidebar-account-copy">
                     <strong>{accountName}</strong>
-                    <span className="sidebar-online-dot">Online</span>
                   </div>
                 </div>
                 <button className="sidebar-logout-row" onClick={logout}>
@@ -472,7 +465,6 @@ function App() {
                 <div className="workspace-meta">
                   <span className="workspace-status workspace-status-date">{dateLabel}</span>
                   <span className="workspace-status workspace-status-time">{timeLabel}</span>
-                  <span className="workspace-status workspace-status-backend">{status}</span>
                 </div>
               </header>
 

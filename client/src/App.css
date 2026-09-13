@@ -2769,6 +2769,417 @@ button[disabled] {
   }
 }
 
+/* Shared workspace visual language */
+.workspace-content {
+  color: #25345b;
+}
+
+.workspace-content .dashboard-shell,
+.workspace-content .account-management,
+.workspace-content .reports-page {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.workspace-content .dashboard-card,
+.workspace-content .pos-panel,
+.workspace-content .account-table-wrap,
+.workspace-content .management-table-wrap,
+.workspace-content .account-management .account-table-wrap {
+  background: #ffffff;
+  border: 1px solid #dce7f5;
+  border-radius: 10px;
+  box-shadow: 0 10px 24px rgba(38, 75, 122, 0.06);
+}
+
+.workspace-content .dashboard-card,
+.workspace-content .pos-panel {
+  padding: 1.35rem 1.5rem;
+}
+
+.workspace-content .dashboard-card::before,
+.workspace-content .pos-panel::before {
+  background: linear-gradient(90deg, #327bd0, rgba(50, 123, 208, 0.08));
+}
+
+.workspace-content .management-hero {
+  background: linear-gradient(120deg, #f2f8ff, #ffffff 68%);
+  border: 1px solid #dce7f5;
+  border-radius: 10px;
+  box-shadow: 0 10px 24px rgba(38, 75, 122, 0.06);
+  color: #25345b;
+}
+
+.workspace-content .management-hero::after {
+  border-color: rgba(50, 123, 208, 0.12);
+  box-shadow: 0 0 0 24px rgba(50, 123, 208, 0.04), 0 0 0 48px rgba(50, 123, 208, 0.025);
+}
+
+.workspace-content .management-kicker,
+.workspace-content .pos-header .muted-text,
+.workspace-content .management-hero p {
+  color: #657a9c;
+}
+
+.workspace-content .management-hero h2,
+.workspace-content .pos-header h2,
+.workspace-content .dashboard-card h2,
+.workspace-content .dashboard-card h3,
+.workspace-content .dashboard-card h4 {
+  color: #1e3564;
+  letter-spacing: 0;
+}
+
+.workspace-content .management-count strong {
+  color: #2268bd;
+}
+
+.workspace-content .metric-card {
+  border: 1px solid #dce7f5;
+  border-radius: 10px;
+  box-shadow: 0 8px 20px rgba(38, 75, 122, 0.06);
+}
+
+.workspace-content .metric-card .small-button,
+.workspace-content .primary-button,
+.workspace-content .account-primary {
+  border-radius: 7px;
+  box-shadow: 0 7px 14px rgba(36, 116, 201, 0.14);
+}
+
+.workspace-content .primary-button,
+.workspace-content .account-primary {
+  background: #2474c9;
+}
+
+.workspace-content .small-button {
+  background: #f1f6fc;
+  border: 1px solid #cddceb;
+  border-radius: 7px;
+  box-shadow: none;
+  color: #315b88;
+}
+
+.workspace-content .small-button:hover {
+  background: #e7f1fb;
+  box-shadow: none;
+}
+
+.workspace-content table th {
+  background: #f7f9fc;
+  color: #647692;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.workspace-content table th,
+.workspace-content table td {
+  border-bottom-color: #edf1f6;
+  padding: 0.8rem 0.75rem;
+}
+
+.workspace-content .inventory-card {
+  border: 1px solid #dce7f5;
+  border-radius: 10px;
+  box-shadow: 0 10px 24px rgba(38, 75, 122, 0.06);
+}
+
+.workspace-content .inventory-card-image-wrap {
+  background: linear-gradient(145deg, #eff5ff, #f7faff);
+}
+
+.workspace-content .pos-item {
+  background: #f8fafc;
+  border: 1px solid #dce7f5;
+  border-radius: 8px;
+  color: #334d73;
+}
+
+.workspace-content .pos-item:hover {
+  background: #f1f7fd;
+  box-shadow: 0 8px 18px rgba(38, 75, 122, 0.08);
+}
+
+.workspace-content .account-management-header {
+  background: linear-gradient(120deg, #f2f8ff, #ffffff 68%);
+  border: 1px solid #dce7f5;
+  border-radius: 10px;
+  padding: 1.35rem 1.5rem;
+}
+
+.workspace-content .account-management-header p,
+.workspace-content .account-modal header p {
+  color: #3272bf;
+}
+
+@media (max-width: 640px) {
+  .workspace-content .dashboard-shell,
+  .workspace-content .account-management,
+  .workspace-content .reports-page {
+    gap: 0.85rem;
+    padding: 0.25rem 0;
+    width: 100%;
+  }
+
+  .workspace-content .dashboard-card,
+  .workspace-content .pos-panel,
+  .workspace-content .account-table-wrap,
+  .workspace-content .management-table-wrap {
+    border-radius: 8px;
+    padding: 1rem;
+  }
+
+  .workspace-content .dashboard-grid,
+  .workspace-content .dashboard-metric-grid,
+  .workspace-content .inventory-grid {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .workspace-content .metric-card {
+    border-radius: 8px;
+    min-height: 0;
+    padding: 1rem;
+  }
+
+  .workspace-content .metric-card strong {
+    font-size: 1.35rem;
+  }
+
+  .workspace-content .management-hero,
+  .workspace-content .account-management-header,
+  .workspace-content .pos-header {
+    align-items: stretch;
+    border-radius: 8px;
+    gap: 0.85rem;
+    padding: 1rem;
+  }
+
+  .workspace-content .management-count {
+    align-self: flex-start;
+    min-width: 0;
+  }
+
+  .workspace-content .management-toolbar,
+  .workspace-content .pos-header > div:last-child,
+  .workspace-content .account-management-header > button {
+    width: 100%;
+  }
+
+  .workspace-content .pos-header > div:last-child,
+  .workspace-content .account-actions {
+    display: grid;
+    gap: 0.55rem;
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-content .pos-header button,
+  .workspace-content .account-management-header button,
+  .workspace-content .account-actions button,
+  .workspace-content .metric-card .small-button {
+    min-height: 40px;
+    width: 100%;
+  }
+
+  .workspace-content .inventory-card {
+    border-radius: 8px;
+  }
+
+  .workspace-content .inventory-card-image-wrap {
+    min-height: 130px;
+  }
+
+  .workspace-content tr {
+    background: #ffffff;
+    border: 1px solid #dce7f5;
+    border-radius: 8px;
+    box-shadow: 0 6px 14px rgba(38, 75, 122, 0.04);
+    margin-bottom: 0.75rem;
+    padding: 0.7rem;
+  }
+
+  .workspace-content td {
+    padding: 0.55rem 0.65rem;
+  }
+
+  .workspace-content td::before {
+    color: #6b7e9d;
+    font-size: 0.68rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .workspace-content .reports-hero,
+  .workspace-content .reports-control-card,
+  .workspace-content .reports-preview-card {
+    border-radius: 8px;
+    padding: 1rem;
+  }
+
+  .workspace-content .reports-summary,
+  .workspace-content .reports-range-badge {
+    align-self: flex-start;
+  }
+
+  .workspace-content .reports-section-heading,
+  .workspace-content .reports-preview-heading,
+  .workspace-content .reports-export-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .workspace-content .reports-type-grid,
+  .workspace-content .reports-date-fields {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .workspace-content .reports-date-fields > .reports-section-label {
+    margin-right: 0;
+  }
+
+  .workspace-content .reports-date-fields input,
+  .workspace-content .reports-export-button {
+    min-height: 42px;
+    width: 100%;
+  }
+
+  .workspace-content .reports-export-button {
+    justify-content: center;
+  }
+}
+
+/* Final polish for the authenticated workspace */
+.app-shell-auth {
+  background: #eef3f9;
+}
+
+.workspace-shell {
+  gap: 1rem;
+}
+
+.sidebar-shell {
+  background: linear-gradient(180deg, #102c55 0%, #0b2142 100%);
+  border: 1px solid rgba(125, 178, 255, 0.2);
+  border-radius: 16px;
+  box-shadow: 0 18px 42px rgba(14, 42, 82, 0.2);
+  padding: 1rem;
+}
+
+.sidebar-shell::before {
+  background: linear-gradient(145deg, rgba(91, 164, 255, 0.12), transparent 42%, rgba(255, 255, 255, 0.03));
+}
+
+.sidebar-logo {
+  background: linear-gradient(145deg, #3d8df2, #1d5fb9);
+  border-radius: 12px;
+  box-shadow: 0 9px 20px rgba(8, 49, 112, 0.3);
+}
+
+.sidebar-brand span,
+.sidebar-nav-copy small {
+  color: rgba(220, 234, 252, 0.72);
+}
+
+.sidebar-nav-item {
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  box-shadow: none;
+  padding: 0.75rem 0.8rem;
+}
+
+.sidebar-nav-item:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(125, 178, 255, 0.3);
+  box-shadow: none;
+}
+
+.sidebar-nav-item.active {
+  background: #2f7aed;
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 18px rgba(10, 73, 169, 0.3);
+}
+
+.sidebar-nav-icon {
+  border-radius: 8px;
+}
+
+.workspace-content {
+  min-width: 0;
+}
+
+.workspace-header {
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid #dce7f5;
+  border-radius: 12px;
+  box-shadow: 0 8px 22px rgba(38, 75, 122, 0.05);
+  margin-bottom: 0.25rem;
+  padding: 0.85rem 1.1rem;
+}
+
+.workspace-header h2 {
+  color: #1e3564;
+  font-size: clamp(1.15rem, 2vw, 1.45rem);
+  letter-spacing: 0;
+}
+
+.workspace-meta {
+  color: #61728f;
+  gap: 0.4rem;
+}
+
+.workspace-status {
+  background: #f1f6fc;
+  border: 1px solid #d8e4f1;
+  border-radius: 6px;
+  color: #5a7192;
+  font-size: 0.75rem;
+  padding: 0.42rem 0.6rem;
+}
+
+.workspace-content button:not(.sidebar-nav-item):not(.workspace-menu-button):not(.sidebar-collapse-button) {
+  border-radius: 7px;
+  letter-spacing: 0;
+}
+
+.workspace-content input,
+.workspace-content select,
+.workspace-content textarea {
+  border-color: #cfdae8;
+  border-radius: 6px;
+}
+
+.workspace-content input:focus,
+.workspace-content select:focus,
+.workspace-content textarea:focus {
+  border-color: #327bd0;
+  box-shadow: 0 0 0 3px rgba(50, 123, 208, 0.12);
+  outline: none;
+}
+
+@media (max-width: 640px) {
+  .app-shell {
+    padding: 0.7rem;
+  }
+
+  .workspace-header {
+    border-radius: 9px;
+    padding: 0.75rem;
+  }
+
+  .workspace-meta {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .workspace-status {
+    flex: 1 1 auto;
+    text-align: center;
+  }
+}
+
 @media print {
   body {
     background: white;

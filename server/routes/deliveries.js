@@ -41,7 +41,7 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), (req, res
 
     const whereClause = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
     const deliveries = req.db.prepare(
-      `SELECT d.id, d.vendor_id, v.name AS vendor_name, d.delivery_date, d.total_amount, d.created_at
+      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.total_amount, d.created_at
        FROM deliveries d
        JOIN vendors v ON d.vendor_id = v.id
        ${whereClause}`
@@ -65,7 +65,7 @@ router.get("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), (req, 
     }
 
     const delivery = req.db.prepare(
-      `SELECT d.id, d.vendor_id, v.name AS vendor_name, d.delivery_date, d.total_amount, d.created_at
+      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.total_amount, d.created_at
        FROM deliveries d
        JOIN vendors v ON d.vendor_id = v.id
        WHERE d.id = ? ${vendorFilter}`
@@ -244,7 +244,7 @@ router.put("/:id", requireRole("SUPERADMIN"), (req, res) => {
     });
 
     const updatedDelivery = req.db.prepare(
-      `SELECT d.id, d.vendor_id, v.name AS vendor_name, d.delivery_date, d.total_amount, d.created_at
+      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.total_amount, d.created_at
        FROM deliveries d
        JOIN vendors v ON d.vendor_id = v.id
        WHERE d.id = ?`

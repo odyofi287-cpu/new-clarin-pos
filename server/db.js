@@ -17,6 +17,7 @@ function parseBooleanEnv(value, defaultValue) {
 
 function shouldSeedInitialData() {
   // Optional hardening flag for public deployments.
+  if (process.env.NODE_ENV === "test") return true;
   return parseBooleanEnv(process.env.SEED_INITIAL_DATA, true);
 }
 
@@ -296,7 +297,11 @@ class InMemoryDB {
     if (normalized.includes("FROM DELIVERIES")) {
       return {
         all: (...params) => {
-          let rows = this.deliveries.map((d) => ({ ...d }));
+          let rows = this.deliveries.map((d) => ({
+            ...d,
+            vendor_code: this.vendors.find((vendor) => vendor.id === d.vendor_id)?.vendor_code || null,
+            vendor_name: this.vendors.find((vendor) => vendor.id === d.vendor_id)?.name || "Unknown",
+          }));
           const vendorId = params[0];
           let paramIndex = 0;
           if (normalized.includes("D.VENDOR_ID = ?")) {
@@ -317,7 +322,11 @@ class InMemoryDB {
             const vendorId = params[1];
             if (delivery.vendor_id !== vendorId) return undefined;
           }
-          return delivery;
+          return {
+            ...delivery,
+            vendor_code: this.vendors.find((vendor) => vendor.id === delivery.vendor_id)?.vendor_code || null,
+            vendor_name: this.vendors.find((vendor) => vendor.id === delivery.vendor_id)?.name || "Unknown",
+          };
         },
         run: (vendor_id, delivery_date, total_amount, created_by) => {
           const id = this.deliveries.length + 1;

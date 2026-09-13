@@ -158,7 +158,7 @@ function Dashboard({ token, role, viewMode = "dashboard" }) {
             setError(payload.error);
           } else {
             setData(payload.data);
-            setCalculatedSales(null);
+            setCalculatedSales(payload.data.calculated_todays_sales);
           }
         })
         .catch(() => setError("Unable to load dashboard"));
@@ -326,7 +326,7 @@ function Dashboard({ token, role, viewMode = "dashboard" }) {
               <span className="metric-label">Today's total sales</span>
               <strong>{formatCurrency(calculatedSales ?? data.todays_total_sales)}</strong>
               <button type="button" className="small-button" onClick={() => setCalculatedSales(data.calculated_todays_sales)}>
-                Calculate Sales
+                Recalculate Sales
               </button>
             </div>
             <div className="metric-card">

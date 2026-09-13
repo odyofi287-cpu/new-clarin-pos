@@ -165,10 +165,9 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   }, [token, role, vendorId]);
 
   const getDisplayVendorId = (entry) => {
-    if (role === "VENDOR") {
-      return vendorId ?? entry?.vendor_id ?? null;
-    }
-    return entry?.vendor_id ?? null;
+    if (entry?.vendor_code) return entry.vendor_code;
+    const assignedVendor = vendors.find((vendor) => String(vendor.id) === String(entry?.vendor_id ?? vendorId));
+    return assignedVendor?.vendor_code || entry?.vendor_id || vendorId || null;
   };
 
   const selectedProduct = useMemo(
