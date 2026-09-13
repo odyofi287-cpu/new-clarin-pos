@@ -85,6 +85,7 @@ function App() {
   const { token, setToken, role, setRole, vendorId, setVendorId, clear } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState(null);
   const [view, setView] = useState("dashboard");
@@ -231,6 +232,14 @@ function App() {
     setSidebarCollapsed((current) => !current);
   };
 
+  const handleSidebarCascade = () => {
+    if (window.innerWidth <= 980) {
+      setSidebarOpen(false);
+      return;
+    }
+    setSidebarCollapsed((current) => !current);
+  };
+
   const dateLabel = clock.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
@@ -337,19 +346,25 @@ function App() {
                         </svg>
                       </span>
                       <input
-                        type="password"
+                        type={showPassword ? "text" : "password"}
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         placeholder="Enter your password"
                         autoComplete="current-password"
                         required
                       />
-                      <span className="field-trailing-icon" aria-hidden="true">
+                      <button
+                        type="button"
+                        className="field-trailing-icon"
+                        aria-label={showPassword ? "Hide password" : "Show password"}
+                        aria-pressed={showPassword}
+                        onClick={() => setShowPassword((current) => !current)}
+                      >
                         <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                           <path d="M2 12s3.6-5.5 10-5.5S22 12 22 12s-3.6 5.5-10 5.5S2 12 2 12Z" stroke="currentColor" strokeWidth="1.7"/>
                           <circle cx="12" cy="12" r="2.3" stroke="currentColor" strokeWidth="1.7"/>
                         </svg>
-                      </span>
+                      </button>
                     </span>
                   </label>
 
@@ -397,23 +412,13 @@ function App() {
                 <button
                   type="button"
                   className="sidebar-collapse-button"
-                  title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-                  aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-                  onClick={() => setSidebarCollapsed((current) => !current)}
+                  title={window.innerWidth <= 980 ? "Close navigation" : sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                  aria-label={window.innerWidth <= 980 ? "Close navigation" : sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                  onClick={handleSidebarCascade}
                 >
-                  <span aria-hidden="true">{sidebarCollapsed ? ">" : "<"}</span>
+                  <span aria-hidden="true">{window.innerWidth <= 980 ? "×" : sidebarCollapsed ? ">" : "<"}</span>
                 </button>
               </div>
-
-              <button
-                type="button"
-                className="sidebar-toggle"
-                aria-label={sidebarOpen ? "Close navigation menu" : "Open navigation menu"}
-                onClick={() => setSidebarOpen((current) => !current)}
-              >
-                <span className="sidebar-toggle-icon" aria-hidden="true">{sidebarOpen ? "×" : "☰"}</span>
-                <span>{sidebarOpen ? "Close menu" : "Open menu"}</span>
-              </button>
 
               <nav className="sidebar-nav" aria-label="Primary navigation">
                 {navItems.map((item) => (
