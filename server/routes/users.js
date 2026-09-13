@@ -69,7 +69,7 @@ router.get("/vendors", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), as
     let whereClause = "";
 
     if (req.user.role === "VENDOR") {
-      whereClause = "WHERE id = ?";
+      whereClause = isPostgresDb(req.db) ? "WHERE id = $1" : "WHERE id = ?";
       params.push(req.user.vendor_id);
     }
 
