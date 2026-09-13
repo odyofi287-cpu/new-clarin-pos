@@ -112,6 +112,7 @@ export default function AccountManagement({ token }) {
       if (!response.ok) throw new Error(body.error || "Failed to save account");
       closeModal();
       await loadUsers();
+      window.dispatchEvent(new Event("vendorsUpdated"));
       setMessage(isNew ? "User created successfully" : "User updated successfully");
     } catch (error) {
       setMessage(error.message);
@@ -129,6 +130,7 @@ export default function AccountManagement({ token }) {
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Failed to delete user");
       await loadUsers();
+      window.dispatchEvent(new Event("vendorsUpdated"));
       setMessage("User deleted successfully");
     } catch (error) {
       setMessage(error.message);

@@ -23,6 +23,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   const [listWindowOpen, setListWindowOpen] = useState(false);
   const [historyWindowOpen, setHistoryWindowOpen] = useState(false);
   const [returnsOpen, setReturnsOpen] = useState(false);
+  const [returnsHistoryOpen, setReturnsHistoryOpen] = useState(false);
   const [returnEntries, setReturnEntries] = useState([]);
   const [returnForm, setReturnForm] = useState({
     return_date: "",
@@ -150,16 +151,22 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
 
     const handleProductsUpdated = () => {
       loadProducts();
+      loadVendors();
       loadPickupRecords();
       loadVendorReturns();
     };
+    const handleVendorsUpdated = () => {
+      loadVendors();
+    };
     window.addEventListener('productsUpdated', handleProductsUpdated);
+    window.addEventListener('vendorsUpdated', handleVendorsUpdated);
     const eventStream = new EventSource(`${apiUrl('/api/events')}?token=${encodeURIComponent(token)}`);
     eventStream.addEventListener('data-change', handleProductsUpdated);
     return () => {
       active = false;
       window.clearInterval(intervalId);
       window.removeEventListener('productsUpdated', handleProductsUpdated);
+      window.removeEventListener('vendorsUpdated', handleVendorsUpdated);
       eventStream.close();
     };
   }, [token, role, vendorId]);
@@ -517,7 +524,12 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
             )}
             {isDeliveriesView && (
               <button className="small-button" onClick={() => setReturnsOpen(true)}>
-                Vendor Returns
+                Record Return
+              </button>
+            )}
+            {isDeliveriesView && (
+              <button className="small-button" onClick={() => setReturnsHistoryOpen(true)}>
+                Return History
               </button>
             )}
           </div>
@@ -668,52 +680,48 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                 </div>
               </form>
 
-              <div style={{ marginTop: 18 }}>
-                <h4>Return History</h4>
-                {returnEntries.length === 0 ? (
-                  <p>No return history available.</p>
-                ) : (
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>ID</th>
-                        <th>Vendor</th>
-                        <th>Product</th>
-                        <th>Date</th>
-                        <th>Time</th>
-                        <th>Qty</th>
-                        <th>Returned Amount</th>
-                        <th>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {returnEntries.map((entry) => (
-                        <tr key={entry.id}>
-                          <td data-label="ID">{entry.id}</td>
-                          <td data-label="Vendor">{entry.vendor_name || entry.vendor_id}</td>
-                          <td data-label="Product">{entry.product_name || entry.product_id}</td>
-                          <td data-label="Date">{entry.return_date}</td>
-                          <td data-label="Time">{entry.return_time}</td>
-                          <td data-label="Qty">{entry.quantity}</td>
-                          <td data-label="Returned Amount">{formatCurrency(entry.total_product_price_returned)}</td>
-                          <td data-label="Action">
-                            <button type="button" className="small-button" onClick={async () => {
-                              const res = await fetch(apiUrl(`/api/vendor-returns/${entry.id}`), {
-                                method: 'DELETE',
-                                headers: { Authorization: `Bearer ${token}` },
-                              });
-                              if (res.ok) {
-                                setReturnEntries((current) => current.filter((row) => Number(row.id) !== Number(entry.id)));
-                                setStatus('Vendor return removed successfully.');
-                              }
-                            }}>Remove Return</button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
+            </div>
+          </div>
+        )}
+
+        {returnsHistoryOpen && (
+          <div className="modal-overlay">
+            <div className="pos-modal-card">
+              <div className="pos-modal-header">
+                <div>
+                  <h3>Vendor Return History</h3>
+                  <p className="muted-text">Review and remove recorded product returns.</p>
+                </div>
+                <button className="small-button" onClick={() => setReturnsHistoryOpen(false)}>Close</button>
               </div>
+              {returnEntries.length === 0 ? (
+                <p>No return history available.</p>
+              ) : (
+                <div className="management-table-wrap">
+                  <table>
+                    <thead><tr><th>ID</th><th>Vendor</th><th>Product</th><th>Date</th><th>Time</th><th>Qty</th><th>Returned Amount</th><th>Action</th></tr></thead>
+                    <tbody>{returnEntries.map((entry) => <tr key={entry.id}>
+                      <td data-label="ID">{entry.id}</td>
+                      <td data-label="Vendor">{entry.vendor_name || entry.vendor_id}</td>
+                      <td data-label="Product">{entry.product_name || entry.product_id}</td>
+                      <td data-label="Date">{entry.return_date}</td>
+                      <td data-label="Time">{entry.return_time}</td>
+                      <td data-label="Qty">{entry.quantity}</td>
+                      <td data-label="Returned Amount">{formatCurrency(entry.total_product_price_returned)}</td>
+                      <td data-label="Action"><button type="button" className="small-button" onClick={async () => {
+                        const res = await fetch(apiUrl(`/api/vendor-returns/${entry.id}`), { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+                        if (res.ok) {
+                          setReturnEntries((current) => current.filter((row) => Number(row.id) !== Number(entry.id)));
+                          setStatus('Vendor return removed successfully.');
+                        } else {
+                          const body = await res.json().catch(() => ({}));
+                          setError(body.error || 'Unable to remove vendor return.');
+                        }
+                      }}>Remove Return</button></td>
+                    </tr>)}</tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         )}
