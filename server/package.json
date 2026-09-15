@@ -9,7 +9,8 @@
     "dev": "nodemon index.js",
     "test": "node --test",
     "migrate:sqlite": "node migrate-sqlite-to-postgres.js",
-    "restore:superadmin": "node restore-superadmin.js"
+    "restore:superadmin": "node restore-superadmin.js",
+    "reset:postgres-transactions": "node reset-postgres-transactions.js"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

@@ -30,8 +30,8 @@ router.post("/login", async (req, res) => {
 
   const user = await dbGet(
     req.db,
-    "SELECT u.id, u.email, u.password, u.name, u.role_id, u.vendor_id, r.name AS role FROM users u JOIN roles r ON u.role_id = r.id WHERE (lower(u.email) = $1 OR lower(u.username) = $1) AND u.active = 1",
-    [identity],
+    "SELECT u.id, u.email, u.password, u.name, u.role_id, u.vendor_id, r.name AS role FROM users u JOIN roles r ON u.role_id = r.id WHERE (lower(u.email) = $1 OR lower(u.username) = $2) AND u.active = 1",
+    [identity, identity],
     "SELECT u.id, u.email, u.password, u.name, u.role_id, u.vendor_id, r.name AS role FROM users u JOIN roles r ON u.role_id = r.id WHERE (lower(u.email) = ? OR lower(u.username) = ?) AND u.active = 1"
   );
 
