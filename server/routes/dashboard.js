@@ -8,6 +8,40 @@ function getTodayString() {
   return new Date().toISOString().split("T")[0];
 }
 
+function buildSalesCalendar(sales, deliveries, returns) {
+  const today = new Date(`${getTodayString()}T00:00:00Z`);
+  const daily = [];
+  const monthly = [];
+  const sumFor = (rows, dateKey, start, end) => rows
+    .filter((row) => {
+      const date = String(row[dateKey] || "").slice(0, 10);
+      return start === end ? date === start : date >= start && date < end;
+    })
+    .reduce((sum, row) => sum + Number(row.total_amount ?? row.total_product_price_returned ?? 0), 0);
+
+  for (let offset = 30; offset >= 0; offset -= 1) {
+    const date = new Date(today);
+    date.setUTCDate(date.getUTCDate() - offset);
+    const key = date.toISOString().slice(0, 10);
+    const recordedSales = sumFor(sales, "sale_date", key, key);
+    const deliveriesTotal = sumFor(deliveries, "delivery_date", key, key);
+    const returnsTotal = sumFor(returns, "return_date", key, key);
+    daily.push({ period: key, recorded_sales: recordedSales, vendor_deliveries: deliveriesTotal, vendor_returns: returnsTotal, net_sales: recordedSales + deliveriesTotal - returnsTotal });
+  }
+
+  for (let offset = 11; offset >= 0; offset -= 1) {
+    const date = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - offset, 1));
+    const key = date.toISOString().slice(0, 7);
+    const next = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1)).toISOString().slice(0, 10);
+    const recordedSales = sumFor(sales, "sale_date", `${key}-01`, next);
+    const deliveriesTotal = sumFor(deliveries, "delivery_date", `${key}-01`, next);
+    const returnsTotal = sumFor(returns, "return_date", `${key}-01`, next);
+    monthly.push({ period: key, recorded_sales: recordedSales, vendor_deliveries: deliveriesTotal, vendor_returns: returnsTotal, net_sales: recordedSales + deliveriesTotal - returnsTotal });
+  }
+
+  return { daily, monthly };
+}
+
 router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     if (req.user.role === "VENDOR") {
@@ -32,6 +66,7 @@ async function operationalDashboard(req, res) {
     const returnsToday = req.db.vendor_returns.filter((entry) => entry.return_date === today);
     const totalReturns = returnsToday.reduce((sum, entry) => sum + Number(entry.total_product_price_returned || 0), 0);
     const calculatedSales = totalSales + totalDeliveries - totalReturns;
+    const salesCalendar = buildSalesCalendar(req.db.sales, req.db.deliveries, req.db.vendor_returns);
     const itemsSold = req.db.sale_items
       .filter((item) => salesToday.some((sale) => sale.id === item.sale_id))
       .reduce((sum, item) => sum + item.quantity, 0);
@@ -95,6 +130,7 @@ async function operationalDashboard(req, res) {
           minimum_stock: p.minimum_stock,
           unit: p.unit,
         })),
+        sales_calendar: salesCalendar,
       },
     });
   }
@@ -155,6 +191,10 @@ async function operationalDashboard(req, res) {
   );
 
   const lowStockCount = lowStockProducts.length;
+  const calendarSales = await dbAll(req.db, "SELECT sale_date, total_amount FROM sales", [], "SELECT sale_date, total_amount FROM sales");
+  const calendarDeliveries = await dbAll(req.db, "SELECT delivery_date, total_amount FROM deliveries", [], "SELECT delivery_date, total_amount FROM deliveries");
+  const calendarReturns = await dbAll(req.db, "SELECT return_date, total_product_price_returned FROM vendor_returns", [], "SELECT return_date, total_product_price_returned FROM vendor_returns");
+  const salesCalendar = buildSalesCalendar(calendarSales, calendarDeliveries, calendarReturns);
   const outOfStockCount = (await dbGet(
     req.db,
     "SELECT COUNT(*) AS count FROM products WHERE active = 1 AND current_stock <= 0"
@@ -202,6 +242,7 @@ async function operationalDashboard(req, res) {
       recent_sales: recentSales,
       recent_deliveries: recentDeliveries,
       low_stock_products: lowStockProducts,
+      sales_calendar: salesCalendar,
     },
   });
 }

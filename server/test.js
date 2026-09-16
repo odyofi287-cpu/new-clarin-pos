@@ -443,6 +443,8 @@ test("Admin dashboard returns operational metrics", async () => {
   assert(typeof body.data.todays_transaction_count === 'number');
   assert(Array.isArray(body.data.recent_sales));
   assert(Array.isArray(body.data.low_stock_products));
+  assert.strictEqual(body.data.sales_calendar.daily.length, 31);
+  assert.strictEqual(body.data.sales_calendar.monthly.length, 12);
 });
 
 test("Vendor delivery CSV exports ISO dates", async () => {

@@ -131,6 +131,35 @@ function InventoryStatusChart({ products }) {
   );
 }
 
+function SalesCalendar({ calendar }) {
+  const [mode, setMode] = useState("daily");
+  const rows = calendar?.[mode] || [];
+  const totalNet = rows.reduce((sum, row) => sum + Number(row.net_sales || 0), 0);
+  const peak = Math.max(...rows.map((row) => Number(row.net_sales || 0)), 1);
+  const label = (period) => mode === "daily" ? formatRecordDate(period) : new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${period}-01T00:00:00Z`));
+
+  return (
+    <section className="sales-calendar-card">
+      <div className="sales-calendar-heading">
+        <div><span className="chart-kicker">Sales recorder</span><h3>Sales Calendar</h3><p>Compare recorded and net sales by period.</p></div>
+        <div className="sales-calendar-tabs">
+          <button type="button" className={mode === "daily" ? "active" : ""} onClick={() => setMode("daily")}>Daily</button>
+          <button type="button" className={mode === "monthly" ? "active" : ""} onClick={() => setMode("monthly")}>Monthly</button>
+        </div>
+      </div>
+      <div className="sales-calendar-total"><span>{mode === "daily" ? "Last 31 days" : "Last 12 months"}</span><strong>{formatCurrency(totalNet)}</strong><small>Net sales</small></div>
+      <div className={`sales-calendar-grid ${mode}`}>
+        {rows.map((row) => <article key={row.period} className="sales-calendar-cell" title={`${label(row.period)}: ${formatCurrency(row.net_sales)} net sales`}>
+          <span>{label(row.period)}</span>
+          <strong>{formatCurrency(row.net_sales)}</strong>
+          <i style={{ height: `${Math.max(4, (Number(row.net_sales || 0) / peak) * 100)}%` }} />
+        </article>)}
+      </div>
+      <div className="sales-calendar-legend"><span><i className="recorded" />Recorded sales</span><span><i className="net" />Net sales</span><span><i className="returns" />Returns deducted</span></div>
+    </section>
+  );
+}
+
 function Dashboard({ token, role, viewMode = "dashboard" }) {
   const REFRESH_INTERVAL_MS = 6000;
   const [data, setData] = useState(null);
@@ -384,6 +413,8 @@ function Dashboard({ token, role, viewMode = "dashboard" }) {
             <SalesTrendChart sales={data.recent_sales} />
             <InventoryStatusChart products={productsList} />
           </section>
+
+          <SalesCalendar calendar={data.sales_calendar} />
 
           <section className="dashboard-card dashboard-charts">
             <h3>Recent activity</h3>
