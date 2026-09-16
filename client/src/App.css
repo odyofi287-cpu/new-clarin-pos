@@ -2228,13 +2228,7 @@ button[disabled] {
   color: #7890b1;
 }
 
-.sales-calendar-card {
-  background: #ffffff;
-  border: 1px solid #dce7f5;
-  border-radius: 10px;
-  box-shadow: 0 10px 24px rgba(38, 75, 122, 0.06);
-  padding: 1.35rem 1.5rem;
-}
+.sales-calendar-card { background: #ffffff; border: 1px solid #dce7f5; border-radius: 12px; box-shadow: 0 10px 24px rgba(38, 75, 122, 0.06); padding: 1.35rem 1.5rem; }
 
 .sales-calendar-heading { display: flex; justify-content: space-between; gap: 1rem; }
 .sales-calendar-heading h3 { color: #1e3564; margin: .2rem 0; }
@@ -2242,16 +2236,35 @@ button[disabled] {
 .sales-calendar-tabs { display: flex; gap: .4rem; }
 .sales-calendar-tabs button { background: #f1f6fc; border: 1px solid #d4e1ef; border-radius: 7px; color: #557092; padding: .5rem .75rem; }
 .sales-calendar-tabs button.active { background: #2474c9; color: #fff; border-color: #2474c9; }
-.sales-calendar-total { display: flex; align-items: baseline; gap: .55rem; margin: 1rem 0 .75rem; }
-.sales-calendar-total span { color: #6b7e9d; font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; }
-.sales-calendar-total strong { color: #15294d; font-size: 1.35rem; }
-.sales-calendar-total small { color: #7890b1; }
-.sales-calendar-grid { display: grid; grid-template-columns: repeat(31, minmax(20px, 1fr)); gap: .25rem; align-items: end; min-height: 150px; }
-.sales-calendar-grid.monthly { grid-template-columns: repeat(12, minmax(34px, 1fr)); }
-.sales-calendar-cell { display: grid; grid-template-rows: auto auto 1fr; gap: .25rem; min-width: 0; height: 140px; position: relative; text-align: center; }
-.sales-calendar-cell > span { color: #71819d; font-size: .6rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sales-calendar-cell strong { color: #315b88; font-size: .65rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sales-calendar-cell i { align-self: end; background: linear-gradient(180deg, #4d9af2, #2474c9); border-radius: 4px 4px 2px 2px; display: block; min-height: 4px; }
+.sales-calendar-picker { align-items: end; background: #f7faff; border: 1px solid #dce7f5; border-radius: 9px; display: flex; justify-content: space-between; gap: 1rem; margin: 1.1rem 0; padding: .85rem 1rem; }
+.sales-calendar-picker label { color: #526a8c; display: grid; font-size: .72rem; font-weight: 800; gap: .35rem; letter-spacing: .04em; text-transform: uppercase; }
+.sales-calendar-picker input { background: #fff; border: 1px solid #c9d8ea; border-radius: 6px; color: #203a64; min-height: 40px; padding: .55rem .7rem; }
+.sales-calendar-picker span { color: #2474c9; font-size: .95rem; font-weight: 800; }
+.sales-period-detail { border: 1px solid #dce7f5; border-radius: 10px; overflow: hidden; }
+.sales-period-title { align-items: center; background: #102c55; color: #fff; display: flex; justify-content: space-between; gap: 1rem; padding: .85rem 1rem; }
+.sales-period-title span { font-size: .78rem; letter-spacing: .06em; text-transform: uppercase; }
+.sales-period-title strong { font-size: 1rem; }
+.sales-period-metrics { display: grid; grid-template-columns: repeat(4, 1fr); }
+.sales-period-metrics > div { border-right: 1px solid #e1ebf7; padding: .9rem 1rem; }
+.sales-period-metrics > div:last-child { border-right: 0; }
+.sales-period-metrics span { color: #71819d; display: block; font-size: .7rem; text-transform: uppercase; }
+.sales-period-metrics strong { color: #203a64; display: block; font-size: 1rem; margin-top: .25rem; }
+.sales-period-metrics .returns-value { color: #b45e68; }
+.sales-period-metrics .net { background: #edf6ff; }
+.sales-calendar-empty { background: #f7faff; border: 1px dashed #c9d8ea; border-radius: 9px; color: #71819d; padding: 1.4rem; text-align: center; }
+.sales-calendar-summary { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: .65rem; margin: 1.1rem 0; }
+.sales-calendar-summary > div { background: #f7faff; border: 1px solid #e1ebf7; border-radius: 9px; padding: .7rem .8rem; }
+.sales-calendar-summary span { color: #6b7e9d; display: block; font-size: .68rem; letter-spacing: .05em; text-transform: uppercase; }
+.sales-calendar-summary strong { color: #15294d; display: block; font-size: 1.1rem; margin-top: .2rem; }
+.sales-calendar-summary small { color: #7890b1; }
+.sales-calendar-summary .returns-value { color: #b45e68; }
+.sales-calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .45rem; }
+.sales-calendar-grid.monthly { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.sales-calendar-cell { background: linear-gradient(180deg, rgba(237,246,255,var(--intensity)), #fbfdff); border: 1px solid #dce7f5; border-radius: 8px; display: grid; gap: .2rem; min-height: 92px; padding: .6rem; position: relative; overflow: hidden; }
+.sales-calendar-cell > span { color: #5f7398; font-size: .7rem; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sales-calendar-cell strong { color: #1e5eaa; font-size: .82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sales-calendar-cell small { color: #8194ad; font-size: .63rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sales-calendar-cell i { background: #2474c9; border-radius: 2px; bottom: 0; height: 3px; left: 0; opacity: .8; position: absolute; right: 0; }
 .sales-calendar-legend { display: flex; gap: 1rem; margin-top: .85rem; color: #71819d; font-size: .72rem; }
 .sales-calendar-legend span { display: inline-flex; align-items: center; gap: .3rem; }
 .sales-calendar-legend i { width: .55rem; height: .55rem; border-radius: 50%; background: #2474c9; }
@@ -2259,12 +2272,15 @@ button[disabled] {
 .sales-calendar-legend i.returns { background: #e48787; }
 
 @media (max-width: 640px) {
-  .sales-calendar-card { border-radius: 8px; padding: 1rem; overflow-x: auto; }
+  .sales-calendar-card { border-radius: 8px; padding: 1rem; }
   .sales-calendar-heading { flex-direction: column; }
   .sales-calendar-tabs button { flex: 1; }
-  .sales-calendar-grid { min-width: 680px; }
-  .sales-calendar-grid.monthly { min-width: 520px; }
-  .sales-calendar-legend { flex-wrap: wrap; }
+  .sales-calendar-picker { align-items: stretch; flex-direction: column; }
+  .sales-calendar-picker input { width: 100%; }
+  .sales-period-title { align-items: flex-start; flex-direction: column; }
+  .sales-period-metrics { grid-template-columns: repeat(2, 1fr); }
+  .sales-period-metrics > div:nth-child(2) { border-right: 0; }
+  .sales-period-metrics > div:nth-child(-n + 2) { border-bottom: 1px solid #e1ebf7; }
 }
 
 .inventory-chart-body {

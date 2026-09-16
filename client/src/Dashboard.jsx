@@ -133,10 +133,19 @@ function InventoryStatusChart({ products }) {
 
 function SalesCalendar({ calendar }) {
   const [mode, setMode] = useState("daily");
-  const rows = calendar?.[mode] || [];
-  const totalNet = rows.reduce((sum, row) => sum + Number(row.net_sales || 0), 0);
-  const peak = Math.max(...rows.map((row) => Number(row.net_sales || 0)), 1);
-  const label = (period) => mode === "daily" ? formatRecordDate(period) : new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${period}-01T00:00:00Z`));
+  const dailyRows = calendar?.daily || [];
+  const monthlyRows = calendar?.monthly || [];
+  const [selectedDate, setSelectedDate] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState("");
+  const rows = mode === "daily" ? dailyRows : monthlyRows;
+  const selectedPeriod = mode === "daily" ? selectedDate : selectedMonth;
+  const selectedRow = rows.find((row) => row.period === selectedPeriod) || rows[rows.length - 1] || null;
+  const label = (period) => mode === "daily" ? formatRecordDate(period) : new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${period}-01T00:00:00Z`));
+
+  useEffect(() => {
+    if (!selectedDate && dailyRows.length) setSelectedDate(dailyRows[dailyRows.length - 1].period);
+    if (!selectedMonth && monthlyRows.length) setSelectedMonth(monthlyRows[monthlyRows.length - 1].period);
+  }, [dailyRows, monthlyRows, selectedDate, selectedMonth]);
 
   return (
     <section className="sales-calendar-card">
@@ -147,15 +156,23 @@ function SalesCalendar({ calendar }) {
           <button type="button" className={mode === "monthly" ? "active" : ""} onClick={() => setMode("monthly")}>Monthly</button>
         </div>
       </div>
-      <div className="sales-calendar-total"><span>{mode === "daily" ? "Last 31 days" : "Last 12 months"}</span><strong>{formatCurrency(totalNet)}</strong><small>Net sales</small></div>
-      <div className={`sales-calendar-grid ${mode}`}>
-        {rows.map((row) => <article key={row.period} className="sales-calendar-cell" title={`${label(row.period)}: ${formatCurrency(row.net_sales)} net sales`}>
-          <span>{label(row.period)}</span>
-          <strong>{formatCurrency(row.net_sales)}</strong>
-          <i style={{ height: `${Math.max(4, (Number(row.net_sales || 0) / peak) * 100)}%` }} />
-        </article>)}
+      <div className="sales-calendar-picker">
+        <label>{mode === "daily" ? "Choose a date" : "Choose a month"}
+          <input type={mode === "daily" ? "date" : "month"} value={selectedPeriod} onChange={(event) => mode === "daily" ? setSelectedDate(event.target.value) : setSelectedMonth(event.target.value)} />
+        </label>
+        <span>{selectedRow ? label(selectedRow.period) : "No period selected"}</span>
       </div>
-      <div className="sales-calendar-legend"><span><i className="recorded" />Recorded sales</span><span><i className="net" />Net sales</span><span><i className="returns" />Returns deducted</span></div>
+      {selectedRow ? (
+        <div className="sales-period-detail">
+          <div className="sales-period-title"><span>{mode === "daily" ? "Daily sales" : "Monthly sales"}</span><strong>{label(selectedRow.period)}</strong></div>
+          <div className="sales-period-metrics">
+            <div><span>Recorded sales</span><strong>{formatCurrency(selectedRow.recorded_sales)}</strong></div>
+            <div><span>Vendor deliveries</span><strong>{formatCurrency(selectedRow.vendor_deliveries)}</strong></div>
+            <div><span>Vendor returns</span><strong className="returns-value">-{formatCurrency(selectedRow.vendor_returns)}</strong></div>
+            <div className="net"><span>Net sales</span><strong>{formatCurrency(selectedRow.net_sales)}</strong></div>
+          </div>
+        </div>
+      ) : <p className="sales-calendar-empty">No sales data is available for this period.</p>}
     </section>
   );
 }
