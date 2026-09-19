@@ -9,13 +9,19 @@ function getTodayString() {
   return getBusinessDate();
 }
 
-function buildSalesCalendar(sales, deliveries, returns) {
-  const today = new Date(`${getTodayString()}T00:00:00Z`);
+export function getCalendarDateKey(value) {
+  if (value instanceof Date) return getBusinessDate(value);
+  const match = String(value || "").match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : "";
+}
+
+export function buildSalesCalendar(sales, deliveries, returns, todayKey = getTodayString()) {
+  const today = new Date(`${todayKey}T00:00:00Z`);
   const daily = [];
   const monthly = [];
   const sumFor = (rows, dateKey, start, end) => rows
     .filter((row) => {
-      const date = String(row[dateKey] || "").slice(0, 10);
+      const date = getCalendarDateKey(row[dateKey]);
       return start === end ? date === start : date >= start && date < end;
     })
     .reduce((sum, row) => sum + Number(row.total_amount ?? row.total_product_price_returned ?? 0), 0);

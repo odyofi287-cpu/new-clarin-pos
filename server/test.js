@@ -5,6 +5,7 @@ process.env.NODE_ENV = "test";
 
 const { default: app } = await import("./app.js");
 const { getBusinessDate } = await import("./businessDate.js");
+const { buildSalesCalendar } = await import("./routes/dashboard.js");
 const srv = app.listen(0);
 const port = srv.address().port;
 const base = `http://127.0.0.1:${port}`;
@@ -15,6 +16,17 @@ test.after(() => new Promise((resolve, reject) => {
 
 test("Business date follows the configured Manila operating day", () => {
   assert.strictEqual(getBusinessDate(new Date("2026-09-19T18:00:00.000Z")), "2026-09-20");
+});
+
+test("Sales calendar groups Postgres date objects by their Manila calendar date", () => {
+  const calendar = buildSalesCalendar(
+    [{ sale_date: new Date("2026-09-18T16:00:00.000Z"), total_amount: 1000 }],
+    [],
+    [],
+    "2026-09-20"
+  );
+  assert.strictEqual(calendar.daily.find((row) => row.period === "2026-09-19")?.recorded_sales, 1000);
+  assert.strictEqual(calendar.monthly.find((row) => row.period === "2026-09")?.recorded_sales, 1000);
 });
 
 async function login(email, password) {
