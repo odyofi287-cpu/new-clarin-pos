@@ -336,7 +336,7 @@ function Dashboard({ token, role, viewMode = "dashboard" }) {
               <tbody>
                 {data.vendor_summary.recent_deliveries.map((delivery) => (
                   <tr key={delivery.id}>
-                    <td>{delivery.id}</td>
+                    <td data-label="ID">{delivery.id}</td>
                     <td data-label="Date">{formatRecordDate(delivery.delivery_date)}</td>
                     <td data-label="Time">{formatRecordTime(delivery.delivery_time)}</td>
                     <td data-label="Items">{delivery.items || "-"}</td>
@@ -586,13 +586,13 @@ function Dashboard({ token, role, viewMode = "dashboard" }) {
                   <tbody>
                     {productsList.map((prod) => (
                       <tr key={prod.id}>
-                        <td>{prod.image_url ? <img className="product-thumb" src={prod.image_url} alt="" /> : <span className="product-thumb product-thumb-empty">{prod.name.slice(0, 1).toUpperCase()}</span>}</td>
-                        <td>{prod.name}</td>
-                        <td>{prod.category || 'General'}</td>
-                        <td>{formatCurrency(prod.selling_price)}</td>
-                        <td>{prod.current_stock}</td>
-                        <td><span className={`management-status ${prod.active === 1 ? 'is-active' : 'is-inactive'}`}>{prod.active === 1 ? 'Active' : 'Inactive'}</span></td>
-                        <td><div className="management-actions">
+                        <td data-label="Image">{prod.image_url ? <img className="product-thumb" src={prod.image_url} alt="" /> : <span className="product-thumb product-thumb-empty">{prod.name.slice(0, 1).toUpperCase()}</span>}</td>
+                        <td data-label="Name">{prod.name}</td>
+                        <td data-label="Category">{prod.category || 'General'}</td>
+                        <td data-label="Price">{formatCurrency(prod.selling_price)}</td>
+                        <td data-label="Stock">{prod.current_stock}</td>
+                        <td data-label="Status"><span className={`management-status ${prod.active === 1 ? 'is-active' : 'is-inactive'}`}>{prod.active === 1 ? 'Active' : 'Inactive'}</span></td>
+                        <td data-label="Actions"><div className="management-actions">
                           <button className="small-button" onClick={() => {
                             setManageForm({ id: prod.id, name: prod.name, category: prod.category || '', selling_price: prod.selling_price, current_stock: prod.current_stock, image_url: prod.image_url || '' });
                             setShowEditProductWindow(true);
@@ -687,13 +687,13 @@ function Dashboard({ token, role, viewMode = "dashboard" }) {
                   <tbody>
                     {usersList.map((user) => (
                       <tr key={user.id}>
-                        <td>{user.name}</td>
-                        <td>{user.email}</td>
-                        <td><span className={`role-badge role-${user.role.toLowerCase()}`}>{user.role}</span></td>
+                        <td data-label="Name">{user.name}</td>
+                        <td data-label="Email">{user.email}</td>
+                        <td data-label="Role"><span className={`role-badge role-${user.role.toLowerCase()}`}>{user.role}</span></td>
                         <td>{user.role === 'VENDOR' ? (user.vendor_code || 'Assigned automatically') : '—'}</td>
                         <td>{user.contact_person || '—'}</td>
                         <td>{user.contact_number || '—'}</td>
-                        <td><div className="management-actions">
+                        <td data-label="Actions"><div className="management-actions">
                           <button className="small-button" onClick={() => {
                             setManageError('Account editing is not available in this build yet.');
                             setManageSuccess(null);
