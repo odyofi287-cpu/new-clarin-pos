@@ -1,0 +1,129 @@
+.history-sections {
+  display: grid;
+  gap: 1rem;
+}
+
+.history-section {
+  background: #f8fbff;
+  border: 1px solid #dce7f5;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.history-section-header {
+  align-items: center;
+  background: #ffffff;
+  border-bottom: 1px solid #dce7f5;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 1rem 1.1rem;
+}
+
+.history-section-kicker {
+  color: #6c83a6;
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.history-section h3 {
+  color: #1f3966;
+  font-size: 1rem;
+  margin: 0.2rem 0;
+}
+
+.history-section p {
+  color: #6f829e;
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.history-section-count {
+  background: #eaf3ff;
+  border: 1px solid #cadff6;
+  border-radius: 999px;
+  color: #3270b7;
+  font-size: 0.74rem;
+  font-weight: 800;
+  padding: 0.42rem 0.65rem;
+  white-space: nowrap;
+}
+
+.history-table-wrap {
+  overflow-x: auto;
+}
+
+.history-table-wrap table {
+  margin: 0;
+  min-width: 680px;
+}
+
+.history-empty {
+  padding: 1.1rem;
+}
+
+@media (max-width: 760px) {
+  .history-section-header {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 0.85rem;
+  }
+
+  .history-table-wrap {
+    overflow: visible;
+    padding: 0.65rem;
+  }
+
+  .history-table-wrap table {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    display: block;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .history-table-wrap thead {
+    display: none;
+  }
+
+  .history-table-wrap tbody {
+    display: grid;
+    gap: 0.55rem;
+  }
+
+  .history-table-wrap tr {
+    background: #ffffff;
+    border: 1px solid #dce7f5;
+    border-radius: 8px;
+    display: grid;
+    margin: 0;
+    padding: 0.45rem 0.55rem;
+  }
+
+  .history-table-wrap td {
+    align-items: baseline;
+    border-bottom: 1px solid #edf2f8;
+    display: grid;
+    gap: 0.45rem;
+    grid-template-columns: minmax(82px, 36%) minmax(0, 1fr);
+    overflow-wrap: anywhere;
+    padding: 0.45rem 0.1rem;
+  }
+
+  .history-table-wrap td::before {
+    color: #71819d;
+    content: attr(data-label);
+    font-size: 0.66rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .history-table-wrap td:last-child {
+    border-bottom: 0;
+  }
+}

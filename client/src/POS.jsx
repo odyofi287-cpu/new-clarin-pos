@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiUrl } from "./api";
+import "./history.css";
 
 function formatCurrency(value) {
   return value == null ? "0.00" : Number(value).toLocaleString("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 });
@@ -530,10 +531,10 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       <section className="dashboard-card">
         <div className="pos-header">
           <div>
-            <h2>{isSalesHistoryView ? "Recorded Sales History" : isDeliveriesView ? "Vendor Deliveries" : "Direct-to-Vendor POS"}</h2>
+            <h2>{isSalesHistoryView ? "Sales & Pickup History" : isDeliveriesView ? "Vendor Deliveries" : "Direct-to-Vendor POS"}</h2>
             <p className="muted-text">
               {isSalesHistoryView
-                ? "Review completed point-of-sale transactions."
+                ? "Review recorded POS sales and vendor pickup records."
                 : isDeliveriesView
                   ? "Access vendor pickup list and vendor returns."
                   : "Record vendor pickups with product, category, quantity, and total price."}
@@ -572,35 +573,78 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
         {error && <p className="error-message">{error}</p>}
 
         {isSalesHistoryView && (
-          <div className="management-table-wrap">
-            {salesHistory.length === 0 ? (
-              <p>No recorded sales available.</p>
-            ) : (
-              <table>
-                <thead>
-                  <tr>
-                    <th>Sale ID</th>
-                    <th>Date</th>
-                    <th>Sold By</th>
-                    <th>Items</th>
-                    <th>Quantity</th>
-                    <th>Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {salesHistory.map((entry) => (
-                    <tr key={`sales-history-${entry.id}`}>
-                      <td data-label="Sale ID">{entry.id}</td>
-                      <td data-label="Date">{formatDeliveryDate(entry.sale_date)}</td>
-                      <td data-label="Sold By">{entry.sold_by || "Unknown"}</td>
-                      <td data-label="Items">{entry.items || "-"}</td>
-                      <td data-label="Quantity">{entry.item_count}</td>
-                      <td data-label="Total">{formatCurrency(entry.total_amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+          <div className="history-sections">
+            <section className="history-section history-section-sales">
+              <header className="history-section-header">
+                <div><span className="history-section-kicker">Classification</span><h3>Recorded Sales</h3><p>Completed POS transactions.</p></div>
+                <span className="history-section-count">{salesHistory.length} records</span>
+              </header>
+              <div className="history-table-wrap">
+                {salesHistory.length === 0 ? (
+                  <p className="history-empty">No recorded sales available.</p>
+                ) : (
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Sale ID</th>
+                        <th>Date</th>
+                        <th>Sold By</th>
+                        <th>Items</th>
+                        <th>Quantity</th>
+                        <th>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {salesHistory.map((entry) => (
+                        <tr key={`sales-history-${entry.id}`}>
+                          <td data-label="Sale ID">{entry.id}</td>
+                          <td data-label="Date">{formatDeliveryDate(entry.sale_date)}</td>
+                          <td data-label="Sold By">{entry.sold_by || "Unknown"}</td>
+                          <td data-label="Items">{entry.items || "-"}</td>
+                          <td data-label="Quantity">{entry.item_count}</td>
+                          <td data-label="Total">{formatCurrency(entry.total_amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </section>
+
+            <section className="history-section history-section-pickups">
+              <header className="history-section-header">
+                <div><span className="history-section-kicker">Classification</span><h3>Vendor Pickups</h3><p>Products picked up by vendors.</p></div>
+                <span className="history-section-count">{pickupEntries.length} records</span>
+              </header>
+              <div className="history-table-wrap">
+                {pickupEntries.length === 0 ? (
+                  <p className="history-empty">No vendor pickups available.</p>
+                ) : (
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Pickup ID</th>
+                        <th>Vendor ID</th>
+                        <th>Vendor</th>
+                        <th>Date</th>
+                        <th>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pickupEntries.map((entry) => (
+                        <tr key={`pickup-history-${entry.id}`}>
+                          <td data-label="Pickup ID">{entry.id}</td>
+                          <td data-label="Vendor ID">{getDisplayVendorId(entry)}</td>
+                          <td data-label="Vendor">{entry.vendor_name || entry.vendor_id}</td>
+                          <td data-label="Date">{formatDeliveryDate(entry.delivery_date)}</td>
+                          <td data-label="Total">{formatCurrency(entry.total_amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </section>
           </div>
         )}
 
