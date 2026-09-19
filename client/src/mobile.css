@@ -193,6 +193,112 @@
     margin-top: 1rem;
   }
 
+  .dashboard-charts,
+  .low-stock-alert {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .dashboard-charts {
+    padding: 0.9rem !important;
+  }
+
+  .dashboard-charts > h3 {
+    margin-bottom: 0.8rem;
+  }
+
+  .dashboard-charts .table-pair {
+    gap: 0.75rem;
+    margin: 0;
+  }
+
+  .dashboard-charts .table-pair > div {
+    background: #f8fbff;
+    border: 1px solid #dce7f5;
+    border-radius: 9px;
+    min-width: 0;
+    padding: 0.75rem;
+  }
+
+  .dashboard-charts .table-pair h4 {
+    color: #203a64;
+    font-size: 0.9rem;
+    margin: 0 0 0.65rem;
+  }
+
+  .dashboard-charts table,
+  .low-stock-table {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    display: block;
+    min-width: 0;
+    table-layout: fixed;
+    width: 100%;
+  }
+
+  .dashboard-charts table thead,
+  .low-stock-table thead {
+    display: none;
+  }
+
+  .dashboard-charts table tbody,
+  .low-stock-table tbody {
+    display: grid;
+    gap: 0.55rem;
+  }
+
+  .dashboard-charts table tr,
+  .low-stock-table tr {
+    background: #ffffff;
+    border: 1px solid #dce7f5;
+    border-radius: 8px;
+    box-shadow: none;
+    display: grid;
+    gap: 0;
+    margin: 0;
+    min-width: 0;
+    padding: 0.45rem 0.55rem;
+    width: 100%;
+  }
+
+  .dashboard-charts table td,
+  .low-stock-table td {
+    align-items: baseline;
+    border-bottom: 1px solid #edf2f8;
+    display: grid;
+    gap: 0.45rem;
+    grid-template-columns: minmax(84px, 38%) minmax(0, 1fr);
+    min-width: 0;
+    overflow-wrap: anywhere;
+    padding: 0.45rem 0.1rem !important;
+  }
+
+  .dashboard-charts table td::before,
+  .low-stock-table td::before {
+    color: #71819d;
+    content: attr(data-label);
+    font-size: 0.66rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .dashboard-charts table td:last-child,
+  .low-stock-table td:last-child {
+    border-bottom: 0;
+  }
+
+  .low-stock-table td:first-child {
+    display: flex;
+    padding-bottom: 0.25rem !important;
+  }
+
+  .low-stock-table td:first-child::before {
+    content: none;
+  }
+
   .account-management {
     padding: 0.25rem;
   }
