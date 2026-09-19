@@ -18,6 +18,34 @@
     padding: 0.6rem;
   }
 
+  .app-shell-guest {
+    padding: 0.6rem;
+  }
+
+  .login-layout {
+    border-radius: 14px;
+    min-height: calc(100dvh - 1.2rem);
+  }
+
+  .login-hero {
+    align-items: flex-start;
+    min-height: 220px;
+    padding: 1.25rem;
+  }
+
+  .login-hero-content h2 {
+    font-size: clamp(1.65rem, 9vw, 2.25rem);
+  }
+
+  .login-hero-copy {
+    font-size: 0.88rem;
+    line-height: 1.5;
+  }
+
+  .login-pane {
+    padding: 1.1rem;
+  }
+
   .workspace-shell {
     gap: 0.65rem;
   }
@@ -50,6 +78,12 @@
     white-space: nowrap;
   }
 
+  .sidebar-shell {
+    inset: 0.6rem auto 0.6rem 0.6rem;
+    max-height: calc(100dvh - 1.2rem);
+    width: min(20rem, calc(100vw - 1.2rem));
+  }
+
   .workspace-content .dashboard-card,
   .workspace-content .pos-panel,
   .workspace-content .management-table-wrap,
@@ -76,6 +110,44 @@
   .workspace-content .metric-card .small-button {
     font-size: 0.78rem;
     padding-inline: 0.5rem;
+  }
+
+  .chart-card {
+    padding: 1rem;
+  }
+
+  .chart-card-header,
+  .low-stock-alert-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .chart-period,
+  .low-stock-alert-count {
+    align-self: flex-start;
+  }
+
+  .inventory-chart-body {
+    align-items: stretch;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .inventory-donut {
+    margin-inline: auto;
+  }
+
+  .inventory-legend {
+    min-width: 0;
+  }
+
+  .low-stock-alert-header {
+    padding: 1rem;
+  }
+
+  .low-stock-empty {
+    align-items: flex-start;
+    padding: 1rem;
   }
 
   .sales-calendar-card {
@@ -169,6 +241,48 @@
     width: 100%;
   }
 
+  .pos-item {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0.7rem;
+    padding: 0.85rem;
+  }
+
+  .pos-item button {
+    min-height: 42px;
+    width: 100%;
+  }
+
+  .stock-tag {
+    align-self: flex-start;
+  }
+
+  .pos-summary {
+    grid-template-columns: 1fr;
+    gap: 0.7rem;
+  }
+
+  .pos-summary > button,
+  .pos-summary .primary-button,
+  .pos-summary .small-button {
+    min-height: 42px;
+    width: 100%;
+  }
+
+  .filters-row {
+    align-items: stretch;
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .filters-row label,
+  .filters-row input,
+  .filters-row select,
+  .filters-row button {
+    min-height: 42px;
+    width: 100%;
+  }
+
   .modal-overlay,
   .account-modal-backdrop {
     align-items: flex-end;
@@ -218,6 +332,18 @@
     width: 100%;
   }
 
+  .management-hero::after {
+    display: none;
+  }
+
+  .management-hero p {
+    max-width: none;
+  }
+
+  .management-count {
+    align-self: flex-start;
+  }
+
   .management-actions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -244,6 +370,26 @@
 }
 
 @media (max-width: 420px) {
+  .login-hero {
+    min-height: 190px;
+    padding: 1rem;
+  }
+
+  .login-feature-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-content .dashboard-card,
+  .workspace-content .pos-panel,
+  .sales-calendar-card,
+  .low-stock-alert {
+    border-radius: 8px;
+  }
+
+  .inventory-card-image-wrap {
+    min-height: 118px;
+  }
+
   .workspace-content .dashboard-metric-grid,
   .sales-period-metrics {
     grid-template-columns: 1fr;
