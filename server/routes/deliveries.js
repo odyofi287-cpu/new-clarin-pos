@@ -2,6 +2,7 @@ import express from "express";
 import { requireRole } from "../middleware/auth.js";
 import { publishDataChange } from "../events.js";
 import { dbAll, dbGet, dbRun, withTransaction } from "./dbCompat.js";
+import { getBusinessDate } from "../businessDate.js";
 
 const router = express.Router();
 
@@ -11,7 +12,7 @@ function normalizeDeliveryDate(value) {
   if (isoDate) return isoDate[0];
 
   const parsed = new Date(text);
-  return Number.isNaN(parsed.getTime()) ? new Date().toISOString().slice(0, 10) : parsed.toISOString().slice(0, 10);
+  return Number.isNaN(parsed.getTime()) ? getBusinessDate() : parsed.toISOString().slice(0, 10);
 }
 
 router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
@@ -123,7 +124,7 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
       return res.status(400).json({ error: "Vendor and at least one item are required" });
     }
 
-    const computedDate = delivery_date || (pickup_datetime ? pickup_datetime.split("T")[0] : "") || new Date().toISOString().split("T")[0];
+    const computedDate = delivery_date || (pickup_datetime ? pickup_datetime.split("T")[0] : "") || getBusinessDate();
     const deliveryDate = normalizeDeliveryDate(computedDate);
     const deliveryTime = String(delivery_time || (pickup_datetime ? pickup_datetime.split("T")[1]?.slice(0, 5) : "") || "").slice(0, 5) || null;
 
@@ -220,7 +221,7 @@ router.put("/:id", requireRole("SUPERADMIN"), async (req, res) => {
     const { vendor_id, pickup_datetime, delivery_date, delivery_time, items } = req.body;
     const safeVendorId = Number(vendor_id ?? existing.vendor_id);
     const normalizedItems = Array.isArray(items) && items.length ? items : [{ product_id: req.body.product_id, quantity: req.body.quantity, unit_cost: req.body.unit_price }];
-    const computedDate = (delivery_date || (pickup_datetime ? pickup_datetime.split("T")[0] : "") || (delivery_time ? req.body.delivery_date : "") || existing.delivery_date || new Date().toISOString().split("T")[0]);
+    const computedDate = (delivery_date || (pickup_datetime ? pickup_datetime.split("T")[0] : "") || (delivery_time ? req.body.delivery_date : "") || existing.delivery_date || getBusinessDate());
     const safeDeliveryDate = normalizeDeliveryDate(computedDate);
     const safeDeliveryTime = String(delivery_time || (pickup_datetime ? pickup_datetime.split("T")[1]?.slice(0, 5) : "") || existing.delivery_time || "").slice(0, 5) || null;
 

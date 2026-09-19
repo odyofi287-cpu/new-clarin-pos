@@ -2,6 +2,7 @@ import express from "express";
 import { requireRole } from "../middleware/auth.js";
 import { publishDataChange } from "../events.js";
 import { dbGet, dbRun, withTransaction } from "./dbCompat.js";
+import { getBusinessDate } from "../businessDate.js";
 
 const router = express.Router();
 
@@ -42,7 +43,7 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
     }
 
     const totalAmount = products.reduce((sum, product) => sum + product.selling_price * product.sellQuantity, 0);
-    const saleDate = new Date().toISOString().split("T")[0];
+    const saleDate = getBusinessDate();
 
     const saleResult = await withTransaction(req.db, async () => {
       for (const product of products) {

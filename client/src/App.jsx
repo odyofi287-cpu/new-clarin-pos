@@ -5,6 +5,7 @@ import POS from "./POS";
 import useAuth from "./hooks/useAuth";
 import { apiUrl } from "./api";
 import AccountManagement from "./AccountManagement";
+import "./mobile.css";
 
 function NavIcon({ kind }) {
   if (kind === "dashboard") {

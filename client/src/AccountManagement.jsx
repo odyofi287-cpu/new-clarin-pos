@@ -162,7 +162,7 @@ export default function AccountManagement({ token }) {
       <div className="account-table-wrap">
         <table className="account-table">
           <thead><tr><th>Username</th><th>Name</th><th>Email</th><th>Role</th><th>Vendor ID</th><th>Contact</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead>
-          <tbody>{users.map((user) => <tr key={user.id}><td>{user.username || "-"}</td><td>{user.name}</td><td>{user.email}</td><td><span className="account-role">{user.role}</span></td><td>{user.vendor_code || "-"}</td><td>{user.contact_person || user.contact_number || "-"}</td><td>{user.active ? "Active" : "Inactive"}</td><td className="account-actions"><button onClick={() => editUser(user)} disabled={loading}>Edit</button><button className="account-delete" onClick={() => deleteUser(user.id)} disabled={loading}>Delete</button></td></tr>)}</tbody>
+          <tbody>{users.map((user) => <tr key={user.id}><td data-label="Username">{user.username || "-"}</td><td data-label="Name">{user.name}</td><td data-label="Email">{user.email}</td><td data-label="Role"><span className="account-role">{user.role}</span></td><td data-label="Vendor ID">{user.vendor_code || "-"}</td><td data-label="Contact">{user.contact_person || user.contact_number || "-"}</td><td data-label="Status">{user.active ? "Active" : "Inactive"}</td><td className="account-actions" data-label="Actions"><button onClick={() => editUser(user)} disabled={loading}>Edit</button><button className="account-delete" onClick={() => deleteUser(user.id)} disabled={loading}>Delete</button></td></tr>)}</tbody>
         </table>
         {!loading && users.length === 0 && <p className="account-empty">No accounts found.</p>}
       </div>

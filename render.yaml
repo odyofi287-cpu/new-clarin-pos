@@ -16,3 +16,5 @@ services:
         generateValue: true
       - key: SEED_INITIAL_DATA
         value: false
+      - key: BUSINESS_TIME_ZONE
+        value: Asia/Manila

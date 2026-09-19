@@ -1,0 +1,189 @@
+/* Mobile-first refinements for the authenticated POS workspace. */
+@media (max-width: 760px) {
+  .app-shell-auth {
+    padding: 0.6rem;
+  }
+
+  .workspace-shell {
+    gap: 0.65rem;
+  }
+
+  .workspace-header {
+    gap: 0.6rem;
+    margin-bottom: 0;
+  }
+
+  .workspace-heading-group {
+    align-items: center;
+    gap: 0.55rem;
+  }
+
+  .workspace-heading-group h2 {
+    font-size: 1.1rem;
+    line-height: 1.2;
+  }
+
+  .workspace-meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workspace-status {
+    min-width: 0;
+    overflow: hidden;
+    padding: 0.42rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .workspace-content .dashboard-card,
+  .workspace-content .pos-panel,
+  .workspace-content .management-table-wrap,
+  .workspace-content .account-table-wrap,
+  .sales-calendar-card,
+  .low-stock-alert {
+    box-shadow: 0 5px 14px rgba(38, 75, 122, 0.05);
+  }
+
+  .workspace-content .dashboard-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workspace-content .metric-card {
+    gap: 0.3rem;
+    min-width: 0;
+  }
+
+  .workspace-content .metric-card strong {
+    font-size: clamp(1.05rem, 5vw, 1.35rem);
+    overflow-wrap: anywhere;
+  }
+
+  .workspace-content .metric-card .small-button {
+    font-size: 0.78rem;
+    padding-inline: 0.5rem;
+  }
+
+  .sales-calendar-card {
+    padding: 0.9rem;
+  }
+
+  .sales-calendar-heading p {
+    line-height: 1.4;
+  }
+
+  .sales-calendar-tabs {
+    width: 100%;
+  }
+
+  .sales-calendar-tabs button {
+    min-height: 42px;
+  }
+
+  .sales-calendar-picker {
+    margin-block: 0.85rem;
+    padding: 0.75rem;
+  }
+
+  .sales-calendar-picker span {
+    overflow-wrap: anywhere;
+  }
+
+  .sales-period-title {
+    padding: 0.75rem;
+  }
+
+  .sales-period-metrics > div {
+    min-width: 0;
+    padding: 0.75rem;
+  }
+
+  .sales-period-metrics strong {
+    font-size: 0.95rem;
+    overflow-wrap: anywhere;
+  }
+
+  .dashboard-charts .table-pair > div + div {
+    margin-top: 1rem;
+  }
+
+  .account-management {
+    padding: 0.25rem;
+  }
+
+  .account-table-wrap {
+    overflow: visible;
+  }
+
+  .account-table {
+    display: block;
+    min-width: 0;
+  }
+
+  .account-table td {
+    align-items: baseline;
+    display: grid;
+    gap: 0.5rem;
+    grid-template-columns: minmax(80px, 34%) minmax(0, 1fr);
+    overflow-wrap: anywhere;
+    padding: 0.45rem 0.2rem;
+  }
+
+  .account-table td::before {
+    color: #6b7e9d;
+    content: attr(data-label);
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .account-table .account-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .modal-overlay,
+  .account-modal-backdrop {
+    align-items: flex-end;
+    padding: 0.5rem;
+  }
+
+  .pos-modal-card,
+  .pos-modal-card--narrow,
+  .account-modal {
+    border-radius: 12px 12px 8px 8px;
+    max-height: calc(100dvh - 1rem);
+    width: 100%;
+  }
+
+  .pos-modal-header,
+  .account-modal header {
+    gap: 0.65rem;
+  }
+
+  .pos-modal-form-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .workspace-content .dashboard-metric-grid,
+  .sales-period-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .sales-period-metrics > div,
+  .sales-period-metrics > div:nth-child(2) {
+    border-bottom: 1px solid #e1ebf7;
+    border-right: 0;
+  }
+
+  .sales-period-metrics > div:last-child {
+    border-bottom: 0;
+  }
+
+  .workspace-status {
+    font-size: 0.68rem;
+  }
+}

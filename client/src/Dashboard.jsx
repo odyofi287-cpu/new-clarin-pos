@@ -139,13 +139,15 @@ function SalesCalendar({ calendar }) {
   const [selectedMonth, setSelectedMonth] = useState("");
   const rows = mode === "daily" ? dailyRows : monthlyRows;
   const selectedPeriod = mode === "daily" ? selectedDate : selectedMonth;
-  const selectedRow = rows.find((row) => row.period === selectedPeriod) || rows[rows.length - 1] || null;
+  const selectedRow = rows.find((row) => row.period === selectedPeriod) || null;
+  const firstPeriod = rows[0]?.period || "";
+  const lastPeriod = rows[rows.length - 1]?.period || "";
   const label = (period) => mode === "daily" ? formatRecordDate(period) : new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${period}-01T00:00:00Z`));
 
   useEffect(() => {
-    if (!selectedDate && dailyRows.length) setSelectedDate(dailyRows[dailyRows.length - 1].period);
-    if (!selectedMonth && monthlyRows.length) setSelectedMonth(monthlyRows[monthlyRows.length - 1].period);
-  }, [dailyRows, monthlyRows, selectedDate, selectedMonth]);
+    setSelectedDate((current) => dailyRows.some((row) => row.period === current) ? current : dailyRows[dailyRows.length - 1]?.period || "");
+    setSelectedMonth((current) => monthlyRows.some((row) => row.period === current) ? current : monthlyRows[monthlyRows.length - 1]?.period || "");
+  }, [dailyRows, monthlyRows]);
 
   return (
     <section className="sales-calendar-card">
@@ -158,9 +160,15 @@ function SalesCalendar({ calendar }) {
       </div>
       <div className="sales-calendar-picker">
         <label>{mode === "daily" ? "Choose a date" : "Choose a month"}
-          <input type={mode === "daily" ? "date" : "month"} value={selectedPeriod} onChange={(event) => mode === "daily" ? setSelectedDate(event.target.value) : setSelectedMonth(event.target.value)} />
+          <input
+            type={mode === "daily" ? "date" : "month"}
+            value={selectedPeriod}
+            min={firstPeriod}
+            max={lastPeriod}
+            onChange={(event) => mode === "daily" ? setSelectedDate(event.target.value) : setSelectedMonth(event.target.value)}
+          />
         </label>
-        <span>{selectedRow ? label(selectedRow.period) : "No period selected"}</span>
+        <span>{selectedRow ? label(selectedRow.period) : "Choose an available period"}</span>
       </div>
       {selectedRow ? (
         <div className="sales-period-detail">
@@ -172,7 +180,7 @@ function SalesCalendar({ calendar }) {
             <div className="net"><span>Net sales</span><strong>{formatCurrency(selectedRow.net_sales)}</strong></div>
           </div>
         </div>
-      ) : <p className="sales-calendar-empty">No sales data is available for this period.</p>}
+      ) : <p className="sales-calendar-empty">Choose a date from the last 31 days or a month from the last 12 months to view its sales.</p>}
     </section>
   );
 }
@@ -453,10 +461,10 @@ function Dashboard({ token, role, viewMode = "dashboard" }) {
                     <tbody>
                       {data.recent_sales.map((sale) => (
                         <tr key={sale.id}>
-                          <td>{sale.id}</td>
-                          <td>{formatRecordDate(sale.sale_date)}</td>
-                          <td>{sale.item_count}</td>
-                          <td>{formatCurrency(sale.total_amount)}</td>
+                          <td data-label="ID">{sale.id}</td>
+                          <td data-label="Date">{formatRecordDate(sale.sale_date)}</td>
+                          <td data-label="Items">{sale.item_count}</td>
+                          <td data-label="Total">{formatCurrency(sale.total_amount)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -481,10 +489,10 @@ function Dashboard({ token, role, viewMode = "dashboard" }) {
                     <tbody>
                       {data.recent_deliveries.map((delivery) => (
                         <tr key={delivery.id}>
-                          <td>{delivery.id}</td>
-                          <td>{formatRecordDate(delivery.delivery_date)}</td>
-                          <td>{delivery.vendor_name}</td>
-                          <td>{formatCurrency(delivery.total_amount)}</td>
+                          <td data-label="ID">{delivery.id}</td>
+                          <td data-label="Date">{formatRecordDate(delivery.delivery_date)}</td>
+                          <td data-label="Vendor">{delivery.vendor_name}</td>
+                          <td data-label="Total">{formatCurrency(delivery.total_amount)}</td>
                         </tr>
                       ))}
                     </tbody>

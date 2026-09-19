@@ -1,11 +1,12 @@
 import express from "express";
 import { requireRole } from "../middleware/auth.js";
 import { dbAll, isInMemoryDb } from "./dbCompat.js";
+import { getBusinessDate } from "../businessDate.js";
 
 const router = express.Router();
 
 function getTodayString() {
-  return new Date().toISOString().split("T")[0];
+  return getBusinessDate();
 }
 
 function dateRange(req) {

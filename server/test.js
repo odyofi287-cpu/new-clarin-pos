@@ -4,6 +4,7 @@ import assert from "node:assert";
 process.env.NODE_ENV = "test";
 
 const { default: app } = await import("./app.js");
+const { getBusinessDate } = await import("./businessDate.js");
 const srv = app.listen(0);
 const port = srv.address().port;
 const base = `http://127.0.0.1:${port}`;
@@ -11,6 +12,10 @@ const base = `http://127.0.0.1:${port}`;
 test.after(() => new Promise((resolve, reject) => {
   srv.close((error) => error ? reject(error) : resolve());
 }));
+
+test("Business date follows the configured Manila operating day", () => {
+  assert.strictEqual(getBusinessDate(new Date("2026-09-19T18:00:00.000Z")), "2026-09-20");
+});
 
 async function login(email, password) {
   const res = await fetch(`${base}/api/auth/login`, {
