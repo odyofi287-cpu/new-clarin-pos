@@ -596,7 +596,9 @@ class PostgresDB {
     await this.pool.query(schema);
     await this.pool.query("ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS delivery_time TEXT");
     await this.pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_picture TEXT");
-    await this.seed();
+    if (shouldSeedInitialData()) {
+      await this.seed();
+    }
   }
 
   client() {
@@ -648,6 +650,18 @@ class PostgresDB {
     }
   }
 
+  async ensureSeedVendor(name, contact, vendorCode) {
+    const inserted = await this.pool.query(
+      "INSERT INTO vendors (name, contact, vendor_code, active) VALUES ($1, $2, $3, 1) ON CONFLICT (vendor_code) DO NOTHING RETURNING id",
+      [name, contact, vendorCode]
+    );
+    if (inserted.rows[0]) return inserted.rows[0].id;
+
+    const existing = await this.pool.query("SELECT id FROM vendors WHERE vendor_code = $1", [vendorCode]);
+    if (!existing.rows[0]) throw new Error(`Unable to find seeded vendor ${vendorCode}`);
+    return existing.rows[0].id;
+  }
+
   async seed() {
     const require = createRequire(import.meta.url);
     const bcrypt = require("bcrypt");
@@ -655,14 +669,8 @@ class PostgresDB {
     for (const role of roleNames) {
       await this.pool.query("INSERT INTO roles (name) VALUES ($1) ON CONFLICT (name) DO NOTHING", [role]);
     }
-    const vendorResult = await this.pool.query(
-      "INSERT INTO vendors (name, contact, vendor_code, active) VALUES ($1, $2, $3, 1) ON CONFLICT (vendor_code) DO UPDATE SET name = EXCLUDED.name RETURNING id",
-      ["Clarin Beverages", "0917-555-0101", "VND-0001"]
-    );
-    const vendor2Result = await this.pool.query(
-      "INSERT INTO vendors (name, contact, vendor_code, active) VALUES ($1, $2, $3, 1) ON CONFLICT (vendor_code) DO UPDATE SET name = EXCLUDED.name RETURNING id",
-      ["Arena Drinks Supplier", "0917-555-0202", "VND-0002"]
-    );
+    const vendorId1 = await this.ensureSeedVendor("Clarin Beverages", "0917-555-0101", "VND-0001");
+    const vendorId2 = await this.ensureSeedVendor("Arena Drinks Supplier", "0917-555-0202", "VND-0002");
     const products = [["Cola", "Soft Drink", 35, 50, 10, "bottle"], ["Mineral Water", "Water", 25, 70, 20, "bottle"]];
     for (const product of products) {
       await this.pool.query(
@@ -672,7 +680,7 @@ class PostgresDB {
         product
       );
     }
-    const users = [["superadmin", "superadmin@clarin.local", bcrypt.hashSync("Superadmin123!", 10), "System Owner", "SUPERADMIN", null], ["admin", "admin@clarin.local", bcrypt.hashSync("Admin123!", 10), "Arena Owner", "ADMIN", null], ["staff", "staff@clarin.local", bcrypt.hashSync("Staff123!", 10), "POS Staff", "STAFF", null], ["vendor", "vendor@clarin.local", bcrypt.hashSync("Vendor123!", 10), "Vendor User", "VENDOR", vendorResult.rows[0].id], ["vendor2", "vendor2@clarin.local", bcrypt.hashSync("Vendor123!", 10), "Vendor Two", "VENDOR", vendor2Result.rows[0].id]];
+    const users = [["superadmin", "superadmin@clarin.local", bcrypt.hashSync("Superadmin123!", 10), "System Owner", "SUPERADMIN", null], ["admin", "admin@clarin.local", bcrypt.hashSync("Admin123!", 10), "Arena Owner", "ADMIN", null], ["staff", "staff@clarin.local", bcrypt.hashSync("Staff123!", 10), "POS Staff", "STAFF", null], ["vendor", "vendor@clarin.local", bcrypt.hashSync("Vendor123!", 10), "Vendor User", "VENDOR", vendorId1], ["vendor2", "vendor2@clarin.local", bcrypt.hashSync("Vendor123!", 10), "Vendor Two", "VENDOR", vendorId2]];
     for (const [username, email, password, name, role, vendorId] of users) {
       await this.pool.query("INSERT INTO users (username, email, password, name, role_id, vendor_id, active) SELECT $1, $2, $3, $4, id, $6, 1 FROM roles WHERE name = $5 ON CONFLICT (email) DO NOTHING", [username, email, password, name, role, vendorId]);
     }

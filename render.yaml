@@ -14,3 +14,5 @@ services:
         value: production
       - key: JWT_SECRET
         generateValue: true
+      - key: SEED_INITIAL_DATA
+        value: false
