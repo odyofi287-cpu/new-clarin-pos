@@ -26,7 +26,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   const [saleOpen, setSaleOpen] = useState(false);
   const [saleForm, setSaleForm] = useState({ product_id: "", quantity: "1" });
   const [pickupEntries, setPickupEntries] = useState([]);
-  const [pickupHistory, setPickupHistory] = useState([]);
+  const [salesHistory, setSalesHistory] = useState([]);
   const [pickupMode, setPickupMode] = useState("create");
   const [editingPickupId, setEditingPickupId] = useState(null);
   const [listWindowOpen, setListWindowOpen] = useState(false);
@@ -120,9 +120,30 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
 
         const records = (body.data || []).slice().sort((a, b) => String(b.delivery_date).localeCompare(String(a.delivery_date)));
         setPickupEntries(records);
-        setPickupHistory(records);
       } catch (err) {
         if (active) setError("Unable to load pickup records");
+      }
+    };
+
+    const loadSalesHistory = async () => {
+      if (role === "VENDOR") {
+        setSalesHistory([]);
+        return;
+      }
+      try {
+        const res = await fetch(apiUrl('/api/sales'), {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        const body = await res.json();
+        if (!active) return;
+        if (!res.ok) {
+          setError(body.error || "Unable to load sales history");
+          return;
+        }
+        setSalesHistory(body.data || []);
+      } catch (err) {
+        if (active) setError("Unable to load sales history");
       }
     };
 
@@ -148,12 +169,14 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     loadVendors();
     loadPickupRecords();
     loadVendorReturns();
+    loadSalesHistory();
 
     const refreshData = () => {
       loadProducts();
       loadVendors();
       loadPickupRecords();
       loadVendorReturns();
+      loadSalesHistory();
     };
 
     const intervalId = window.setInterval(refreshData, REFRESH_INTERVAL_MS);
@@ -163,6 +186,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       loadVendors();
       loadPickupRecords();
       loadVendorReturns();
+      loadSalesHistory();
     };
     const handleVendorsUpdated = () => {
       loadVendors();
@@ -506,10 +530,10 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       <section className="dashboard-card">
         <div className="pos-header">
           <div>
-            <h2>{isSalesHistoryView ? "Vendor Pickup History" : isDeliveriesView ? "Vendor Deliveries" : "Direct-to-Vendor POS"}</h2>
+            <h2>{isSalesHistoryView ? "Recorded Sales History" : isDeliveriesView ? "Vendor Deliveries" : "Direct-to-Vendor POS"}</h2>
             <p className="muted-text">
               {isSalesHistoryView
-                ? "View vendor pickup history records."
+                ? "Review completed point-of-sale transactions."
                 : isDeliveriesView
                   ? "Access vendor pickup list and vendor returns."
                   : "Record vendor pickups with product, category, quantity, and total price."}
@@ -549,24 +573,28 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
 
         {isSalesHistoryView && (
           <div className="management-table-wrap">
-            {pickupHistory.length === 0 ? (
-              <p>No pickup history available.</p>
+            {salesHistory.length === 0 ? (
+              <p>No recorded sales available.</p>
             ) : (
               <table>
                 <thead>
                   <tr>
-                    <th>Vendor ID</th>
-                    <th>Vendor</th>
+                    <th>Sale ID</th>
                     <th>Date</th>
+                    <th>Sold By</th>
+                    <th>Items</th>
+                    <th>Quantity</th>
                     <th>Total</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {pickupHistory.map((entry) => (
+                  {salesHistory.map((entry) => (
                     <tr key={`sales-history-${entry.id}`}>
-                      <td data-label="Vendor ID">{getDisplayVendorId(entry)}</td>
-                      <td data-label="Vendor">{entry.vendor_name || entry.vendor_id}</td>
-                      <td data-label="Date">{formatDeliveryDate(entry.delivery_date)}</td>
+                      <td data-label="Sale ID">{entry.id}</td>
+                      <td data-label="Date">{formatDeliveryDate(entry.sale_date)}</td>
+                      <td data-label="Sold By">{entry.sold_by || "Unknown"}</td>
+                      <td data-label="Items">{entry.items || "-"}</td>
+                      <td data-label="Quantity">{entry.item_count}</td>
                       <td data-label="Total">{formatCurrency(entry.total_amount)}</td>
                     </tr>
                   ))}

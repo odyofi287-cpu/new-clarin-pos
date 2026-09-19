@@ -1,10 +1,63 @@
 import express from "express";
 import { requireRole } from "../middleware/auth.js";
 import { publishDataChange } from "../events.js";
-import { dbGet, dbRun, withTransaction } from "./dbCompat.js";
+import { dbAll, dbGet, dbRun, isInMemoryDb, withTransaction } from "./dbCompat.js";
 import { getBusinessDate } from "../businessDate.js";
 
 const router = express.Router();
+
+router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+  try {
+    if (isInMemoryDb(req.db)) {
+      const sales = req.db.sales
+        .slice()
+        .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+        .map((sale) => {
+          const items = req.db.sale_items.filter((item) => item.sale_id === sale.id);
+          const user = req.db.users.find((entry) => entry.id === sale.user_id);
+          return {
+            id: sale.id,
+            sale_date: sale.sale_date,
+            sold_by: user?.name || "Unknown",
+            items: items.map((item) => {
+              const product = req.db.products.find((entry) => entry.id === item.product_id);
+              return `${product?.name || "Unknown"} (${item.quantity})`;
+            }).join(", "),
+            item_count: items.reduce((sum, item) => sum + Number(item.quantity || 0), 0),
+            total_amount: sale.total_amount,
+          };
+        });
+      return res.json({ data: sales });
+    }
+
+    const sales = await dbAll(
+      req.db,
+      `SELECT s.id, s.sale_date, s.total_amount, u.name AS sold_by,
+              COALESCE(SUM(si.quantity), 0) AS item_count,
+              COALESCE(STRING_AGG(p.name || ' (' || si.quantity || ')', ', '), '') AS items
+         FROM sales s
+         LEFT JOIN users u ON u.id = s.user_id
+         LEFT JOIN sale_items si ON si.sale_id = s.id
+         LEFT JOIN products p ON p.id = si.product_id
+        GROUP BY s.id, s.sale_date, s.total_amount, s.created_at, u.name
+        ORDER BY s.sale_date DESC, s.created_at DESC`,
+      [],
+      `SELECT s.id, s.sale_date, s.total_amount, u.name AS sold_by,
+              COALESCE(SUM(si.quantity), 0) AS item_count,
+              COALESCE(GROUP_CONCAT(p.name || ' (' || si.quantity || ')', ', '), '') AS items
+         FROM sales s
+         LEFT JOIN users u ON u.id = s.user_id
+         LEFT JOIN sale_items si ON si.sale_id = s.id
+         LEFT JOIN products p ON p.id = si.product_id
+        GROUP BY s.id
+        ORDER BY s.sale_date DESC, s.created_at DESC`
+    );
+    res.json({ data: sales });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to load sales history" });
+  }
+});
 
 router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
   try {

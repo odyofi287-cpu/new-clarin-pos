@@ -464,6 +464,16 @@ test("Admin dashboard returns operational metrics", async () => {
   assert.strictEqual(body.data.sales_calendar.monthly.length, 12);
 });
 
+test("Staff can view recorded sales history", async () => {
+  const token = await login("staff@clarin.local", "Staff123!");
+  const res = await fetch(`${base}/api/sales`, { headers: { Authorization: `Bearer ${token}` } });
+  assert.strictEqual(res.status, 200);
+  const body = await res.json();
+  assert(Array.isArray(body.data));
+  assert(body.data.length > 0, "Expected recorded sales history");
+  assert(body.data.every((sale) => Object.hasOwn(sale, "item_count") && Object.hasOwn(sale, "total_amount")));
+});
+
 test("Vendor delivery CSV exports ISO dates", async () => {
   const token = await login("admin@clarin.local", "Admin123!");
   const res = await fetch(`${base}/api/reports/vendor-deliveries/csv?start_date=2026-01-01&end_date=2026-12-31`, {
