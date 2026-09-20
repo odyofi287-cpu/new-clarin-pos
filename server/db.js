@@ -305,6 +305,15 @@ class InMemoryDB {
             vendor_code: this.vendors.find((vendor) => vendor.id === d.vendor_id)?.vendor_code || null,
             vendor_name: this.vendors.find((vendor) => vendor.id === d.vendor_id)?.name || "Unknown",
           }));
+          if (normalized.includes("AS ITEMS")) {
+            rows = rows.map((delivery) => ({
+              ...delivery,
+              items: this.delivery_items
+                .filter((item) => item.delivery_id === delivery.id)
+                .map((item) => `${this.products.find((product) => product.id === item.product_id)?.name || "Unknown"} (${item.quantity})`)
+                .join(", "),
+            }));
+          }
           const vendorId = params[0];
           let paramIndex = 0;
           if (normalized.includes("D.VENDOR_ID = ?")) {

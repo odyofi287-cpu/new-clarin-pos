@@ -626,7 +626,9 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                         <th>Pickup ID</th>
                         <th>Vendor ID</th>
                         <th>Vendor</th>
+                        <th>Product(s)</th>
                         <th>Date</th>
+                        <th>Pickup Time</th>
                         <th>Total</th>
                       </tr>
                     </thead>
@@ -636,7 +638,9 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                           <td data-label="Pickup ID">{entry.id}</td>
                           <td data-label="Vendor ID">{getDisplayVendorId(entry)}</td>
                           <td data-label="Vendor">{entry.vendor_name || entry.vendor_id}</td>
+                          <td data-label="Product(s)">{entry.items || "-"}</td>
                           <td data-label="Date">{formatDeliveryDate(entry.delivery_date)}</td>
+                          <td data-label="Pickup Time">{entry.delivery_time || "-"}</td>
                           <td data-label="Total">{formatCurrency(entry.total_amount)}</td>
                         </tr>
                       ))}
@@ -663,7 +667,9 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                     <tr>
                       <th>Vendor ID</th>
                       <th>Vendor</th>
+                      <th>Product(s)</th>
                       <th>Date</th>
+                      <th>Pickup Time</th>
                       <th>Total</th>
                       {canManagePickupEntries && <th>Action</th>}
                     </tr>
@@ -673,7 +679,9 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                       <tr key={entry.id}>
                         <td data-label="Vendor ID">{getDisplayVendorId(entry)}</td>
                         <td data-label="Vendor">{entry.vendor_name || entry.vendor_id}</td>
+                        <td data-label="Product(s)">{entry.items || "-"}</td>
                         <td data-label="Date">{formatDeliveryDate(entry.delivery_date)}</td>
+                        <td data-label="Pickup Time">{entry.delivery_time || "-"}</td>
                         <td data-label="Total">{formatCurrency(entry.total_amount)}</td>
                         {canManagePickupEntries && (
                           <td data-label="Action" style={{ display: 'flex', gap: 8 }}>

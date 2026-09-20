@@ -41,15 +41,23 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (re
     const sqliteWhereClause = sqliteFilters.length ? `WHERE ${sqliteFilters.join(" AND ")}` : "";
     const deliveries = await dbAll(
       req.db,
-      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.delivery_time, d.total_amount, d.created_at
+      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.delivery_time, d.total_amount, d.created_at,
+              COALESCE(STRING_AGG(p.name || ' (' || di.quantity::text || ')', ', ' ORDER BY p.name), '') AS items
        FROM deliveries d
        JOIN vendors v ON d.vendor_id = v.id
-       ${pgWhereClause}`,
+       LEFT JOIN delivery_items di ON di.delivery_id = d.id
+       LEFT JOIN products p ON p.id = di.product_id
+       ${pgWhereClause}
+       GROUP BY d.id, v.id`,
       params,
-      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.delivery_time, d.total_amount, d.created_at
+      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.delivery_time, d.total_amount, d.created_at,
+              COALESCE(GROUP_CONCAT(p.name || ' (' || di.quantity || ')', ', '), '') AS items
        FROM deliveries d
        JOIN vendors v ON d.vendor_id = v.id
-       ${sqliteWhereClause}`
+       LEFT JOIN delivery_items di ON di.delivery_id = d.id
+       LEFT JOIN products p ON p.id = di.product_id
+       ${sqliteWhereClause}
+       GROUP BY d.id, v.id`
     );
 
     res.json({ data: deliveries });

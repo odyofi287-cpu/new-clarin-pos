@@ -56,6 +56,7 @@ test("Admin can login and access deliveries", async () => {
   const body = await res.json();
   assert(Array.isArray(body.data));
   assert(body.data.every((delivery) => /^VND-\d{4}$/.test(delivery.vendor_code)), "Expected deliveries to include the assigned vendor code");
+  assert(body.data.every((delivery) => typeof delivery.items === "string"), "Expected deliveries to include their product names");
 });
 
 test("Staff can login and access deliveries", async () => {
