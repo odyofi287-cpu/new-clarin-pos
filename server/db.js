@@ -522,7 +522,7 @@ class InMemoryDB {
 
     if (normalized.startsWith("INSERT INTO VENDOR_RETURNS")) {
       return {
-        run: (vendor_id, product_id, quantity, total_product_price_returned, return_date, return_time, created_by) => {
+        run: (vendor_id, product_id, quantity, total_product_price_returned, return_date, return_time, created_by, return_batch_id) => {
           const id = this.vendor_returns.length + 1;
           const row = {
             id,
@@ -533,6 +533,7 @@ class InMemoryDB {
             return_date,
             return_time,
             created_by,
+            return_batch_id,
             created_at: new Date().toISOString(),
           };
           this.vendor_returns.push(row);
@@ -545,7 +546,9 @@ class InMemoryDB {
       return {
         run: (id) => {
           const before = this.vendor_returns.length;
-          this.vendor_returns = this.vendor_returns.filter((row) => row.id !== id);
+          this.vendor_returns = normalized.includes("RETURN_BATCH_ID")
+            ? this.vendor_returns.filter((row) => row.return_batch_id !== id)
+            : this.vendor_returns.filter((row) => row.id !== id);
           return { changes: before - this.vendor_returns.length };
         }
       };
@@ -570,7 +573,9 @@ class InMemoryDB {
           }));
         },
         get: (id) => {
-          const row = this.vendor_returns.find((item) => item.id === id);
+          const row = normalized.includes("RETURN_BATCH_ID")
+            ? this.vendor_returns.find((item) => item.return_batch_id === id)
+            : this.vendor_returns.find((item) => item.id === id);
           if (!row) return undefined;
           return {
             ...row,
@@ -605,6 +610,8 @@ class PostgresDB {
     await this.pool.query(schema);
     await this.pool.query("ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS delivery_time TEXT");
     await this.pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_picture TEXT");
+    await this.pool.query("ALTER TABLE vendor_returns ADD COLUMN IF NOT EXISTS return_batch_id TEXT");
+    await this.pool.query("CREATE INDEX IF NOT EXISTS idx_vendor_returns_batch_id ON vendor_returns(return_batch_id)");
     if (shouldSeedInitialData()) {
       await this.seed();
     }
@@ -750,6 +757,12 @@ function migrateSchema(db) {
   if (!deliveryColumns.some((column) => column.name === "delivery_time")) {
     db.exec("ALTER TABLE deliveries ADD COLUMN delivery_time TEXT");
   }
+
+  const returnColumns = db.prepare("PRAGMA table_info(vendor_returns)").all();
+  if (!returnColumns.some((column) => column.name === "return_batch_id")) {
+    db.exec("ALTER TABLE vendor_returns ADD COLUMN return_batch_id TEXT");
+  }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_vendor_returns_batch_id ON vendor_returns(return_batch_id)");
 }
 
 function createSchema(db) {
@@ -873,6 +886,7 @@ function createSchema(db) {
       return_date TEXT NOT NULL,
       return_time TEXT NOT NULL,
       created_by INTEGER,
+      return_batch_id TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (vendor_id) REFERENCES vendors(id),
       FOREIGN KEY (product_id) REFERENCES products(id),

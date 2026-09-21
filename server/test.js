@@ -146,6 +146,7 @@ test("Staff can record and list vendor returns and exclude them from sales total
   assert.strictEqual(createRes.status, 201, 'Expected vendor return creation to succeed');
   const created = await createRes.json();
   assert.strictEqual(created.data.item_count, 2);
+  assert(created.data.return_batch_id, 'Expected a shared return batch ID');
   assert.strictEqual(created.data.items[0].vendor_id, 1);
   assert.strictEqual(created.data.items[0].quantity, 2);
 
@@ -153,7 +154,11 @@ test("Staff can record and list vendor returns and exclude them from sales total
   assert.strictEqual(listRes.status, 200);
   const list = await listRes.json();
   assert(Array.isArray(list.data));
-  assert(created.data.items.every((createdReturn) => list.data.some((entry) => Number(entry.id) === Number(createdReturn.id))), 'Expected every returned product in history');
+  const returnBatch = list.data.find((entry) => entry.return_batch_id === created.data.return_batch_id);
+  assert(returnBatch, 'Expected multi-product return to be grouped in history');
+  assert.strictEqual(Number(returnBatch.quantity), 3);
+  assert(returnBatch.items.some((item) => item.includes(product.name)) && returnBatch.items.some((item) => item.includes(secondProduct.name)), 'Expected grouped return products');
+  assert.deepStrictEqual([...returnBatch.return_ids].sort((a, b) => a - b), created.data.items.map((item) => item.id).sort((a, b) => a - b));
 
   const salesRes = await fetch(`${base}/api/reports/sales?start_date=2026-08-20&end_date=2026-08-20`, { headers: { Authorization: `Bearer ${token}` } });
   assert.strictEqual(salesRes.status, 200);
@@ -163,6 +168,16 @@ test("Staff can record and list vendor returns and exclude them from sales total
   if (firstSale) {
     assert(firstSale.total_amount >= 0, 'Returned product amounts should not inflate sales totals');
   }
+
+  const deleteRes = await fetch(`${base}/api/vendor-returns/batch/${created.data.return_batch_id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assert.strictEqual(deleteRes.status, 200, 'Expected a grouped return to be removed as one batch');
+
+  const afterDeleteRes = await fetch(`${base}/api/vendor-returns`, { headers: { Authorization: `Bearer ${token}` } });
+  const afterDelete = await afterDeleteRes.json();
+  assert(!afterDelete.data.some((entry) => entry.return_batch_id === created.data.return_batch_id), 'Expected every item in the return batch to be removed');
 });
 
 test("Vendor can view returns but cannot create or delete them", async () => {

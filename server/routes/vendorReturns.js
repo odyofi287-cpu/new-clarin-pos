@@ -1,14 +1,43 @@
 import express from "express";
+import { randomUUID } from "node:crypto";
 import { requireRole } from "../middleware/auth.js";
 import { publishDataChange } from "../events.js";
 import { dbAll, dbGet, dbRun, withTransaction } from "./dbCompat.js";
 
 const router = express.Router();
 
+function groupReturnRows(rows) {
+  const groups = new Map();
+
+  for (const row of rows) {
+    const groupId = row.return_batch_id || `legacy-${row.id}`;
+    const group = groups.get(groupId) || {
+      id: groupId,
+      return_batch_id: row.return_batch_id || null,
+      vendor_id: row.vendor_id,
+      vendor_name: row.vendor_name,
+      return_date: row.return_date,
+      return_time: row.return_time,
+      items: [],
+      quantity: 0,
+      total_product_price_returned: 0,
+      return_ids: [],
+    };
+
+    group.items.push(`${row.product_name || row.product_id} (${row.quantity})`);
+    group.quantity += Number(row.quantity || 0);
+    group.total_product_price_returned += Number(row.total_product_price_returned || 0);
+    group.return_ids.push(row.id);
+    groups.set(groupId, group);
+  }
+
+  return [...groups.values()];
+}
+
 router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     let sql = `
-      SELECT vr.id, vr.vendor_id, v.name AS vendor_name, vr.product_id, p.name AS product_name,
+      SELECT vr.id, vr.return_batch_id, vr.vendor_id, v.name AS vendor_name, vr.product_id, p.name AS product_name,
              vr.return_date, vr.return_time, vr.quantity, vr.total_product_price_returned
       FROM vendor_returns vr
       JOIN vendors v ON v.id = vr.vendor_id
@@ -23,7 +52,7 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (re
 
     sql += " ORDER BY vr.return_date DESC, vr.return_time DESC";
     const rows = await dbAll(req.db, sql, params, `
-      SELECT vr.id, vr.vendor_id, v.name AS vendor_name, vr.product_id, p.name AS product_name,
+      SELECT vr.id, vr.return_batch_id, vr.vendor_id, v.name AS vendor_name, vr.product_id, p.name AS product_name,
              vr.return_date, vr.return_time, vr.quantity, vr.total_product_price_returned
       FROM vendor_returns vr
       JOIN vendors v ON v.id = vr.vendor_id
@@ -31,7 +60,7 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (re
       ${req.user.role === "VENDOR" ? "WHERE vr.vendor_id = ?" : ""}
       ORDER BY vr.return_date DESC, vr.return_time DESC
     `);
-    res.json({ data: rows });
+    res.json({ data: groupReturnRows(rows) });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to load vendor returns" });
@@ -90,16 +119,17 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
       returnItems.push({ productId, product, qty, totalPrice });
     }
 
+    const returnBatchId = randomUUID();
     const createdReturns = await withTransaction(req.db, async () => {
       const rows = [];
       for (const item of returnItems) {
         const result = await dbRun(
           req.db,
-          `INSERT INTO vendor_returns (vendor_id, product_id, quantity, total_product_price_returned, return_date, return_time, created_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-          [vendorId, item.productId, item.qty, item.totalPrice, return_date, return_time, req.user.user_id || req.user.id],
-          `INSERT INTO vendor_returns (vendor_id, product_id, quantity, total_product_price_returned, return_date, return_time, created_by)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO vendor_returns (vendor_id, product_id, quantity, total_product_price_returned, return_date, return_time, created_by, return_batch_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+          [vendorId, item.productId, item.qty, item.totalPrice, return_date, return_time, req.user.user_id || req.user.id, returnBatchId],
+          `INSERT INTO vendor_returns (vendor_id, product_id, quantity, total_product_price_returned, return_date, return_time, created_by, return_batch_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
         );
         rows.push({
           id: result.lastInsertRowid,
@@ -111,6 +141,7 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
           return_time,
           quantity: item.qty,
           total_product_price_returned: item.totalPrice,
+          return_batch_id: returnBatchId,
         });
       }
       return rows;
@@ -121,12 +152,44 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
       data: {
         items: createdReturns,
         item_count: createdReturns.length,
+        return_batch_id: returnBatchId,
         total_amount: createdReturns.reduce((sum, item) => sum + Number(item.total_product_price_returned || 0), 0),
       }
     });
   } catch (error) {
     console.error(error);
     res.status(400).json({ error: error.message || "Failed to record vendor return" });
+  }
+});
+
+router.delete("/batch/:batchId", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+  try {
+    const batchId = String(req.params.batchId || "").trim();
+    if (!batchId) {
+      return res.status(400).json({ error: "Return batch ID is required" });
+    }
+
+    const existing = await dbGet(
+      req.db,
+      "SELECT id FROM vendor_returns WHERE return_batch_id = $1 LIMIT 1",
+      [batchId],
+      "SELECT id FROM vendor_returns WHERE return_batch_id = ? LIMIT 1"
+    );
+    if (!existing) {
+      return res.status(404).json({ error: "Vendor return batch not found" });
+    }
+
+    const result = await dbRun(
+      req.db,
+      "DELETE FROM vendor_returns WHERE return_batch_id = $1 RETURNING id",
+      [batchId],
+      "DELETE FROM vendor_returns WHERE return_batch_id = ?"
+    );
+    publishDataChange("vendor-return");
+    res.json({ data: { deleted: true, return_batch_id: batchId, count: result.changes } });
+  } catch (error) {
+    console.error(error);
+    res.status(400).json({ error: error.message || "Failed to remove vendor return batch" });
   }
 });
 

@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS vendor_returns (
   return_date DATE NOT NULL,
   return_time TEXT NOT NULL,
   created_by INTEGER REFERENCES users(id),
+  return_batch_id TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

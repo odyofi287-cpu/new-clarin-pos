@@ -483,7 +483,20 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       setEntryMode(null);
       setProductSearch("");
       resetReturnForm();
-      setReturnEntries((current) => [...returnedItems, ...current]);
+      const selectedVendor = vendors.find((vendor) => Number(vendor.id) === vendorId);
+      const returnBatch = {
+        id: body.data?.return_batch_id || returnedItems[0]?.id,
+        return_batch_id: body.data?.return_batch_id || null,
+        vendor_id: vendorId,
+        vendor_name: selectedVendor?.name,
+        return_date: returnForm.return_date,
+        return_time: returnForm.return_time,
+        items: returnedItems.map((item) => `${item.product_name || item.product_id} (${item.quantity})`).join(', '),
+        quantity: returnedItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0),
+        total_product_price_returned: Number(body.data?.total_amount || transactionTotal),
+        return_ids: returnedItems.map((item) => item.id),
+      };
+      setReturnEntries((current) => [returnBatch, ...current]);
       window.dispatchEvent(new Event('productsUpdated'));
     } catch (err) {
       setError(err.message || 'Unable to record vendor return');
@@ -960,7 +973,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
               <div className="pos-modal-header">
                 <div>
                   <h3>Vendor Return History</h3>
-                  <p className="muted-text">Review and remove recorded product returns.</p>
+                  <p className="muted-text">Review grouped return records and their products.</p>
                 </div>
                 <button className="small-button" onClick={() => setReturnsHistoryOpen(false)}>Close</button>
               </div>
@@ -969,20 +982,26 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
               ) : (
                 <div className="management-table-wrap">
                   <table>
-                    <thead><tr><th>ID</th><th>Vendor</th><th>Product</th><th>Date</th><th>Time</th><th>Qty</th><th>Returned Amount</th><th>Action</th></tr></thead>
+                    <thead><tr><th>Return ID</th><th>Vendor</th><th>Products</th><th>Date</th><th>Time</th><th>Qty</th><th>Returned Amount</th><th>Action</th></tr></thead>
                     <tbody>{returnEntries.map((entry) => <tr key={entry.id}>
-                      <td data-label="ID">{entry.id}</td>
+                      <td data-label="Return ID">{entry.id}</td>
                       <td data-label="Vendor">{entry.vendor_name || entry.vendor_id}</td>
-                      <td data-label="Product">{entry.product_name || entry.product_id}</td>
-                          <td data-label="Date">{formatDeliveryDate(entry.return_date)}</td>
+                      <td data-label="Products">{entry.items || entry.product_name || entry.product_id}</td>
+                      <td data-label="Date">{formatDeliveryDate(entry.return_date)}</td>
                       <td data-label="Time">{entry.return_time}</td>
                       <td data-label="Qty">{entry.quantity}</td>
                       <td data-label="Returned Amount">{formatCurrency(entry.total_product_price_returned)}</td>
                       <td data-label="Action"><button type="button" className="small-button" onClick={async () => {
-                        const res = await fetch(apiUrl(`/api/vendor-returns/${entry.id}`), { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+                        const legacyId = Array.isArray(entry.return_ids) ? entry.return_ids[0] : String(entry.return_ids || entry.id).split(',')[0];
+                        const endpoint = entry.return_batch_id
+                          ? `/api/vendor-returns/batch/${encodeURIComponent(entry.return_batch_id)}`
+                          : `/api/vendor-returns/${legacyId}`;
+                        const res = await fetch(apiUrl(endpoint), { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
                         if (res.ok) {
-                          setReturnEntries((current) => current.filter((row) => Number(row.id) !== Number(entry.id)));
-                          setStatus('Vendor return removed successfully.');
+                          setReturnEntries((current) => current.filter((row) => entry.return_batch_id
+                            ? row.return_batch_id !== entry.return_batch_id
+                            : String(row.id) !== String(entry.id)));
+                          setStatus(entry.return_batch_id ? 'Vendor return batch removed successfully.' : 'Vendor return removed successfully.');
                         } else {
                           const body = await res.json().catch(() => ({}));
                           setError(body.error || 'Unable to remove vendor return.');
