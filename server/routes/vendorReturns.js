@@ -1,7 +1,7 @@
 import express from "express";
 import { requireRole } from "../middleware/auth.js";
 import { publishDataChange } from "../events.js";
-import { dbAll, dbGet, dbRun } from "./dbCompat.js";
+import { dbAll, dbGet, dbRun, withTransaction } from "./dbCompat.js";
 
 const router = express.Router();
 
@@ -44,18 +44,19 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
       vendor_id,
       return_date,
       return_time,
-      product_id,
-      quantity,
-      total_product_price_returned,
     } = req.body;
 
     const vendorId = Number(vendor_id);
-    const productId = Number(product_id);
-    const qty = Number(quantity);
-    const totalPrice = Number(total_product_price_returned ?? 0);
+    const requestedItems = Array.isArray(req.body.items) && req.body.items.length
+      ? req.body.items
+      : [{
+          product_id: req.body.product_id,
+          quantity: req.body.quantity,
+          total_product_price_returned: req.body.total_product_price_returned,
+        }];
 
-    if (!vendorId || !productId || !Number.isFinite(qty) || qty <= 0) {
-      return res.status(400).json({ error: "Vendor, product, and valid quantity are required" });
+    if (!vendorId || !requestedItems.length) {
+      return res.status(400).json({ error: "Vendor and at least one returned product are required" });
     }
     if (!return_date) {
       return res.status(400).json({ error: "Return date is required" });
@@ -63,10 +64,6 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
     if (!return_time) {
       return res.status(400).json({ error: "Return time is required" });
     }
-    if (!Number.isFinite(totalPrice) || totalPrice < 0) {
-      return res.status(400).json({ error: "Return total must be a valid non-negative value" });
-    }
-
     const vendor = await dbGet(req.db, "SELECT id, name FROM vendors WHERE id = $1", [vendorId], "SELECT id, name FROM vendors WHERE id = ?");
     if (!vendor) {
       return res.status(404).json({ error: "Vendor not found" });
@@ -75,39 +72,58 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
       return res.status(403).json({ error: "You can only record returns for your own vendor profile" });
     }
 
-    const product = await dbGet(req.db, "SELECT id, name FROM products WHERE id = $1", [productId], "SELECT id, name FROM products WHERE id = ?");
-    if (!product) {
-      return res.status(404).json({ error: "Product not found" });
+    const returnItems = [];
+    for (const item of requestedItems) {
+      const productId = Number(item.product_id);
+      const qty = Number(item.quantity);
+      if (!productId || !Number.isInteger(qty) || qty <= 0) {
+        return res.status(400).json({ error: "Each returned product needs a valid whole-number quantity" });
+      }
+      const product = await dbGet(req.db, "SELECT id, name, selling_price FROM products WHERE id = $1", [productId], "SELECT id, name, selling_price FROM products WHERE id = ?");
+      if (!product) {
+        return res.status(404).json({ error: `Product not found: ${productId}` });
+      }
+      const totalPrice = Number(item.total_product_price_returned ?? (Number(product.selling_price || 0) * qty));
+      if (!Number.isFinite(totalPrice) || totalPrice < 0) {
+        return res.status(400).json({ error: "Each return total must be a valid non-negative value" });
+      }
+      returnItems.push({ productId, product, qty, totalPrice });
     }
 
-    const result = await dbRun(
-      req.db,
-      `INSERT INTO vendor_returns (vendor_id, product_id, quantity, total_product_price_returned, return_date, return_time, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-      [vendorId, productId, qty, totalPrice, return_date, return_time, req.user.user_id || req.user.id],
-      `INSERT INTO vendor_returns (vendor_id, product_id, quantity, total_product_price_returned, return_date, return_time, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    );
-
-    const row = await dbGet(
-      req.db,
-      `SELECT vr.id, vr.vendor_id, v.name AS vendor_name, vr.product_id, p.name AS product_name,
-              vr.return_date, vr.return_time, vr.quantity, vr.total_product_price_returned
-       FROM vendor_returns vr
-       JOIN vendors v ON v.id = vr.vendor_id
-       JOIN products p ON p.id = vr.product_id
-       WHERE vr.id = $1`,
-      [result.lastInsertRowid],
-      `SELECT vr.id, vr.vendor_id, v.name AS vendor_name, vr.product_id, p.name AS product_name,
-              vr.return_date, vr.return_time, vr.quantity, vr.total_product_price_returned
-       FROM vendor_returns vr
-       JOIN vendors v ON v.id = vr.vendor_id
-       JOIN products p ON p.id = vr.product_id
-       WHERE vr.id = ?`
-    );
+    const createdReturns = await withTransaction(req.db, async () => {
+      const rows = [];
+      for (const item of returnItems) {
+        const result = await dbRun(
+          req.db,
+          `INSERT INTO vendor_returns (vendor_id, product_id, quantity, total_product_price_returned, return_date, return_time, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+          [vendorId, item.productId, item.qty, item.totalPrice, return_date, return_time, req.user.user_id || req.user.id],
+          `INSERT INTO vendor_returns (vendor_id, product_id, quantity, total_product_price_returned, return_date, return_time, created_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
+        );
+        rows.push({
+          id: result.lastInsertRowid,
+          vendor_id: vendorId,
+          vendor_name: vendor.name,
+          product_id: item.productId,
+          product_name: item.product.name,
+          return_date,
+          return_time,
+          quantity: item.qty,
+          total_product_price_returned: item.totalPrice,
+        });
+      }
+      return rows;
+    });
 
     publishDataChange("vendor-return");
-    res.status(201).json({ data: row });
+    res.status(201).json({
+      data: {
+        items: createdReturns,
+        item_count: createdReturns.length,
+        total_amount: createdReturns.reduce((sum, item) => sum + Number(item.total_product_price_returned || 0), 0),
+      }
+    });
   } catch (error) {
     console.error(error);
     res.status(400).json({ error: error.message || "Failed to record vendor return" });

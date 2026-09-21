@@ -126,7 +126,9 @@ test("Staff can record and list vendor returns and exclude them from sales total
   const productsRes = await fetch(`${base}/api/products?active=1`, { headers: { Authorization: `Bearer ${token}` } });
   const products = await productsRes.json();
   const product = products.data.find((item) => item.id === 1) || products.data[0];
+  const secondProduct = products.data.find((item) => item.id !== product?.id);
   assert(product, "Expected a product for return testing");
+  assert(secondProduct, "Expected a second product for a multi-product return");
 
   const createRes = await fetch(`${base}/api/vendor-returns`, {
     method: 'POST',
@@ -135,21 +137,23 @@ test("Staff can record and list vendor returns and exclude them from sales total
       return_date: '2026-08-20',
       return_time: '09:45',
       vendor_id: 1,
-      product_id: product.id,
-      quantity: 2,
-      total_product_price_returned: 70,
+      items: [
+        { product_id: product.id, quantity: 2, total_product_price_returned: 70 },
+        { product_id: secondProduct.id, quantity: 1, total_product_price_returned: 20 },
+      ],
     })
   });
   assert.strictEqual(createRes.status, 201, 'Expected vendor return creation to succeed');
   const created = await createRes.json();
-  assert.strictEqual(created.data.vendor_id, 1);
-  assert.strictEqual(created.data.quantity, 2);
+  assert.strictEqual(created.data.item_count, 2);
+  assert.strictEqual(created.data.items[0].vendor_id, 1);
+  assert.strictEqual(created.data.items[0].quantity, 2);
 
   const listRes = await fetch(`${base}/api/vendor-returns`, { headers: { Authorization: `Bearer ${token}` } });
   assert.strictEqual(listRes.status, 200);
   const list = await listRes.json();
   assert(Array.isArray(list.data));
-  assert(list.data.some((entry) => Number(entry.id) === Number(created.data.id)));
+  assert(created.data.items.every((createdReturn) => list.data.some((entry) => Number(entry.id) === Number(createdReturn.id))), 'Expected every returned product in history');
 
   const salesRes = await fetch(`${base}/api/reports/sales?start_date=2026-08-20&end_date=2026-08-20`, { headers: { Authorization: `Bearer ${token}` } });
   assert.strictEqual(salesRes.status, 200);

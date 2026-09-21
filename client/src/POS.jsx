@@ -31,6 +31,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   const [productSearch, setProductSearch] = useState("");
   const [pickupQuantities, setPickupQuantities] = useState({});
   const [saleQuantities, setSaleQuantities] = useState({});
+  const [returnQuantities, setReturnQuantities] = useState({});
   const [pickupEntries, setPickupEntries] = useState([]);
   const [salesHistory, setSalesHistory] = useState([]);
   const [pickupMode, setPickupMode] = useState("create");
@@ -221,7 +222,11 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     [products, pickupForm.product_id]
   );
 
-  const transactionQuantities = entryMode === "pickup" ? pickupQuantities : saleQuantities;
+  const transactionQuantities = entryMode === "pickup"
+    ? pickupQuantities
+    : entryMode === "return"
+      ? returnQuantities
+      : saleQuantities;
   const filteredCatalogProducts = useMemo(() => {
     const search = productSearch.trim().toLowerCase();
     if (!search) return products;
@@ -301,7 +306,11 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   const updateTransactionQuantity = (product, nextValue) => {
     const parsed = Number(nextValue);
     const quantity = Number.isFinite(parsed) ? Math.max(0, Math.min(Math.trunc(parsed), Number(product.current_stock || 0))) : 0;
-    const setQuantities = entryMode === "pickup" ? setPickupQuantities : setSaleQuantities;
+    const setQuantities = entryMode === "pickup"
+      ? setPickupQuantities
+      : entryMode === "return"
+        ? setReturnQuantities
+        : setSaleQuantities;
     setQuantities((current) => ({ ...current, [product.id]: quantity }));
   };
 
@@ -309,6 +318,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     setEntryMode(null);
     setProductSearch("");
     setSaleQuantities({});
+    setReturnQuantities({});
     resetPickupForm();
   };
 
@@ -322,6 +332,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       product_price: "",
       total_product_price_returned: "0.00",
     });
+    setReturnQuantities({});
   };
 
   const submitSale = async (event) => {
@@ -433,23 +444,21 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     setStatus(null);
 
     const vendorId = Number(returnForm.vendor_id);
-    const productId = Number(returnForm.product_id);
-    const quantity = Number(returnForm.quantity);
-    const total = Number(returnForm.total_product_price_returned || 0);
 
     if (!returnForm.return_date || !returnForm.return_time) {
       setError("Return date and return time are required.");
       return;
     }
-    if (!vendorId || !productId || !Number.isFinite(quantity) || quantity <= 0) {
-      setError("Please select a valid vendor and product and specify a positive quantity.");
+    if (!vendorId) {
+      setError("Please select a vendor.");
       return;
     }
-    if (!Number.isFinite(total) || total < 0) {
-      setError("Returned total must be zero or greater.");
+    if (!transactionItems.length) {
+      setError("Add at least one product with a quantity greater than zero.");
       return;
     }
 
+    setSubmitting(true);
     try {
       const res = await fetch(apiUrl('/api/vendor-returns'), {
         method: 'POST',
@@ -458,22 +467,28 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
           vendor_id: vendorId,
           return_date: returnForm.return_date,
           return_time: returnForm.return_time,
-          product_id: productId,
-          quantity,
-          total_product_price_returned: total,
+          items: transactionItems.map((item) => ({
+            product_id: item.id,
+            quantity: item.quantity,
+            total_product_price_returned: item.quantity * Number(item.selling_price || 0),
+          })),
         })
       });
       const body = await res.json();
       if (!res.ok) {
         throw new Error(body.error || 'Unable to record vendor return');
       }
-      setStatus(`Vendor return recorded for ${body.data.product_name} — ${body.data.quantity} units.`);
-      setReturnsOpen(false);
+      const returnedItems = body.data?.items || [];
+      setStatus(`Vendor return recorded with ${returnedItems.length} product${returnedItems.length === 1 ? '' : 's'} — total ${formatCurrency(body.data?.total_amount || transactionTotal)}.`);
+      setEntryMode(null);
+      setProductSearch("");
       resetReturnForm();
-      setReturnEntries((current) => [body.data, ...current]);
+      setReturnEntries((current) => [...returnedItems, ...current]);
       window.dispatchEvent(new Event('productsUpdated'));
     } catch (err) {
       setError(err.message || 'Unable to record vendor return');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -563,40 +578,42 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
 
   if (entryMode) {
     const isPickupEntry = entryMode === "pickup";
-    const selectedVendor = vendors.find((vendor) => String(vendor.id) === String(pickupForm.vendor_id));
+    const isReturnEntry = entryMode === "return";
+    const entryForm = isReturnEntry ? returnForm : pickupForm;
+    const selectedVendor = vendors.find((vendor) => String(vendor.id) === String(entryForm.vendor_id));
     const submitLabel = isPickupEntry
       ? (pickupMode === "edit" ? "Update Vendor Pickup" : "Save Vendor Pickup")
-      : "Record Sale";
+      : isReturnEntry ? "Save Vendor Return" : "Record Sale";
 
     return (
       <div className="dashboard-shell">
         <section className="dashboard-card transaction-entry-page">
-          <form onSubmit={isPickupEntry ? submitPickup : submitSale}>
+          <form onSubmit={isPickupEntry ? submitPickup : isReturnEntry ? submitReturn : submitSale}>
             <header className="transaction-entry-header">
               <div>
                 <button type="button" className="transaction-back" onClick={closeTransactionEntry}>← Back to POS</button>
-                <span className="transaction-eyebrow">{isPickupEntry ? "Vendor fulfillment" : "Point-of-sale checkout"}</span>
-                <h2>{isPickupEntry ? (pickupMode === "edit" ? "Edit Vendor Pickup" : "Add Vendor Pickup") : "Record Sale"}</h2>
-                <p>{isPickupEntry ? "Choose the vendor, pickup schedule, and every product included in this delivery." : "Add products and quantities to create one complete recorded sale."}</p>
+                <span className="transaction-eyebrow">{isPickupEntry ? "Vendor fulfillment" : isReturnEntry ? "Vendor returns" : "Point-of-sale checkout"}</span>
+                <h2>{isPickupEntry ? (pickupMode === "edit" ? "Edit Vendor Pickup" : "Add Vendor Pickup") : isReturnEntry ? "Record Vendor Return" : "Record Sale"}</h2>
+                <p>{isPickupEntry ? "Choose the vendor, pickup schedule, and every product included in this delivery." : isReturnEntry ? "Choose the vendor, return schedule, and every product included in this return." : "Add products and quantities to create one complete recorded sale."}</p>
               </div>
               <button type="button" className="small-button" onClick={closeTransactionEntry}>Cancel</button>
             </header>
 
             {error && <p className="error-message">{error}</p>}
 
-            {isPickupEntry && (
-              <section className="transaction-details" aria-label="Pickup details">
+            {(isPickupEntry || isReturnEntry) && (
+              <section className="transaction-details" aria-label={isReturnEntry ? "Return details" : "Pickup details"}>
                 <label>
-                  Pickup date
-                  <input type="date" value={pickupForm.pickup_date} onChange={(event) => setPickupForm({ ...pickupForm, pickup_date: event.target.value })} required />
+                  {isReturnEntry ? "Return date" : "Pickup date"}
+                  <input type="date" value={isReturnEntry ? returnForm.return_date : pickupForm.pickup_date} onChange={(event) => isReturnEntry ? setReturnForm({ ...returnForm, return_date: event.target.value }) : setPickupForm({ ...pickupForm, pickup_date: event.target.value })} required />
                 </label>
                 <label>
-                  Pickup time
-                  <input type="time" value={pickupForm.pickup_time} onChange={(event) => setPickupForm({ ...pickupForm, pickup_time: event.target.value })} required />
+                  {isReturnEntry ? "Return time" : "Pickup time"}
+                  <input type="time" value={isReturnEntry ? returnForm.return_time : pickupForm.pickup_time} onChange={(event) => isReturnEntry ? setReturnForm({ ...returnForm, return_time: event.target.value }) : setPickupForm({ ...pickupForm, pickup_time: event.target.value })} required />
                 </label>
                 <label className="transaction-vendor-field">
                   Vendor
-                  <select value={pickupForm.vendor_id} onChange={(event) => setPickupForm({ ...pickupForm, vendor_id: event.target.value })} required>
+                  <select value={entryForm.vendor_id} onChange={(event) => isReturnEntry ? setReturnForm({ ...returnForm, vendor_id: event.target.value }) : setPickupForm({ ...pickupForm, vendor_id: event.target.value })} required>
                     <option value="">Select vendor</option>
                     {vendors.map((vendor) => (
                       <option key={vendor.id} value={vendor.id}>
@@ -613,7 +630,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
               <div className="transaction-catalog-heading">
                 <div>
                   <span className="transaction-eyebrow">Products</span>
-                  <h3>Build this {isPickupEntry ? "pickup" : "sale"}</h3>
+                  <h3>Build this {isPickupEntry ? "pickup" : isReturnEntry ? "return" : "sale"}</h3>
                   <p>Enter a quantity for each product you want to include.</p>
                 </div>
                 <label className="transaction-search">
@@ -668,13 +685,13 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
 
             <aside className="transaction-summary">
               <div>
-                <span className="transaction-eyebrow">Order summary</span>
+                <span className="transaction-eyebrow">{isReturnEntry ? "Return summary" : "Order summary"}</span>
                 <h3>{transactionItems.length} product{transactionItems.length === 1 ? "" : "s"} · {transactionQuantityTotal} units</h3>
                 {transactionItems.length ? (
                   <ul>
                     {transactionItems.map((item) => <li key={item.id}><span>{item.name} <b>×{item.quantity}</b></span><strong>{formatCurrency(item.quantity * Number(item.selling_price || 0))}</strong></li>)}
                   </ul>
-                ) : <p>Choose product quantities to build this record.</p>}
+                ) : <p>Choose product quantities to build this {isReturnEntry ? "return" : "record"}.</p>}
               </div>
               <div className="transaction-total">
                 <span>Total</span>
@@ -721,7 +738,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
               </button>
             )}
             {isDeliveriesView && role !== "VENDOR" && (
-              <button className="small-button" onClick={() => setReturnsOpen(true)}>
+              <button className="small-button" onClick={() => { resetReturnForm(); setProductSearch(""); setEntryMode("return"); setError(null); setStatus(null); }}>
                 Record Return
               </button>
             )}
