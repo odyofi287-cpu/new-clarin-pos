@@ -1,0 +1,224 @@
+.transaction-entry-page {
+  background: linear-gradient(145deg, #ffffff 0%, #f6faff 66%, #eef6ff 100%);
+  color: #12213f;
+}
+
+.transaction-entry-page form {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.transaction-entry-page .sr-only {
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+.transaction-entry-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.transaction-entry-header h2,
+.transaction-entry-page h3,
+.transaction-entry-page h4 {
+  color: #16325c;
+  margin: 0.2rem 0;
+  text-shadow: none;
+}
+
+.transaction-entry-header p,
+.transaction-catalog-heading p,
+.transaction-summary p {
+  color: #6d819d;
+  font-size: 0.86rem;
+  margin: 0;
+}
+
+.transaction-back {
+  background: transparent;
+  border: 0;
+  color: #286db8;
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 0;
+}
+
+.transaction-back::before { display: none; }
+
+.transaction-eyebrow {
+  color: #4775a9;
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.transaction-details {
+  background: #ffffff;
+  border: 1px solid #dbe8f6;
+  border-radius: 14px;
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: minmax(160px, 0.65fr) minmax(160px, 0.65fr) minmax(240px, 1fr);
+  padding: 1rem;
+}
+
+.transaction-details label {
+  color: #34567f;
+  display: grid;
+  font-size: 0.75rem;
+  font-weight: 800;
+  gap: 0.38rem;
+}
+
+.transaction-details input,
+.transaction-details select,
+.transaction-search input {
+  background: #fbfdff;
+  border: 1px solid #bfd2e9;
+  border-radius: 9px;
+  color: #17335d;
+  min-height: 42px;
+  padding: 0.55rem 0.7rem;
+}
+
+.transaction-details small {
+  color: #6e86a5;
+  font-size: 0.69rem;
+}
+
+.transaction-catalog {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.transaction-catalog-heading {
+  align-items: end;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.transaction-search { min-width: min(100%, 320px); }
+.transaction-search input { width: 100%; }
+
+.transaction-product-grid {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+}
+
+.transaction-product-card {
+  background: #ffffff;
+  border: 1px solid #d7e5f4;
+  border-radius: 14px;
+  display: grid;
+  gap: 0.72rem;
+  grid-template-columns: 52px minmax(0, 1fr);
+  padding: 0.85rem;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.transaction-product-card:hover {
+  border-color: #8ebce9;
+  box-shadow: 0 10px 22px rgba(42, 103, 171, 0.12);
+  transform: translateY(-2px);
+}
+
+.transaction-product-art {
+  align-items: center;
+  background: linear-gradient(135deg, #2e89d9, #244f94);
+  border-radius: 13px;
+  color: #ffffff;
+  display: flex;
+  font-size: 1.35rem;
+  font-weight: 900;
+  height: 52px;
+  justify-content: center;
+}
+
+.tone-1 .transaction-product-art { background: linear-gradient(135deg, #8c61d6, #51389e); }
+.tone-2 .transaction-product-art { background: linear-gradient(135deg, #20a28b, #176d6e); }
+.tone-3 .transaction-product-art { background: linear-gradient(135deg, #dd8b39, #b6503d); }
+
+.transaction-product-copy span {
+  color: #7184a0;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.transaction-product-copy h4 { font-size: 0.96rem; }
+.transaction-product-copy p { color: #526f95; font-size: 0.74rem; margin: 0; }
+
+.transaction-quantity-control {
+  align-items: center;
+  border: 1px solid #c9dbee;
+  border-radius: 9px;
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: 38px minmax(0, 1fr) 38px;
+  overflow: hidden;
+}
+
+.transaction-quantity-control button {
+  background: #eef5fc;
+  border: 0;
+  border-radius: 0;
+  color: #2d69ac;
+  font-size: 1.2rem;
+  height: 38px;
+  padding: 0;
+}
+
+.transaction-quantity-control button:disabled { color: #9aacbf; cursor: not-allowed; }
+.transaction-quantity-control button::before { display: none; }
+.transaction-quantity-control button:hover:not(:disabled) { box-shadow: none; transform: none; }
+.transaction-quantity-control label { min-width: 0; }
+.transaction-quantity-control input { border: 0; color: #183b67; font-weight: 800; height: 38px; padding: 0 0.3rem; text-align: center; width: 100%; }
+.transaction-quantity-control input:focus { outline: 2px solid rgba(40, 121, 232, 0.25); outline-offset: -2px; }
+
+.transaction-summary {
+  align-items: center;
+  background: linear-gradient(135deg, #173d73, #255fa9);
+  border-radius: 15px;
+  color: #ffffff;
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  padding: 1rem;
+}
+
+.transaction-summary .transaction-eyebrow,
+.transaction-summary p { color: #cfe1f8; }
+.transaction-summary h3 { color: #ffffff; font-size: 0.98rem; }
+.transaction-summary ul { display: grid; gap: 0.3rem; list-style: none; margin: 0.55rem 0 0; padding: 0; }
+.transaction-summary li { display: flex; font-size: 0.76rem; gap: 1rem; justify-content: space-between; }
+.transaction-summary li b { color: #bad7f8; }
+.transaction-total { border-left: 1px solid rgba(255,255,255,0.25); padding-left: 1rem; }
+.transaction-total span { color: #cfe1f8; display: block; font-size: 0.72rem; font-weight: 800; text-transform: uppercase; }
+.transaction-total strong { font-size: 1.15rem; }
+.transaction-summary .primary-button { background: #ffffff; color: #1d579f; white-space: nowrap; }
+.transaction-empty { background: #ffffff; border: 1px dashed #bbd1ea; border-radius: 12px; color: #6b83a2; padding: 1.2rem; text-align: center; }
+
+@media (max-width: 760px) {
+  .transaction-entry-page { padding: 0.9rem; }
+  .transaction-entry-header,
+  .transaction-catalog-heading { align-items: stretch; flex-direction: column; }
+  .transaction-entry-header > .small-button { align-self: flex-start; }
+  .transaction-details { grid-template-columns: 1fr; padding: 0.8rem; }
+  .transaction-search { min-width: 0; width: 100%; }
+  .transaction-product-grid { grid-template-columns: 1fr; }
+  .transaction-summary { align-items: stretch; grid-template-columns: 1fr; }
+  .transaction-total { border-left: 0; border-top: 1px solid rgba(255,255,255,0.25); padding: 0.75rem 0 0; }
+  .transaction-summary .primary-button { width: 100%; }
+}

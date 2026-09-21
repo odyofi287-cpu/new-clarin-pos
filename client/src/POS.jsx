@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiUrl } from "./api";
 import "./history.css";
+import "./transaction-entry.css";
 
 function formatCurrency(value) {
   return value == null ? "0.00" : Number(value).toLocaleString("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 });
@@ -26,6 +27,10 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   const [pickupOpen, setPickupOpen] = useState(false);
   const [saleOpen, setSaleOpen] = useState(false);
   const [saleForm, setSaleForm] = useState({ product_id: "", quantity: "1" });
+  const [entryMode, setEntryMode] = useState(null);
+  const [productSearch, setProductSearch] = useState("");
+  const [pickupQuantities, setPickupQuantities] = useState({});
+  const [saleQuantities, setSaleQuantities] = useState({});
   const [pickupEntries, setPickupEntries] = useState([]);
   const [salesHistory, setSalesHistory] = useState([]);
   const [pickupMode, setPickupMode] = useState("create");
@@ -216,6 +221,29 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     [products, pickupForm.product_id]
   );
 
+  const transactionQuantities = entryMode === "pickup" ? pickupQuantities : saleQuantities;
+  const filteredCatalogProducts = useMemo(() => {
+    const search = productSearch.trim().toLowerCase();
+    if (!search) return products;
+    return products.filter((product) => [product.name, product.category, product.unit]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(search)));
+  }, [products, productSearch]);
+
+  const transactionItems = useMemo(() => products
+    .map((product) => ({ ...product, quantity: Number(transactionQuantities[product.id] || 0) }))
+    .filter((product) => Number.isInteger(product.quantity) && product.quantity > 0), [products, transactionQuantities]);
+
+  const transactionQuantityTotal = useMemo(
+    () => transactionItems.reduce((total, item) => total + item.quantity, 0),
+    [transactionItems]
+  );
+
+  const transactionTotal = useMemo(
+    () => transactionItems.reduce((total, item) => total + (item.quantity * Number(item.selling_price || 0)), 0),
+    [transactionItems]
+  );
+
   const selectedReturnProduct = useMemo(
     () => products.find((product) => String(product.id) === String(returnForm.product_id)) || null,
     [products, returnForm.product_id]
@@ -267,6 +295,21 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     });
     setEditingPickupId(null);
     setPickupMode("create");
+    setPickupQuantities({});
+  };
+
+  const updateTransactionQuantity = (product, nextValue) => {
+    const parsed = Number(nextValue);
+    const quantity = Number.isFinite(parsed) ? Math.max(0, Math.min(Math.trunc(parsed), Number(product.current_stock || 0))) : 0;
+    const setQuantities = entryMode === "pickup" ? setPickupQuantities : setSaleQuantities;
+    setQuantities((current) => ({ ...current, [product.id]: quantity }));
+  };
+
+  const closeTransactionEntry = () => {
+    setEntryMode(null);
+    setProductSearch("");
+    setSaleQuantities({});
+    resetPickupForm();
   };
 
   const resetReturnForm = () => {
@@ -285,24 +328,23 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     event.preventDefault();
     setError(null);
     setStatus(null);
-    const productId = Number(saleForm.product_id);
-    const quantity = Number(saleForm.quantity);
-    const product = products.find((item) => Number(item.id) === productId);
-    if (!product || !Number.isInteger(quantity) || quantity <= 0) {
-      setError("Please select a product and enter a valid whole-number quantity.");
+    if (!transactionItems.length) {
+      setError("Add at least one product with a quantity greater than zero.");
       return;
     }
     try {
       const res = await fetch(apiUrl('/api/sales'), {
         method: 'POST',
         headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ items: [{ product_id: productId, quantity }] }),
+        body: JSON.stringify({ items: transactionItems.map((item) => ({ product_id: item.id, quantity: item.quantity })) }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || 'Unable to record sale');
-      setSaleOpen(false);
+      setEntryMode(null);
+      setSaleQuantities({});
+      setProductSearch("");
       setSaleForm({ product_id: "", quantity: "1" });
-      setStatus(`Sale recorded for ${product.name} — ${quantity} unit${quantity === 1 ? '' : 's'}.`);
+      setStatus(`Sale recorded with ${transactionItems.length} product${transactionItems.length === 1 ? '' : 's'} and ${transactionQuantityTotal} total units.`);
       window.dispatchEvent(new Event('productsUpdated'));
     } catch (err) {
       setError(err.message || 'Unable to record sale');
@@ -311,7 +353,8 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
 
   const openCreatePickup = () => {
     resetPickupForm();
-    setPickupOpen(true);
+    setEntryMode("pickup");
+    setProductSearch("");
     setError(null);
     setStatus(null);
   };
@@ -325,20 +368,22 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       if (!detailRes.ok) {
         throw new Error(detailBody.error || "Unable to load pickup details");
       }
-      const firstItem = (detailBody.data?.items || [])[0] || {};
+      const items = detailBody.data?.items || [];
       setEditingPickupId(record.id);
       setPickupMode("edit");
       setPickupForm({
         pickup_date: detailBody.data?.delivery_date || record.delivery_date || "",
-        pickup_time: detailBody.data?.pickup_time || "09:00",
+        pickup_time: detailBody.data?.delivery_time || record.delivery_time || "09:00",
         vendor_id: String(detailBody.data?.vendor_id ?? record.vendor_id ?? ""),
-        product_id: String(firstItem.product_id || ""),
-        quantity: String(firstItem.quantity || 1),
-        category: firstItem.product_name ? "" : "",
-        unit_price: String(firstItem.unit_cost || 0),
-        total_price: String((Number(firstItem.quantity || 0) * Number(firstItem.unit_cost || 0)).toFixed(2)),
+        product_id: "",
+        quantity: "1",
+        category: "",
+        unit_price: "",
+        total_price: "0.00",
       });
-      setPickupOpen(true);
+      setPickupQuantities(Object.fromEntries(items.map((item) => [item.product_id, Number(item.quantity || 0)])));
+      setEntryMode("pickup");
+      setProductSearch("");
       setError(null);
       setStatus(null);
     } catch (err) {
@@ -364,7 +409,6 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       }
 
       setPickupEntries((current) => current.filter((record) => Number(record.id) !== numericId));
-      setPickupHistory((current) => current.filter((record) => Number(record.id) !== numericId));
       window.dispatchEvent(new Event('productsUpdated'));
       setStatus('Vendor pickup deleted successfully.');
       setError(null);
@@ -377,7 +421,6 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       if (resync.ok) {
         const records = (newBody.data || []).slice().sort((a, b) => String(b.delivery_date).localeCompare(String(a.delivery_date)));
         setPickupEntries(records);
-        setPickupHistory(records);
       }
     } catch (err) {
       setError(err.message || 'Unable to delete vendor pickup');
@@ -447,25 +490,16 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       setError("Please select a vendor.");
       return;
     }
-    if (!pickupForm.product_id) {
-      setError("Please select a product.");
+    if (!transactionItems.length) {
+      setError("Add at least one product with a quantity greater than zero.");
       return;
     }
 
-    const quantity = Number(pickupForm.quantity);
-    if (!Number.isFinite(quantity) || quantity <= 0) {
-      setError("Quantity must be greater than zero.");
-      return;
-    }
-
-    const product = selectedProduct;
-    if (!product) {
-      setError("Selected product could not be found.");
-      return;
-    }
-
-    const unitPrice = Number(product.selling_price || 0);
-    const totalPrice = quantity * unitPrice;
+    const deliveryItems = transactionItems.map((item) => ({
+      product_id: item.id,
+      quantity: item.quantity,
+      unit_cost: Number(item.selling_price || 0),
+    }));
 
     setSubmitting(true);
     try {
@@ -492,14 +526,14 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
             vendor_id: Number(pickupForm.vendor_id),
             pickup_datetime: `${pickupForm.pickup_date}T${pickupForm.pickup_time}`,
             delivery_date: pickupForm.pickup_date,
-            items: [{ product_id: Number(product.id), quantity, unit_cost: unitPrice }],
+            items: deliveryItems,
           }),
         });
         const body = await res.json();
         if (!res.ok) {
           throw new Error(body.error || 'Unable to update vendor pickup');
         }
-        setStatus(`Vendor pickup updated for ${product.name} — total ${formatCurrency(totalPrice)}`);
+        setStatus(`Vendor pickup updated with ${transactionItems.length} product${transactionItems.length === 1 ? '' : 's'} — total ${formatCurrency(transactionTotal)}.`);
       } else {
         const res = await fetch(apiUrl('/api/deliveries'), {
           method: 'POST',
@@ -507,16 +541,17 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
           body: JSON.stringify({
             vendor_id: Number(pickupForm.vendor_id),
             pickup_datetime: `${pickupForm.pickup_date}T${pickupForm.pickup_time}`,
-            items: [{ product_id: Number(product.id), quantity, unit_cost: unitPrice }],
+            items: deliveryItems,
           }),
         });
         const body = await res.json();
         if (!res.ok) {
           throw new Error(body.error || 'Unable to record vendor pickup');
         }
-        setStatus(`Vendor pickup recorded for ${product.name} — total ${formatCurrency(totalPrice)}`);
+        setStatus(`Vendor pickup recorded with ${transactionItems.length} product${transactionItems.length === 1 ? '' : 's'} — total ${formatCurrency(transactionTotal)}.`);
       }
-      setPickupOpen(false);
+      setEntryMode(null);
+      setProductSearch("");
       resetPickupForm();
       window.dispatchEvent(new Event('productsUpdated'));
     } catch (err) {
@@ -525,6 +560,122 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       setSubmitting(false);
     }
   };
+
+  if (entryMode) {
+    const isPickupEntry = entryMode === "pickup";
+    const selectedVendor = vendors.find((vendor) => String(vendor.id) === String(pickupForm.vendor_id));
+    const submitLabel = isPickupEntry
+      ? (pickupMode === "edit" ? "Update Vendor Pickup" : "Save Vendor Pickup")
+      : "Record Sale";
+
+    return (
+      <div className="dashboard-shell">
+        <section className="dashboard-card transaction-entry-page">
+          <form onSubmit={isPickupEntry ? submitPickup : submitSale}>
+            <header className="transaction-entry-header">
+              <div>
+                <button type="button" className="transaction-back" onClick={closeTransactionEntry}>← Back to POS</button>
+                <span className="transaction-eyebrow">{isPickupEntry ? "Vendor fulfillment" : "Point-of-sale checkout"}</span>
+                <h2>{isPickupEntry ? (pickupMode === "edit" ? "Edit Vendor Pickup" : "Add Vendor Pickup") : "Record Sale"}</h2>
+                <p>{isPickupEntry ? "Choose the vendor, pickup schedule, and every product included in this delivery." : "Add products and quantities to create one complete recorded sale."}</p>
+              </div>
+              <button type="button" className="small-button" onClick={closeTransactionEntry}>Cancel</button>
+            </header>
+
+            {error && <p className="error-message">{error}</p>}
+
+            {isPickupEntry && (
+              <section className="transaction-details" aria-label="Pickup details">
+                <label>
+                  Pickup date
+                  <input type="date" value={pickupForm.pickup_date} onChange={(event) => setPickupForm({ ...pickupForm, pickup_date: event.target.value })} required />
+                </label>
+                <label>
+                  Pickup time
+                  <input type="time" value={pickupForm.pickup_time} onChange={(event) => setPickupForm({ ...pickupForm, pickup_time: event.target.value })} required />
+                </label>
+                <label className="transaction-vendor-field">
+                  Vendor
+                  <select value={pickupForm.vendor_id} onChange={(event) => setPickupForm({ ...pickupForm, vendor_id: event.target.value })} required>
+                    <option value="">Select vendor</option>
+                    {vendors.map((vendor) => (
+                      <option key={vendor.id} value={vendor.id}>
+                        {vendor.name} ({vendor.vendor_code || `VND-${String(vendor.id).padStart(4, "0")}`})
+                      </option>
+                    ))}
+                  </select>
+                  {selectedVendor && <small>{selectedVendor.vendor_code || `VND-${String(selectedVendor.id).padStart(4, "0")}`}</small>}
+                </label>
+              </section>
+            )}
+
+            <section className="transaction-catalog" aria-label="Product catalog">
+              <div className="transaction-catalog-heading">
+                <div>
+                  <span className="transaction-eyebrow">Products</span>
+                  <h3>Build this {isPickupEntry ? "pickup" : "sale"}</h3>
+                  <p>Enter a quantity for each product you want to include.</p>
+                </div>
+                <label className="transaction-search">
+                  <span className="sr-only">Search products</span>
+                  <input value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Search products or categories" />
+                </label>
+              </div>
+
+              {filteredCatalogProducts.length === 0 ? (
+                <p className="transaction-empty">No products match your search.</p>
+              ) : (
+                <div className="transaction-product-grid">
+                  {filteredCatalogProducts.map((product) => {
+                    const quantity = Number(transactionQuantities[product.id] || 0);
+                    const stock = Number(product.current_stock || 0);
+                    const canAdd = quantity < stock;
+                    return (
+                      <article className={`transaction-product-card tone-${Number(product.id) % 4}`} key={product.id}>
+                        <div className="transaction-product-art" aria-hidden="true">{String(product.name || "P").slice(0, 1).toUpperCase()}</div>
+                        <div className="transaction-product-copy">
+                          <span>{product.category || "General"}</span>
+                          <h4>{product.name}</h4>
+                          <p>{formatCurrency(product.selling_price)} · {stock} {product.unit || "units"} available</p>
+                        </div>
+                        <div className="transaction-quantity-control">
+                          <button type="button" aria-label={`Remove one ${product.name}`} onClick={() => updateTransactionQuantity(product, quantity - 1)} disabled={quantity === 0}>−</button>
+                          <label>
+                            <span className="sr-only">Quantity for {product.name}</span>
+                            <input type="number" min="0" max={stock} value={quantity || ""} placeholder="0" onChange={(event) => updateTransactionQuantity(product, event.target.value)} />
+                          </label>
+                          <button type="button" aria-label={`Add one ${product.name}`} onClick={() => updateTransactionQuantity(product, quantity + 1)} disabled={!canAdd}>+</button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            <aside className="transaction-summary">
+              <div>
+                <span className="transaction-eyebrow">Order summary</span>
+                <h3>{transactionItems.length} product{transactionItems.length === 1 ? "" : "s"} · {transactionQuantityTotal} units</h3>
+                {transactionItems.length ? (
+                  <ul>
+                    {transactionItems.map((item) => <li key={item.id}><span>{item.name} <b>×{item.quantity}</b></span><strong>{formatCurrency(item.quantity * Number(item.selling_price || 0))}</strong></li>)}
+                  </ul>
+                ) : <p>Choose product quantities to build this record.</p>}
+              </div>
+              <div className="transaction-total">
+                <span>Total</span>
+                <strong>{formatCurrency(transactionTotal)}</strong>
+              </div>
+              <button className="primary-button" type="submit" disabled={submitting || !transactionItems.length}>
+                {submitting ? "Saving…" : submitLabel}
+              </button>
+            </aside>
+          </form>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="dashboard-shell">
@@ -542,7 +693,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {isPosEntryView && (
-              <button className="primary-button" onClick={() => { setSaleOpen(true); setError(null); setStatus(null); }}>
+              <button className="primary-button" onClick={() => { setSaleQuantities({}); setProductSearch(""); setEntryMode("sale"); setError(null); setStatus(null); }}>
                 Record Sale
               </button>
             )}

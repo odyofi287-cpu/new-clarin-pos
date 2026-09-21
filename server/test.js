@@ -85,11 +85,15 @@ test("Staff can record a vendor pickup", async () => {
   assert.strictEqual(productsRes.status, 200);
   const productsBody = await productsRes.json();
   const product = productsBody.data[0];
+  const secondProduct = productsBody.data.find((entry) => entry.id !== product?.id);
   assert(product, "Expected at least one product for pickup");
+  assert(secondProduct, "Expected a second product for a multi-product pickup");
 
   const beforeRes = await fetch(`${base}/api/products/${product.id}`, { headers: { Authorization: `Bearer ${token}` } });
   const beforeBody = await beforeRes.json();
   const beforeStock = Number(beforeBody.data.current_stock || 0);
+  const secondBeforeRes = await fetch(`${base}/api/products/${secondProduct.id}`, { headers: { Authorization: `Bearer ${token}` } });
+  const secondBeforeStock = Number((await secondBeforeRes.json()).data.current_stock || 0);
 
   const pickupRes = await fetch(`${base}/api/deliveries`, {
     method: 'POST',
@@ -97,17 +101,24 @@ test("Staff can record a vendor pickup", async () => {
     body: JSON.stringify({
       vendor_id: 1,
       pickup_datetime: '2026-08-16T09:30:00',
-      items: [{ product_id: product.id, quantity: 4 }],
+      items: [{ product_id: product.id, quantity: 4 }, { product_id: secondProduct.id, quantity: 2 }],
     })
   });
   assert.strictEqual(pickupRes.status, 201, 'Expected staff to create a vendor pickup');
   const body = await pickupRes.json();
   assert.strictEqual(body.data.vendor_id, 1);
-  assert.strictEqual(body.data.total_amount, Number(product.selling_price) * 4);
+  assert.strictEqual(body.data.items.length, 2, 'Expected one pickup record to retain both products');
+  assert.strictEqual(body.data.total_amount, (Number(product.selling_price) * 4) + (Number(secondProduct.selling_price) * 2));
 
   const afterRes = await fetch(`${base}/api/products/${product.id}`, { headers: { Authorization: `Bearer ${token}` } });
   const afterBody = await afterRes.json();
   assert.strictEqual(Number(afterBody.data.current_stock), beforeStock - 4, 'Vendor pickup should reduce stock immediately');
+  const secondAfterRes = await fetch(`${base}/api/products/${secondProduct.id}`, { headers: { Authorization: `Bearer ${token}` } });
+  assert.strictEqual(Number((await secondAfterRes.json()).data.current_stock), secondBeforeStock - 2, 'Each pickup product should reduce stock immediately');
+
+  const listRes = await fetch(`${base}/api/deliveries`, { headers: { Authorization: `Bearer ${token}` } });
+  const pickupRecord = (await listRes.json()).data.find((entry) => entry.id === body.data.id);
+  assert(pickupRecord?.items.includes(product.name) && pickupRecord?.items.includes(secondProduct.name), 'Expected grouped pickup history products');
 });
 
 test("Staff can record and list vendor returns and exclude them from sales totals", async () => {
@@ -498,22 +509,24 @@ test("Staff can complete a sale and inventory decrements", async () => {
   const listBody = await productList.json();
   console.log('SALE_TEST: products count', listBody.data?.length);
   const item = listBody.data.find((p) => p.current_stock > 0);
+  const secondItem = listBody.data.find((p) => p.id !== item?.id && p.current_stock > 0);
   console.log('SALE_TEST: selected item', item);
   assert(item, 'Expected at least one in-stock product');
+  assert(secondItem, 'Expected a second in-stock product');
 
   const initialStock = item.current_stock;
   const saleRes = await fetch(`${base}/api/sales`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ items: [{ product_id: item.id, quantity: 1 }] })
+    body: JSON.stringify({ items: [{ product_id: item.id, quantity: 1 }, { product_id: secondItem.id, quantity: 2 }] })
   });
   console.log('SALE_TEST: sale status', saleRes.status);
   const saleBody = await saleRes.json();
   console.log('SALE_TEST: sale body', saleBody);
   assert.strictEqual(saleRes.status, 201);
   assert(saleBody.data && saleBody.data.sale_id, 'Expected sale_id in response');
-  console.log('SALE_TEST: total_amount', saleBody.data.total_amount, 'expected', item.selling_price);
-  assert.strictEqual(saleBody.data.total_amount, item.selling_price);
+  console.log('SALE_TEST: total_amount', saleBody.data.total_amount, 'expected', item.selling_price + (secondItem.selling_price * 2));
+  assert.strictEqual(saleBody.data.total_amount, item.selling_price + (secondItem.selling_price * 2));
 
   const productAfter = await fetch(`${base}/api/products/${item.id}`, { headers: { Authorization: `Bearer ${token}` } });
   console.log('SALE_TEST: product after status', productAfter.status);
@@ -521,6 +534,8 @@ test("Staff can complete a sale and inventory decrements", async () => {
   const afterBody = await productAfter.json();
   console.log('SALE_TEST: afterBody', afterBody.data);
   assert.strictEqual(afterBody.data.current_stock, initialStock - 1);
+  const secondAfter = await fetch(`${base}/api/products/${secondItem.id}`, { headers: { Authorization: `Bearer ${token}` } });
+  assert.strictEqual((await secondAfter.json()).data.current_stock, secondItem.current_stock - 2);
   console.log('SALE_TEST: completed');
 });
 
