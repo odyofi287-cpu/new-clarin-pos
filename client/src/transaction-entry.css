@@ -122,7 +122,7 @@
   border-radius: 14px;
   display: grid;
   gap: 0.72rem;
-  grid-template-columns: 52px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   padding: 0.85rem;
   transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
@@ -141,8 +141,16 @@
   display: flex;
   font-size: 1.35rem;
   font-weight: 900;
-  height: 52px;
+  height: 130px;
   justify-content: center;
+  overflow: hidden;
+  width: 100%;
+}
+
+.transaction-product-art img {
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
 }
 
 .tone-1 .transaction-product-art { background: linear-gradient(135deg, #8c61d6, #51389e); }
@@ -165,7 +173,6 @@
   border: 1px solid #c9dbee;
   border-radius: 9px;
   display: grid;
-  grid-column: 1 / -1;
   grid-template-columns: 38px minmax(0, 1fr) 38px;
   overflow: hidden;
 }

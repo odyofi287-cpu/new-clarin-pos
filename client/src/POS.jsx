@@ -632,7 +632,20 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                     const canAdd = quantity < stock;
                     return (
                       <article className={`transaction-product-card tone-${Number(product.id) % 4}`} key={product.id}>
-                        <div className="transaction-product-art" aria-hidden="true">{String(product.name || "P").slice(0, 1).toUpperCase()}</div>
+                        <div className="transaction-product-art">
+                          {product.image_url && (
+                            <img
+                              src={product.image_url}
+                              alt={product.name || "Product"}
+                              loading="lazy"
+                              onError={(event) => {
+                                event.currentTarget.style.display = "none";
+                                event.currentTarget.nextElementSibling.hidden = false;
+                              }}
+                            />
+                          )}
+                          <span aria-hidden="true" hidden={Boolean(product.image_url)}>{String(product.name || "P").slice(0, 1).toUpperCase()}</span>
+                        </div>
                         <div className="transaction-product-copy">
                           <span>{product.category || "General"}</span>
                           <h4>{product.name}</h4>
