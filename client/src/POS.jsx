@@ -36,10 +36,8 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   const [salesHistory, setSalesHistory] = useState([]);
   const [pickupMode, setPickupMode] = useState("create");
   const [editingPickupId, setEditingPickupId] = useState(null);
-  const [listWindowOpen, setListWindowOpen] = useState(false);
-  const [historyWindowOpen, setHistoryWindowOpen] = useState(false);
+  const [historyMode, setHistoryMode] = useState(null);
   const [returnsOpen, setReturnsOpen] = useState(false);
-  const [returnsHistoryOpen, setReturnsHistoryOpen] = useState(false);
   const [returnEntries, setReturnEntries] = useState([]);
   const [returnForm, setReturnForm] = useState({
     return_date: "",
@@ -335,6 +333,102 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     setReturnQuantities({});
   };
 
+  const handleDeleteReturn = async (entry) => {
+    setError(null);
+    setStatus(null);
+    const legacyId = Array.isArray(entry.return_ids) ? entry.return_ids[0] : String(entry.return_ids || entry.id).split(',')[0];
+    const endpoint = entry.return_batch_id
+      ? `/api/vendor-returns/batch/${encodeURIComponent(entry.return_batch_id)}`
+      : `/api/vendor-returns/${legacyId}`;
+
+    try {
+      const res = await fetch(apiUrl(endpoint), { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || 'Unable to remove vendor return.');
+      }
+      setReturnEntries((current) => current.filter((row) => entry.return_batch_id
+        ? row.return_batch_id !== entry.return_batch_id
+        : String(row.id) !== String(entry.id)));
+      setStatus(entry.return_batch_id ? 'Vendor return batch removed successfully.' : 'Vendor return removed successfully.');
+    } catch (err) {
+      setError(err.message || 'Unable to remove vendor return.');
+    }
+  };
+
+  if (historyMode) {
+    const isPickupHistory = historyMode === 'pickups';
+    const title = isPickupHistory ? 'Vendor Pickup List' : 'Vendor Return History';
+    const description = isPickupHistory
+      ? 'Review every vendor pickup and the products included in each delivery.'
+      : 'Review grouped return records and every product included in each return.';
+
+    return (
+      <div className="dashboard-shell">
+        <section className="dashboard-card transaction-entry-page transaction-history-page">
+          <header className="transaction-entry-header">
+            <div>
+              <button type="button" className="transaction-back" onClick={() => setHistoryMode(null)}>← Back to Deliveries</button>
+              <span className="transaction-eyebrow">{isPickupHistory ? 'Delivery records' : 'Return records'}</span>
+              <h2>{title}</h2>
+              <p>{description}</p>
+            </div>
+            <button type="button" className="small-button" onClick={() => setHistoryMode(null)}>Back to Deliveries</button>
+          </header>
+
+          {error && <p className="error-message">{error}</p>}
+          {status && <p className="success-message">{status}</p>}
+
+          <section className="transaction-history-list">
+            <div className="transaction-history-heading">
+              <div>
+                <span className="transaction-eyebrow">{isPickupHistory ? 'Pickup history' : 'Return history'}</span>
+                <h3>{isPickupHistory ? `${pickupEntries.length} delivery record${pickupEntries.length === 1 ? '' : 's'}` : `${returnEntries.length} return record${returnEntries.length === 1 ? '' : 's'}`}</h3>
+              </div>
+            </div>
+
+            {isPickupHistory ? (
+              pickupEntries.length === 0 ? <p className="transaction-empty">No vendor pickups available.</p> : (
+                <div className="management-table-wrap">
+                  <table>
+                    <thead><tr><th>Vendor ID</th><th>Vendor</th><th>Product(s)</th><th>Date</th><th>Pickup Time</th><th>Total</th>{canManagePickupEntries && <th>Action</th>}</tr></thead>
+                    <tbody>{pickupEntries.map((entry) => <tr key={entry.id}>
+                      <td data-label="Vendor ID">{getDisplayVendorId(entry)}</td>
+                      <td data-label="Vendor">{entry.vendor_name || entry.vendor_id}</td>
+                      <td data-label="Product(s)">{entry.items || '-'}</td>
+                      <td data-label="Date">{formatDeliveryDate(entry.delivery_date)}</td>
+                      <td data-label="Pickup Time">{entry.delivery_time || '-'}</td>
+                      <td data-label="Total">{formatCurrency(entry.total_amount)}</td>
+                      {canManagePickupEntries && <td data-label="Action" className="transaction-history-actions"><button type="button" className="small-button" onClick={() => openEditPickup(entry)}>Edit</button><button type="button" className="small-button" onClick={() => handleDeletePickup(entry.id)}>Delete</button></td>}
+                    </tr>)}</tbody>
+                  </table>
+                </div>
+              )
+            ) : (
+              returnEntries.length === 0 ? <p className="transaction-empty">No return history available.</p> : (
+                <div className="management-table-wrap">
+                  <table>
+                    <thead><tr><th>Return ID</th><th>Vendor</th><th>Products</th><th>Date</th><th>Time</th><th>Qty</th><th>Returned Amount</th>{role !== 'VENDOR' && <th>Action</th>}</tr></thead>
+                    <tbody>{returnEntries.map((entry) => <tr key={entry.id}>
+                      <td data-label="Return ID">{entry.id}</td>
+                      <td data-label="Vendor">{entry.vendor_name || entry.vendor_id}</td>
+                      <td data-label="Products">{entry.items || entry.product_name || entry.product_id}</td>
+                      <td data-label="Date">{formatDeliveryDate(entry.return_date)}</td>
+                      <td data-label="Time">{entry.return_time}</td>
+                      <td data-label="Qty">{entry.quantity}</td>
+                      <td data-label="Returned Amount">{formatCurrency(entry.total_product_price_returned)}</td>
+                      {role !== 'VENDOR' && <td data-label="Action"><button type="button" className="small-button" onClick={() => handleDeleteReturn(entry)}>Remove Return</button></td>}
+                    </tr>)}</tbody>
+                  </table>
+                </div>
+              )
+            )}
+          </section>
+        </section>
+      </div>
+    );
+  }
+
   const submitSale = async (event) => {
     event.preventDefault();
     setError(null);
@@ -393,6 +487,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
         total_price: "0.00",
       });
       setPickupQuantities(Object.fromEntries(items.map((item) => [item.product_id, Number(item.quantity || 0)])));
+      setHistoryMode(null);
       setEntryMode("pickup");
       setProductSearch("");
       setError(null);
@@ -746,7 +841,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
               </button>
             )}
             {isDeliveriesView && (
-              <button className="small-button" onClick={() => setListWindowOpen(true)}>
+              <button className="small-button" onClick={() => { setHistoryMode('pickups'); setError(null); setStatus(null); }}>
                 Vendor Pickup List
               </button>
             )}
@@ -756,7 +851,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
               </button>
             )}
             {isDeliveriesView && (
-              <button className="small-button" onClick={() => setReturnsHistoryOpen(true)}>
+              <button className="small-button" onClick={() => { setHistoryMode('returns'); setError(null); setStatus(null); }}>
                 Return History
               </button>
             )}
@@ -846,52 +941,6 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
           </div>
         )}
 
-        {listWindowOpen && (
-          <div className="modal-overlay">
-            <div className="pos-modal-card">
-              <div className="pos-modal-header">
-                <h3>Vendor Pickup List</h3>
-                <button className="small-button" onClick={() => setListWindowOpen(false)}>Close</button>
-              </div>
-              {pickupEntries.length === 0 ? (
-                <p>No vendor pickups available.</p>
-              ) : (
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Vendor ID</th>
-                      <th>Vendor</th>
-                      <th>Product(s)</th>
-                      <th>Date</th>
-                      <th>Pickup Time</th>
-                      <th>Total</th>
-                      {canManagePickupEntries && <th>Action</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pickupEntries.map((entry) => (
-                      <tr key={entry.id}>
-                        <td data-label="Vendor ID">{getDisplayVendorId(entry)}</td>
-                        <td data-label="Vendor">{entry.vendor_name || entry.vendor_id}</td>
-                        <td data-label="Product(s)">{entry.items || "-"}</td>
-                        <td data-label="Date">{formatDeliveryDate(entry.delivery_date)}</td>
-                        <td data-label="Pickup Time">{entry.delivery_time || "-"}</td>
-                        <td data-label="Total">{formatCurrency(entry.total_amount)}</td>
-                        {canManagePickupEntries && (
-                          <td data-label="Action" style={{ display: 'flex', gap: 8 }}>
-                            <button type="button" className="small-button" onClick={() => openEditPickup(entry)}>Edit</button>
-                            <button type="button" className="small-button" onClick={() => handleDeletePickup(entry.id)}>Delete</button>
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-        )}
-
         {returnsOpen && (
           <div className="modal-overlay">
             <div className="pos-modal-card--narrow">
@@ -963,54 +1012,6 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                 </div>
               </form>
 
-            </div>
-          </div>
-        )}
-
-        {returnsHistoryOpen && (
-          <div className="modal-overlay">
-            <div className="pos-modal-card">
-              <div className="pos-modal-header">
-                <div>
-                  <h3>Vendor Return History</h3>
-                  <p className="muted-text">Review grouped return records and their products.</p>
-                </div>
-                <button className="small-button" onClick={() => setReturnsHistoryOpen(false)}>Close</button>
-              </div>
-              {returnEntries.length === 0 ? (
-                <p>No return history available.</p>
-              ) : (
-                <div className="management-table-wrap">
-                  <table>
-                    <thead><tr><th>Return ID</th><th>Vendor</th><th>Products</th><th>Date</th><th>Time</th><th>Qty</th><th>Returned Amount</th><th>Action</th></tr></thead>
-                    <tbody>{returnEntries.map((entry) => <tr key={entry.id}>
-                      <td data-label="Return ID">{entry.id}</td>
-                      <td data-label="Vendor">{entry.vendor_name || entry.vendor_id}</td>
-                      <td data-label="Products">{entry.items || entry.product_name || entry.product_id}</td>
-                      <td data-label="Date">{formatDeliveryDate(entry.return_date)}</td>
-                      <td data-label="Time">{entry.return_time}</td>
-                      <td data-label="Qty">{entry.quantity}</td>
-                      <td data-label="Returned Amount">{formatCurrency(entry.total_product_price_returned)}</td>
-                      <td data-label="Action"><button type="button" className="small-button" onClick={async () => {
-                        const legacyId = Array.isArray(entry.return_ids) ? entry.return_ids[0] : String(entry.return_ids || entry.id).split(',')[0];
-                        const endpoint = entry.return_batch_id
-                          ? `/api/vendor-returns/batch/${encodeURIComponent(entry.return_batch_id)}`
-                          : `/api/vendor-returns/${legacyId}`;
-                        const res = await fetch(apiUrl(endpoint), { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-                        if (res.ok) {
-                          setReturnEntries((current) => current.filter((row) => entry.return_batch_id
-                            ? row.return_batch_id !== entry.return_batch_id
-                            : String(row.id) !== String(entry.id)));
-                          setStatus(entry.return_batch_id ? 'Vendor return batch removed successfully.' : 'Vendor return removed successfully.');
-                        } else {
-                          const body = await res.json().catch(() => ({}));
-                          setError(body.error || 'Unable to remove vendor return.');
-                        }
-                      }}>Remove Return</button></td>
-                    </tr>)}</tbody>
-                  </table>
-                </div>
-              )}
             </div>
           </div>
         )}
