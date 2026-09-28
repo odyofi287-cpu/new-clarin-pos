@@ -552,7 +552,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     setStatus(null);
   };
 
-  const openEditPickup = async (record) => {
+  async function openEditPickup(record) {
     try {
       const detailRes = await fetch(apiUrl(`/api/deliveries/${record.id}`), {
         headers: { Authorization: `Bearer ${token}` },
@@ -565,7 +565,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       setEditingPickupId(record.id);
       setPickupMode("edit");
       setPickupForm({
-        pickup_date: detailBody.data?.delivery_date || record.delivery_date || "",
+        pickup_date: String(detailBody.data?.delivery_date || record.delivery_date || "").slice(0, 10),
         pickup_time: detailBody.data?.delivery_time || record.delivery_time || "09:00",
         vendor_id: String(detailBody.data?.vendor_id ?? record.vendor_id ?? ""),
         product_id: "",
@@ -585,9 +585,9 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     } catch (err) {
       setError(err.message || "Unable to edit pickup");
     }
-  };
+  }
 
-  const handleDeletePickup = async (pickupId) => {
+  async function handleDeletePickup(pickupId) {
     if (!window.confirm("Delete this vendor pickup? This action cannot be undone.")) {
       return;
     }
@@ -621,7 +621,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     } catch (err) {
       setError(err.message || 'Unable to delete vendor pickup');
     }
-  };
+  }
 
   const submitReturn = async (event) => {
     event.preventDefault();
