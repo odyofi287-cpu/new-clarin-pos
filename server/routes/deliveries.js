@@ -234,15 +234,16 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
 router.put("/:id", requireRole("SUPERADMIN"), async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const existing = await dbGet(req.db, "SELECT id, vendor_id, delivery_date, delivery_time, total_amount FROM deliveries WHERE id = $1", [id], "SELECT id, vendor_id, delivery_date, delivery_time, total_amount FROM deliveries WHERE id = ?");
+    const existing = await dbGet(req.db, "SELECT id, vendor_id, delivery_date, delivery_time, total_amount, payment_status FROM deliveries WHERE id = $1", [id], "SELECT id, vendor_id, delivery_date, delivery_time, total_amount, payment_status FROM deliveries WHERE id = ?");
     if (!existing) {
       return res.status(404).json({ error: "Pickup not found" });
     }
 
     const previousItems = await dbAll(req.db, "SELECT product_id, quantity FROM delivery_items WHERE delivery_id = $1", [id], "SELECT product_id, quantity FROM delivery_items WHERE delivery_id = ?");
 
-    const { vendor_id, pickup_datetime, delivery_date, delivery_time, items } = req.body;
+    const { vendor_id, pickup_datetime, delivery_date, delivery_time, items, payment_status } = req.body;
     const safeVendorId = Number(vendor_id ?? existing.vendor_id);
+    const safePaymentStatus = String(payment_status ?? existing.payment_status ?? "UNPAID").trim().toUpperCase();
     const normalizedItems = Array.isArray(items) && items.length ? items : [{ product_id: req.body.product_id, quantity: req.body.quantity, unit_cost: req.body.unit_price }];
     const computedDate = (delivery_date || (pickup_datetime ? pickup_datetime.split("T")[0] : "") || (delivery_time ? req.body.delivery_date : "") || existing.delivery_date || getBusinessDate());
     const safeDeliveryDate = normalizeDeliveryDate(computedDate);
@@ -250,6 +251,9 @@ router.put("/:id", requireRole("SUPERADMIN"), async (req, res) => {
 
     if (!safeVendorId || !normalizedItems.length) {
       return res.status(400).json({ error: "Vendor and at least one item are required" });
+    }
+    if (!['UNPAID', 'PAID'].includes(safePaymentStatus)) {
+      return res.status(400).json({ error: "Payment status must be PAID or UNPAID" });
     }
 
     const vendor = await dbGet(req.db, "SELECT id FROM vendors WHERE id = $1", [safeVendorId], "SELECT id FROM vendors WHERE id = ?");
@@ -297,6 +301,24 @@ router.put("/:id", requireRole("SUPERADMIN"), async (req, res) => {
 
       await dbRun(req.db, "DELETE FROM delivery_items WHERE delivery_id = $1 RETURNING id", [id], "DELETE FROM delivery_items WHERE delivery_id = ?");
       await dbRun(req.db, "UPDATE deliveries SET vendor_id = $1, delivery_date = $2, delivery_time = $3, total_amount = $4 WHERE id = $5 RETURNING id", [safeVendorId, safeDeliveryDate, safeDeliveryTime, totalAmount, id], "UPDATE deliveries SET vendor_id = ?, delivery_date = ?, delivery_time = ?, total_amount = ? WHERE id = ?");
+
+      if (safePaymentStatus !== String(existing.payment_status || "UNPAID").toUpperCase()) {
+        if (safePaymentStatus === "PAID") {
+          await dbRun(
+            req.db,
+            "UPDATE deliveries SET payment_status = 'PAID', payment_confirmed_at = CURRENT_TIMESTAMP, payment_confirmed_by = $1 WHERE id = $2 RETURNING id",
+            [req.user.user_id, id],
+            "UPDATE deliveries SET payment_status = 'PAID', payment_confirmed_at = datetime('now'), payment_confirmed_by = ? WHERE id = ?"
+          );
+        } else {
+          await dbRun(
+            req.db,
+            "UPDATE deliveries SET payment_status = 'UNPAID', payment_confirmed_at = NULL, payment_confirmed_by = NULL WHERE id = $1 RETURNING id",
+            [id],
+            "UPDATE deliveries SET payment_status = 'UNPAID', payment_confirmed_at = NULL, payment_confirmed_by = NULL WHERE id = ?"
+          );
+        }
+      }
 
       for (const item of itemPayloads) {
         await dbRun(req.db, "INSERT INTO delivery_items (delivery_id, product_id, quantity, unit_cost) VALUES ($1, $2, $3, $4) RETURNING id", [id, item.productId, item.quantity, item.unitCost], "INSERT INTO delivery_items (delivery_id, product_id, quantity, unit_cost) VALUES (?, ?, ?, ?)");

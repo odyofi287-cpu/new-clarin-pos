@@ -250,7 +250,7 @@ test("Vendor can view returns but cannot create or delete them", async () => {
   assert.strictEqual(deleteRes.status, 403);
 });
 
-test("Superadmin can update a pickup after password verification", async () => {
+test("Superadmin can update pickup details and payment status after password verification", async () => {
   const token = await login("superadmin@clarin.local", "Superadmin123!");
   const verify = await fetch(`${base}/api/users/verify-superadmin`, {
     method: 'POST',
@@ -271,6 +271,7 @@ test("Superadmin can update a pickup after password verification", async () => {
       vendor_id: 1,
       delivery_date: '2026-08-16',
       pickup_datetime: '2026-08-16T10:00:00',
+      payment_status: 'PAID',
       items: [{ product_id: productId, quantity, unit_cost: 25 }],
     })
   });
@@ -278,6 +279,26 @@ test("Superadmin can update a pickup after password verification", async () => {
   const updated = await updateRes.json();
   assert.strictEqual(updated.data.vendor_id, 1);
   assert.strictEqual(updated.data.items[0].quantity, quantity);
+  assert.strictEqual(updated.data.payment_status, 'PAID');
+  assert.strictEqual(updated.data.payment_confirmed_by_name, 'System Owner');
+  assert(updated.data.payment_confirmed_at, 'Expected payment confirmation metadata after marking paid');
+
+  const unpaidRes = await fetch(`${base}/api/deliveries/1`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      vendor_id: 1,
+      delivery_date: '2026-08-16',
+      pickup_datetime: '2026-08-16T10:00:00',
+      payment_status: 'UNPAID',
+      items: [{ product_id: productId, quantity, unit_cost: 25 }],
+    })
+  });
+  assert.strictEqual(unpaidRes.status, 200, 'Expected payment status to be editable back to unpaid');
+  const unpaid = await unpaidRes.json();
+  assert.strictEqual(unpaid.data.payment_status, 'UNPAID');
+  assert.strictEqual(unpaid.data.payment_confirmed_by, null);
+  assert.strictEqual(unpaid.data.payment_confirmed_at, null);
 });
 
 test("Superadmin can delete a pickup after creation", async () => {

@@ -71,6 +71,10 @@
   padding: 1rem;
 }
 
+.transaction-details.has-payment-status {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .transaction-details label {
   color: #34567f;
   display: grid;
@@ -269,7 +273,8 @@
   .transaction-entry-header,
   .transaction-catalog-heading { align-items: stretch; flex-direction: column; }
   .transaction-entry-header > .small-button { align-self: flex-start; }
-  .transaction-details { grid-template-columns: 1fr; padding: 0.8rem; }
+  .transaction-details,
+  .transaction-details.has-payment-status { grid-template-columns: 1fr; padding: 0.8rem; }
   .transaction-search { min-width: 0; width: 100%; }
   .transaction-product-grid { grid-template-columns: 1fr; }
   .transaction-summary { align-items: stretch; grid-template-columns: 1fr; }

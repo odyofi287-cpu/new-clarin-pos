@@ -390,6 +390,19 @@ class InMemoryDB {
 
     if (normalized.startsWith("UPDATE DELIVERIES")) {
       if (normalized.includes("PAYMENT_STATUS")) {
+        if (normalized.includes("PAYMENT_STATUS = 'UNPAID'")) {
+          return {
+            run: (id) => {
+              const delivery = this.deliveries.find((row) => row.id === Number(id));
+              if (!delivery) return { changes: 0 };
+              delivery.payment_status = "UNPAID";
+              delivery.payment_confirmed_at = null;
+              delivery.payment_confirmed_by = null;
+              return { changes: 1, id: delivery.id };
+            },
+          };
+        }
+
         return {
           run: (paymentConfirmedBy, id) => {
             const delivery = this.deliveries.find((row) => row.id === Number(id));

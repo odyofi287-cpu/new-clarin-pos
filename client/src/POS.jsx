@@ -73,6 +73,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     pickup_date: "",
     pickup_time: "",
     vendor_id: "",
+    payment_status: "UNPAID",
     product_id: "",
     quantity: "1",
     category: "",
@@ -312,6 +313,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       pickup_date: "",
       pickup_time: "",
       vendor_id: "",
+      payment_status: "UNPAID",
       product_id: "",
       quantity: "1",
       category: "",
@@ -568,6 +570,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
         pickup_date: String(detailBody.data?.delivery_date || record.delivery_date || "").slice(0, 10),
         pickup_time: detailBody.data?.delivery_time || record.delivery_time || "09:00",
         vendor_id: String(detailBody.data?.vendor_id ?? record.vendor_id ?? ""),
+        payment_status: String(detailBody.data?.payment_status || record.payment_status || "UNPAID").toUpperCase(),
         product_id: "",
         quantity: "1",
         category: "",
@@ -739,6 +742,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
             vendor_id: Number(pickupForm.vendor_id),
             pickup_datetime: `${pickupForm.pickup_date}T${pickupForm.pickup_time}`,
             delivery_date: pickupForm.pickup_date,
+            payment_status: pickupForm.payment_status,
             items: deliveryItems,
           }),
         });
@@ -805,7 +809,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
             {error && <p className="error-message">{error}</p>}
 
             {(isPickupEntry || isReturnEntry) && (
-              <section className="transaction-details" aria-label={isReturnEntry ? "Return details" : "Pickup details"}>
+              <section className={`transaction-details ${isPickupEntry && pickupMode === "edit" ? "has-payment-status" : ""}`} aria-label={isReturnEntry ? "Return details" : "Pickup details"}>
                 <label>
                   {isReturnEntry ? "Return date" : "Pickup date"}
                   <input type="date" value={isReturnEntry ? returnForm.return_date : pickupForm.pickup_date} onChange={(event) => isReturnEntry ? setReturnForm({ ...returnForm, return_date: event.target.value }) : setPickupForm({ ...pickupForm, pickup_date: event.target.value })} required />
@@ -826,6 +830,16 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                   </select>
                   {selectedVendor && <small>{selectedVendor.vendor_code || `VND-${String(selectedVendor.id).padStart(4, "0")}`}</small>}
                 </label>
+                {isPickupEntry && pickupMode === "edit" && (
+                  <label className="transaction-payment-field">
+                    Payment status
+                    <select value={pickupForm.payment_status} onChange={(event) => setPickupForm({ ...pickupForm, payment_status: event.target.value })}>
+                      <option value="UNPAID">Unpaid</option>
+                      <option value="PAID">Paid</option>
+                    </select>
+                    <small>Paid records retain who confirmed the payment and when.</small>
+                  </label>
+                )}
               </section>
             )}
 
