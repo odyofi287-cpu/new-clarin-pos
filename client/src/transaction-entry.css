@@ -229,6 +229,40 @@
 .transaction-history-list table { min-width: 760px; }
 .transaction-history-list td { color: #26466f; vertical-align: top; }
 .transaction-history-actions { display: flex; gap: 0.5rem; }
+.payment-status-nav-button { border-color: #b9d8c8; color: #176344; }
+.payment-status-summary { align-items: center; display: flex; flex-wrap: wrap; gap: 0.45rem; justify-content: flex-end; }
+.payment-status-summary span,
+.payment-status-badge {
+  align-items: center;
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.025em;
+  min-height: 1.75rem;
+  padding: 0.3rem 0.68rem;
+  white-space: nowrap;
+}
+.payment-status-summary .is-paid,
+.payment-status-badge.is-paid { background: #e4f7ee; border: 1px solid #bde6d2; color: #137451; }
+.payment-status-summary .is-unpaid,
+.payment-status-badge.is-unpaid { background: #fff3e2; border: 1px solid #f1d6ae; color: #9a5a08; }
+.payment-status-badge::before {
+  background: currentColor;
+  border-radius: 50%;
+  content: "";
+  height: 0.42rem;
+  margin-right: 0.38rem;
+  width: 0.42rem;
+}
+.payment-status-table table { min-width: 1040px; }
+.payment-status-table td strong,
+.payment-status-table td small { display: block; }
+.payment-status-table td small { color: #7489a7; font-size: 0.72rem; margin-top: 0.24rem; }
+.payment-awaiting { color: #8b6a3a; font-size: 0.78rem; font-weight: 700; }
+.payment-confirm-button { border-color: #b9d8c8; color: #176344; min-width: 8.3rem; }
+.payment-confirm-button:not(:disabled):hover { background: #e7f6ef; border-color: #79bb9b; }
+.payment-confirm-button:disabled { background: #eef6f2; border-color: #d2e6dc; color: #6d8a7c; cursor: default; opacity: 1; }
 
 @media (max-width: 760px) {
   .transaction-entry-page { padding: 0.9rem; }
@@ -244,4 +278,8 @@
   .transaction-history-list { padding: 0.8rem; }
   .transaction-history-list table { min-width: 0; }
   .transaction-history-actions { align-items: stretch; flex-direction: column; }
+  .transaction-history-heading { align-items: flex-start; flex-direction: column; gap: 0.7rem; }
+  .payment-status-summary { justify-content: flex-start; }
+  .payment-status-table table { min-width: 0; }
+  .payment-confirm-button { min-width: 0; width: 100%; }
 }

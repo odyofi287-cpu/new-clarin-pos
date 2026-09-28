@@ -9,6 +9,7 @@ const { buildSalesCalendar } = await import("./routes/dashboard.js");
 const srv = app.listen(0);
 const port = srv.address().port;
 const base = `http://127.0.0.1:${port}`;
+const TINY_PROFILE_PICTURE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL6nQAAAABJRU5ErkJggg==";
 
 test.after(() => new Promise((resolve, reject) => {
   srv.close((error) => error ? reject(error) : resolve());
@@ -119,6 +120,56 @@ test("Staff can record a vendor pickup", async () => {
   const listRes = await fetch(`${base}/api/deliveries`, { headers: { Authorization: `Bearer ${token}` } });
   const pickupRecord = (await listRes.json()).data.find((entry) => entry.id === body.data.id);
   assert(pickupRecord?.items.includes(product.name) && pickupRecord?.items.includes(secondProduct.name), 'Expected grouped pickup history products');
+});
+
+test("Authorized staff can confirm delivery payment while vendors remain read-only", async () => {
+  const staffToken = await login("staff@clarin.local", "Staff123!");
+  const productsRes = await fetch(`${base}/api/products?active=1`, { headers: { Authorization: `Bearer ${staffToken}` } });
+  const product = (await productsRes.json()).data[0];
+  assert(product, "Expected a product for payment confirmation testing");
+
+  const createRes = await fetch(`${base}/api/deliveries`, {
+    method: "POST",
+    headers: { "content-type": "application/json", Authorization: `Bearer ${staffToken}` },
+    body: JSON.stringify({
+      vendor_id: 1,
+      pickup_datetime: "2026-08-18T14:15:00",
+      items: [{ product_id: product.id, quantity: 1, unit_cost: product.selling_price }],
+    }),
+  });
+  assert.strictEqual(createRes.status, 201);
+  const created = await createRes.json();
+  assert.strictEqual(created.data.payment_status, "UNPAID", "New deliveries should start unpaid");
+
+  const confirmRes = await fetch(`${base}/api/deliveries/${created.data.id}/confirm-payment`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${staffToken}` },
+  });
+  assert.strictEqual(confirmRes.status, 200, "Staff should be allowed to confirm payment");
+  const confirmed = await confirmRes.json();
+  assert.strictEqual(confirmed.data.payment_status, "PAID");
+  assert.strictEqual(confirmed.data.payment_confirmed_by_name, "POS Staff");
+  assert(confirmed.data.payment_confirmed_at, "Expected payment confirmation timestamp");
+
+  const listRes = await fetch(`${base}/api/deliveries`, { headers: { Authorization: `Bearer ${staffToken}` } });
+  const listed = (await listRes.json()).data.find((entry) => entry.id === created.data.id);
+  assert.strictEqual(listed?.payment_status, "PAID", "Pickup list should reflect confirmed payment");
+
+  const vendorToken = await login("vendor@clarin.local", "Vendor123!");
+  const forbiddenRes = await fetch(`${base}/api/deliveries/${created.data.id}/confirm-payment`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${vendorToken}` },
+  });
+  assert.strictEqual(forbiddenRes.status, 403, "Vendors must not confirm payment status");
+
+  for (const [email, password] of [["admin@clarin.local", "Admin123!"], ["superadmin@clarin.local", "Superadmin123!"]]) {
+    const token = await login(email, password);
+    const res = await fetch(`${base}/api/deliveries/${created.data.id}/confirm-payment`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.strictEqual(res.status, 200, `${email} should be allowed to access payment confirmation`);
+  }
 });
 
 test("Staff can record and list vendor returns and exclude them from sales totals", async () => {
@@ -388,6 +439,39 @@ test("Superadmin can update managed account information", async () => {
   assert.strictEqual(res.status, 200, 'Expected superadmin to delete the updated user');
 });
 
+test("Profile pictures are validated, retained, and removable", async () => {
+  const token = await login("superadmin@clarin.local", "Superadmin123!");
+  const username = `profileuser${Date.now()}`;
+
+  let res = await fetch(`${base}/api/users`, {
+    method: "POST",
+    headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ username, password: "ProfileUser123!", name: "Profile User", role: "STAFF", profile_picture: TINY_PROFILE_PICTURE }),
+  });
+  assert.strictEqual(res.status, 201, "Expected a profile picture to save with a new user");
+  const created = await res.json();
+  assert.strictEqual(created.data.profile_picture, TINY_PROFILE_PICTURE);
+
+  res = await fetch(`${base}/api/users/${created.data.id}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ username, email: `${username}@clarin.local`, name: "Profile User", role: "STAFF", profile_picture: null, remove_profile_picture: true }),
+  });
+  assert.strictEqual(res.status, 200, "Expected a saved profile picture to be removable");
+  const removed = await res.json();
+  assert.strictEqual(removed.data.profile_picture, null);
+
+  res = await fetch(`${base}/api/users/${created.data.id}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ username, email: `${username}@clarin.local`, name: "Profile User", role: "STAFF", profile_picture: "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=" }),
+  });
+  assert.strictEqual(res.status, 400, "Expected unsupported image types to be rejected");
+
+  res = await fetch(`${base}/api/users/${created.data.id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+  assert.strictEqual(res.status, 200, "Expected temporary profile-picture user to be removed");
+});
+
 test("Vendor accounts receive sequential system-assigned vendor records", async () => {
   const token = await login("superadmin@clarin.local", "Superadmin123!");
   const username = `supplier${Date.now()}`;
@@ -430,6 +514,26 @@ test("Vendor accounts receive sequential system-assigned vendor records", async 
   let vendorList = await res.json();
   assert(vendorList.data.some((vendor) => vendor.vendor_code === created.data.vendor_code));
   assert(vendorList.data.some((vendor) => vendor.vendor_code === secondCreated.data.vendor_code));
+
+  res = await fetch(`${base}/api/users/${created.data.id}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      username: created.data.username,
+      email: created.data.email,
+      name: 'Renamed Supplier Account',
+      role: 'VENDOR',
+      vendor_id: created.data.vendor_id,
+      contact_number: '09175550123',
+    }),
+  });
+  assert.strictEqual(res.status, 200, 'Expected a vendor account to update');
+
+  res = await fetch(`${base}/api/users/vendors`, { headers: { Authorization: `Bearer ${token}` } });
+  assert.strictEqual(res.status, 200);
+  vendorList = await res.json();
+  const renamedVendor = vendorList.data.find((vendor) => vendor.id === created.data.vendor_id);
+  assert.strictEqual(renamedVendor?.name, 'Renamed Supplier Account', 'Expected vendor selector data to reflect account edits');
 
   res = await fetch(`${base}/api/users/${created.data.id}`, {
     method: 'DELETE',

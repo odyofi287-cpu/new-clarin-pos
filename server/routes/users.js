@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
 import { requireRole, requireSuperadmin } from "../middleware/auth.js";
 import { dbAll, dbGet, dbRun, isInMemoryDb, isPostgresDb, withTransaction } from "./dbCompat.js";
+import { publishDataChange } from "../events.js";
 
 const router = express.Router();
 const require = createRequire(import.meta.url);
@@ -19,11 +20,27 @@ function hashPassword(password) {
   return password;
 }
 
+const PROFILE_PICTURE_MAX_BYTES = 512 * 1024;
+const PROFILE_PICTURE_SIGNATURES = {
+  "image/jpeg": (buffer) => buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff,
+  "image/png": (buffer) => buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+  "image/webp": (buffer) => buffer.length >= 12 && buffer.toString("ascii", 0, 4) === "RIFF" && buffer.toString("ascii", 8, 12) === "WEBP",
+};
+
 function normalizeProfilePicture(value) {
   if (value == null || value === "") return null;
-  if (typeof value !== "string" || !value.startsWith("data:image/")) throw new Error("Profile picture must be a valid image file");
-  if (value.length > 2_000_000) throw new Error("Profile picture is too large");
-  return value;
+  if (typeof value !== "string") throw new Error("Profile picture must be a valid image file");
+
+  const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/]+={0,2})$/i.exec(value);
+  if (!match || match[2].length % 4 !== 0) throw new Error("Profile picture must be a JPG, PNG, or WebP image");
+
+  const mimeType = match[1].toLowerCase();
+  const image = Buffer.from(match[2], "base64");
+  if (!image.length || image.length > PROFILE_PICTURE_MAX_BYTES || !PROFILE_PICTURE_SIGNATURES[mimeType](image)) {
+    throw new Error("Profile picture must be a valid image no larger than 512 KB");
+  }
+
+  return `data:${mimeType};base64,${image.toString("base64")}`;
 }
 
 async function createVendor(db, name, contact) {
@@ -158,7 +175,12 @@ router.post("/verify-superadmin", requireSuperadmin, async (req, res) => {
 
 router.post("/", requireSuperadmin, async (req, res) => {
   const { username, email, password, name, role, vendor_id, contact_person, contact_number } = req.body;
-  const profilePicture = normalizeProfilePicture(req.body.profile_picture);
+  let profilePicture;
+  try {
+    profilePicture = normalizeProfilePicture(req.body.profile_picture);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
   const resolvedUsername = (username || email || "").trim();
 
   if (!resolvedUsername || !password || !name || !role) {
@@ -199,6 +221,7 @@ router.post("/", requireSuperadmin, async (req, res) => {
 
   const { password: _password, ...safeUser } = created;
   const createdVendor = safeUser.vendor_id ? await dbGet(req.db, "SELECT id, vendor_code FROM vendors WHERE id = $1", [safeUser.vendor_id], "SELECT id, vendor_code FROM vendors WHERE id = ?") : null;
+  publishDataChange("user");
   res.status(201).json({ data: { ...safeUser, vendor_code: safeUser.vendor_code || createdVendor?.vendor_code || null, vendor_id: safeUser.vendor_id ?? null, contact_person: safeUser.contact_person ?? null, contact_number: safeUser.contact_number ?? null } });
 });
 
@@ -210,7 +233,20 @@ router.put("/:id", requireSuperadmin, async (req, res) => {
   }
 
   const { username, email, password, name, role, vendor_id, contact_person, contact_number } = req.body;
-  const profilePicture = normalizeProfilePicture(req.body.profile_picture);
+  const profilePictureRequested = Object.prototype.hasOwnProperty.call(req.body, "profile_picture");
+  const removeProfilePicture = req.body.remove_profile_picture === true;
+  if (req.body.remove_profile_picture != null && typeof req.body.remove_profile_picture !== "boolean") {
+    return res.status(400).json({ error: "remove_profile_picture must be true or false" });
+  }
+  let profilePicture;
+  try {
+    profilePicture = profilePictureRequested ? normalizeProfilePicture(req.body.profile_picture) : null;
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+  if (removeProfilePicture && profilePicture) {
+    return res.status(400).json({ error: "Choose either a replacement profile picture or remove the current picture" });
+  }
   if (!name || !role) {
     return res.status(400).json({ error: "Name and role are required" });
   }
@@ -236,7 +272,26 @@ router.put("/:id", requireSuperadmin, async (req, res) => {
   try {
     await withTransaction(req.db, async () => {
       const safeVendorId = await resolveVendorId(req.db, roleRecord.name, vendor_id, name, contact_number);
-      await dbRun(req.db, "UPDATE users SET username = $1, email = $2, password = $3, name = $4, role_id = $5, vendor_id = $6, contact_person = $7, contact_number = $8, profile_picture = COALESCE($9, profile_picture) WHERE id = $10 RETURNING id", [normalizedUsername, normalizedEmail, updatedPassword, name.trim(), roleRecord.id, safeVendorId, contact_person ?? null, contact_number ?? null, profilePicture, id], "UPDATE users SET username = ?, email = ?, password = ?, name = ?, role_id = ?, vendor_id = ?, contact_person = ?, contact_number = ?, profile_picture = COALESCE(?, profile_picture) WHERE id = ?");
+      // A Vendor account and its vendor record represent the same operational
+      // party. Keep both records aligned so edits are reflected in the pickup
+      // selector, delivery history, and vendor reports.
+      if (roleRecord.name === "VENDOR" && safeVendorId) {
+        await dbRun(
+          req.db,
+          "UPDATE vendors SET name = $1, contact = $2 WHERE id = $3 RETURNING id",
+          [name.trim(), contact_number ?? null, safeVendorId],
+          "UPDATE vendors SET name = ?, contact = ? WHERE id = ?"
+        );
+      }
+      const values = [normalizedUsername, normalizedEmail, updatedPassword, name.trim(), roleRecord.id, safeVendorId, contact_person ?? null, contact_number ?? null];
+      const baseUpdate = "username = $1, email = $2, password = $3, name = $4, role_id = $5, vendor_id = $6, contact_person = $7, contact_number = $8";
+      if (removeProfilePicture) {
+        await dbRun(req.db, `UPDATE users SET ${baseUpdate}, profile_picture = NULL WHERE id = $9 RETURNING id`, [...values, id]);
+      } else if (profilePicture) {
+        await dbRun(req.db, `UPDATE users SET ${baseUpdate}, profile_picture = $9 WHERE id = $10 RETURNING id`, [...values, profilePicture, id]);
+      } else {
+        await dbRun(req.db, `UPDATE users SET ${baseUpdate} WHERE id = $9 RETURNING id`, [...values, id]);
+      }
     });
   } catch (error) {
     if (error.message === "Selected vendor was not found" || error.message === "Selected vendor is inactive") {
@@ -251,6 +306,7 @@ router.put("/:id", requireSuperadmin, async (req, res) => {
     return res.status(500).json({ error: "User update failed" });
   }
 
+  publishDataChange("user");
   res.json({ data: { ...updated, vendor_id: updated.vendor_id ?? null, contact_person: updated.contact_person ?? null, contact_number: updated.contact_number ?? null } });
 });
 
@@ -262,6 +318,7 @@ router.delete("/:id", requireSuperadmin, async (req, res) => {
   }
 
   await dbRun(req.db, "DELETE FROM users WHERE id = $1 RETURNING id", [id], "DELETE FROM users WHERE id = ?");
+  publishDataChange("user");
   res.json({ data: { id, deleted: true } });
 });
 

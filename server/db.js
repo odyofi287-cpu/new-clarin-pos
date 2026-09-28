@@ -80,6 +80,18 @@ class InMemoryDB {
       };
     }
 
+    if (normalized.startsWith("UPDATE VENDORS")) {
+      return {
+        run: (name, contact, id) => {
+          const vendor = this.vendors.find((entry) => entry.id === Number(id));
+          if (!vendor) return { changes: 0 };
+          vendor.name = name;
+          vendor.contact = contact ?? null;
+          return { changes: 1, lastInsertRowid: vendor.id, id: vendor.id };
+        },
+      };
+    }
+
     if (normalized.includes("FROM VENDORS")) {
       return {
         all: () => this.vendors.map((v) => ({ ...v })),
@@ -147,6 +159,8 @@ class InMemoryDB {
 
           if (normalized.includes("USERNAME = ?")) {
             [user.username, user.email, user.password, user.name, user.role_id, user.vendor_id, user.contact_person, user.contact_number] = args.slice(0, 8);
+            if (normalized.includes("PROFILE_PICTURE = NULL")) user.profile_picture = null;
+            else if (normalized.includes("PROFILE_PICTURE = ?")) user.profile_picture = args[8] ?? null;
           } else {
             [user.name, user.role_id, user.vendor_id, user.contact_person, user.contact_number] = args;
           }
@@ -274,7 +288,18 @@ class InMemoryDB {
       return {
         run: (vendor_id, delivery_date, delivery_time, total_amount, created_by) => {
           const id = this.deliveries.length + 1;
-          const row = { id, vendor_id, delivery_date, delivery_time, total_amount, created_by, created_at: new Date().toISOString() };
+          const row = {
+            id,
+            vendor_id,
+            delivery_date,
+            delivery_time,
+            total_amount,
+            payment_status: "UNPAID",
+            payment_confirmed_at: null,
+            payment_confirmed_by: null,
+            created_by,
+            created_at: new Date().toISOString(),
+          };
           this.deliveries.push(row);
           return { lastInsertRowid: id };
         }
@@ -304,6 +329,8 @@ class InMemoryDB {
             ...d,
             vendor_code: this.vendors.find((vendor) => vendor.id === d.vendor_id)?.vendor_code || null,
             vendor_name: this.vendors.find((vendor) => vendor.id === d.vendor_id)?.name || "Unknown",
+            payment_status: d.payment_status || "UNPAID",
+            payment_confirmed_by_name: this.users.find((user) => user.id === d.payment_confirmed_by)?.name || null,
           }));
           if (normalized.includes("AS ITEMS")) {
             rows = rows.map((delivery) => ({
@@ -338,6 +365,7 @@ class InMemoryDB {
             ...delivery,
             vendor_code: this.vendors.find((vendor) => vendor.id === delivery.vendor_id)?.vendor_code || null,
             vendor_name: this.vendors.find((vendor) => vendor.id === delivery.vendor_id)?.name || "Unknown",
+            payment_confirmed_by_name: this.users.find((user) => user.id === delivery.payment_confirmed_by)?.name || null,
           };
         },
         run: (vendor_id, delivery_date, total_amount, created_by) => {
@@ -361,12 +389,26 @@ class InMemoryDB {
     }
 
     if (normalized.startsWith("UPDATE DELIVERIES")) {
+      if (normalized.includes("PAYMENT_STATUS")) {
+        return {
+          run: (paymentConfirmedBy, id) => {
+            const delivery = this.deliveries.find((row) => row.id === Number(id));
+            if (!delivery) return { changes: 0 };
+            delivery.payment_status = "PAID";
+            delivery.payment_confirmed_at = new Date().toISOString();
+            delivery.payment_confirmed_by = Number(paymentConfirmedBy);
+            return { changes: 1, id: delivery.id };
+          },
+        };
+      }
+
       return {
-        run: (vendor_id, delivery_date, total_amount, id) => {
-          const delivery = this.deliveries.find((row) => row.id === id);
+        run: (vendor_id, delivery_date, delivery_time, total_amount, id) => {
+          const delivery = this.deliveries.find((row) => row.id === Number(id));
           if (!delivery) return { changes: 0 };
           delivery.vendor_id = vendor_id;
           delivery.delivery_date = delivery_date;
+          delivery.delivery_time = delivery_time;
           delivery.total_amount = total_amount;
           return { changes: 1 };
         }
@@ -609,6 +651,10 @@ class PostgresDB {
     const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
     await this.pool.query(schema);
     await this.pool.query("ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS delivery_time TEXT");
+    await this.pool.query("ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS payment_status TEXT NOT NULL DEFAULT 'UNPAID'");
+    await this.pool.query("ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS payment_confirmed_at TIMESTAMPTZ");
+    await this.pool.query("ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS payment_confirmed_by INTEGER REFERENCES users(id) ON DELETE SET NULL");
+    await this.pool.query("UPDATE deliveries SET payment_status = 'UNPAID' WHERE payment_status IS NULL OR payment_status NOT IN ('UNPAID', 'PAID')");
     await this.pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_picture TEXT");
     await this.pool.query("ALTER TABLE vendor_returns ADD COLUMN IF NOT EXISTS return_batch_id TEXT");
     await this.pool.query("CREATE INDEX IF NOT EXISTS idx_vendor_returns_batch_id ON vendor_returns(return_batch_id)");
@@ -757,6 +803,16 @@ function migrateSchema(db) {
   if (!deliveryColumns.some((column) => column.name === "delivery_time")) {
     db.exec("ALTER TABLE deliveries ADD COLUMN delivery_time TEXT");
   }
+  if (!deliveryColumns.some((column) => column.name === "payment_status")) {
+    db.exec("ALTER TABLE deliveries ADD COLUMN payment_status TEXT NOT NULL DEFAULT 'UNPAID'");
+  }
+  if (!deliveryColumns.some((column) => column.name === "payment_confirmed_at")) {
+    db.exec("ALTER TABLE deliveries ADD COLUMN payment_confirmed_at TEXT");
+  }
+  if (!deliveryColumns.some((column) => column.name === "payment_confirmed_by")) {
+    db.exec("ALTER TABLE deliveries ADD COLUMN payment_confirmed_by INTEGER REFERENCES users(id) ON DELETE SET NULL");
+  }
+  db.exec("UPDATE deliveries SET payment_status = 'UNPAID' WHERE payment_status IS NULL OR payment_status NOT IN ('UNPAID', 'PAID')");
 
   const returnColumns = db.prepare("PRAGMA table_info(vendor_returns)").all();
   if (!returnColumns.some((column) => column.name === "return_batch_id")) {
@@ -824,9 +880,13 @@ function createSchema(db) {
       delivery_date TEXT NOT NULL,
       delivery_time TEXT,
       total_amount REAL NOT NULL,
+      payment_status TEXT NOT NULL DEFAULT 'UNPAID' CHECK (payment_status IN ('UNPAID', 'PAID')),
+      payment_confirmed_at TEXT,
+      payment_confirmed_by INTEGER,
       created_by INTEGER NOT NULL,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (vendor_id) REFERENCES vendors(id),
+      FOREIGN KEY (payment_confirmed_by) REFERENCES users(id) ON DELETE SET NULL,
       FOREIGN KEY (created_by) REFERENCES users(id)
     );
   `);
@@ -925,8 +985,8 @@ function seedInitialData(db) {
     }
 
     if (db.deliveries.length === 0) {
-      db.deliveries.push({ id: 1, vendor_id: 1, delivery_date: new Date().toISOString().split("T")[0], total_amount: 150.0, created_by: 1, created_at: new Date().toISOString() });
-      db.deliveries.push({ id: 2, vendor_id: 2, delivery_date: new Date().toISOString().split("T")[0], total_amount: 100.0, created_by: 1, created_at: new Date().toISOString() });
+      db.deliveries.push({ id: 1, vendor_id: 1, delivery_date: new Date().toISOString().split("T")[0], total_amount: 150.0, payment_status: "UNPAID", payment_confirmed_at: null, payment_confirmed_by: null, created_by: 1, created_at: new Date().toISOString() });
+      db.deliveries.push({ id: 2, vendor_id: 2, delivery_date: new Date().toISOString().split("T")[0], total_amount: 100.0, payment_status: "UNPAID", payment_confirmed_at: null, payment_confirmed_by: null, created_by: 1, created_at: new Date().toISOString() });
       db.delivery_items.push({ id: 1, delivery_id: 1, product_id: 1, quantity: 20, unit_cost: 25.0 });
       db.delivery_items.push({ id: 2, delivery_id: 1, product_id: 2, quantity: 10, unit_cost: 20.0 });
       db.delivery_items.push({ id: 3, delivery_id: 2, product_id: 2, quantity: 15, unit_cost: 22.0 });

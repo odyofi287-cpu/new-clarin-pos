@@ -41,19 +41,25 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (re
     const sqliteWhereClause = sqliteFilters.length ? `WHERE ${sqliteFilters.join(" AND ")}` : "";
     const deliveries = await dbAll(
       req.db,
-      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.delivery_time, d.total_amount, d.created_at,
+      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.delivery_time, d.total_amount,
+              COALESCE(d.payment_status, 'UNPAID') AS payment_status, d.payment_confirmed_at, d.payment_confirmed_by,
+              confirmer.name AS payment_confirmed_by_name, d.created_at,
               COALESCE(STRING_AGG(p.name || ' (' || di.quantity::text || ')', ', ' ORDER BY p.name), '') AS items
        FROM deliveries d
        JOIN vendors v ON d.vendor_id = v.id
+       LEFT JOIN users confirmer ON confirmer.id = d.payment_confirmed_by
        LEFT JOIN delivery_items di ON di.delivery_id = d.id
        LEFT JOIN products p ON p.id = di.product_id
        ${pgWhereClause}
-       GROUP BY d.id, v.id`,
+       GROUP BY d.id, v.id, confirmer.id`,
       params,
-      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.delivery_time, d.total_amount, d.created_at,
+      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.delivery_time, d.total_amount,
+              COALESCE(d.payment_status, 'UNPAID') AS payment_status, d.payment_confirmed_at, d.payment_confirmed_by,
+              confirmer.name AS payment_confirmed_by_name, d.created_at,
               COALESCE(GROUP_CONCAT(p.name || ' (' || di.quantity || ')', ', '), '') AS items
        FROM deliveries d
        JOIN vendors v ON d.vendor_id = v.id
+       LEFT JOIN users confirmer ON confirmer.id = d.payment_confirmed_by
        LEFT JOIN delivery_items di ON di.delivery_id = d.id
        LEFT JOIN products p ON p.id = di.product_id
        ${sqliteWhereClause}
@@ -81,14 +87,20 @@ router.get("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async 
 
     const delivery = await dbGet(
       req.db,
-      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.total_amount, d.created_at
+      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.delivery_time, d.total_amount,
+              COALESCE(d.payment_status, 'UNPAID') AS payment_status, d.payment_confirmed_at, d.payment_confirmed_by,
+              confirmer.name AS payment_confirmed_by_name, d.created_at
        FROM deliveries d
        JOIN vendors v ON d.vendor_id = v.id
+       LEFT JOIN users confirmer ON confirmer.id = d.payment_confirmed_by
        WHERE d.id = $1 ${pgVendorFilter}`,
       params,
-      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.total_amount, d.created_at
+      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.delivery_time, d.total_amount,
+              COALESCE(d.payment_status, 'UNPAID') AS payment_status, d.payment_confirmed_at, d.payment_confirmed_by,
+              confirmer.name AS payment_confirmed_by_name, d.created_at
        FROM deliveries d
        JOIN vendors v ON d.vendor_id = v.id
+       LEFT JOIN users confirmer ON confirmer.id = d.payment_confirmed_by
        WHERE d.id = ? ${sqliteVendorFilter}`
     );
 
@@ -202,6 +214,9 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
         delivery_date: deliveryDate,
         delivery_time: deliveryTime,
         total_amount: totalAmount,
+        payment_status: "UNPAID",
+        payment_confirmed_at: null,
+        payment_confirmed_by: null,
         items: itemPayloads.map((item) => ({
           product_id: item.productId,
           quantity: item.quantity,
@@ -296,14 +311,20 @@ router.put("/:id", requireRole("SUPERADMIN"), async (req, res) => {
 
     const updatedDelivery = await dbGet(
       req.db,
-      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.delivery_time, d.total_amount, d.created_at
+      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.delivery_time, d.total_amount,
+              COALESCE(d.payment_status, 'UNPAID') AS payment_status, d.payment_confirmed_at, d.payment_confirmed_by,
+              confirmer.name AS payment_confirmed_by_name, d.created_at
        FROM deliveries d
        JOIN vendors v ON d.vendor_id = v.id
+       LEFT JOIN users confirmer ON confirmer.id = d.payment_confirmed_by
        WHERE d.id = $1`,
       [id],
-      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.delivery_time, d.total_amount, d.created_at
+      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.delivery_time, d.total_amount,
+              COALESCE(d.payment_status, 'UNPAID') AS payment_status, d.payment_confirmed_at, d.payment_confirmed_by,
+              confirmer.name AS payment_confirmed_by_name, d.created_at
        FROM deliveries d
        JOIN vendors v ON d.vendor_id = v.id
+       LEFT JOIN users confirmer ON confirmer.id = d.payment_confirmed_by
        WHERE d.id = ?`
     );
     const updatedItems = await dbAll(
@@ -324,6 +345,64 @@ router.put("/:id", requireRole("SUPERADMIN"), async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(400).json({ error: error.message || "Failed to update vendor pickup" });
+  }
+});
+
+router.post("/:id/confirm-payment", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: "Invalid delivery ID" });
+    }
+
+    const delivery = await dbGet(
+      req.db,
+      "SELECT id, payment_status FROM deliveries WHERE id = $1",
+      [id],
+      "SELECT id, payment_status FROM deliveries WHERE id = ?"
+    );
+    if (!delivery) {
+      return res.status(404).json({ error: "Pickup not found" });
+    }
+
+    if (String(delivery.payment_status || "UNPAID").toUpperCase() !== "PAID") {
+      await dbRun(
+        req.db,
+        `UPDATE deliveries
+         SET payment_status = 'PAID', payment_confirmed_at = CURRENT_TIMESTAMP, payment_confirmed_by = $1
+         WHERE id = $2 AND COALESCE(payment_status, 'UNPAID') <> 'PAID'
+         RETURNING id`,
+        [req.user.user_id, id],
+        `UPDATE deliveries
+         SET payment_status = 'PAID', payment_confirmed_at = datetime('now'), payment_confirmed_by = ?
+         WHERE id = ? AND COALESCE(payment_status, 'UNPAID') <> 'PAID'`
+      );
+    }
+
+    const updatedDelivery = await dbGet(
+      req.db,
+      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.delivery_time, d.total_amount,
+              COALESCE(d.payment_status, 'UNPAID') AS payment_status, d.payment_confirmed_at, d.payment_confirmed_by,
+              confirmer.name AS payment_confirmed_by_name, d.created_at
+       FROM deliveries d
+       JOIN vendors v ON d.vendor_id = v.id
+       LEFT JOIN users confirmer ON confirmer.id = d.payment_confirmed_by
+       WHERE d.id = $1`,
+      [id],
+      `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.delivery_time, d.total_amount,
+              COALESCE(d.payment_status, 'UNPAID') AS payment_status, d.payment_confirmed_at, d.payment_confirmed_by,
+              confirmer.name AS payment_confirmed_by_name, d.created_at
+       FROM deliveries d
+       JOIN vendors v ON d.vendor_id = v.id
+       LEFT JOIN users confirmer ON confirmer.id = d.payment_confirmed_by
+       WHERE d.id = ?`
+    );
+
+    publishDataChange("delivery");
+    res.json({ data: updatedDelivery });
+  } catch (error) {
+    console.error(error);
+    res.status(400).json({ error: error.message || "Failed to confirm delivery payment" });
   }
 });
 

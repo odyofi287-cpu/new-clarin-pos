@@ -16,12 +16,32 @@ function formatDeliveryDate(value) {
     .format(new Date(Date.UTC(Number(year), Number(month) - 1, Number(day))));
 }
 
+function formatConfirmationDateTime(value) {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return new Intl.DateTimeFormat("en-PH", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "Asia/Manila",
+  }).format(parsed);
+}
+
+function PaymentStatusBadge({ status }) {
+  const isPaid = String(status || "UNPAID").toUpperCase() === "PAID";
+  return <span className={`payment-status-badge ${isPaid ? "is-paid" : "is-unpaid"}`}>{isPaid ? "Paid" : "Unpaid"}</span>;
+}
+
 function POS({ token, role, vendorId, viewMode = "pos" }) {
   const REFRESH_INTERVAL_MS = 6000;
   const isPosEntryView = viewMode === "pos";
   const isDeliveriesView = viewMode === "deliveries";
   const isSalesHistoryView = viewMode === "sales-history";
   const canManagePickupEntries = role === "SUPERADMIN" && isDeliveriesView;
+  const canManagePaymentStatus = ["SUPERADMIN", "ADMIN", "STAFF"].includes(role) && isDeliveriesView;
   const [products, setProducts] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [pickupOpen, setPickupOpen] = useState(false);
@@ -36,6 +56,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   const [salesHistory, setSalesHistory] = useState([]);
   const [pickupMode, setPickupMode] = useState("create");
   const [editingPickupId, setEditingPickupId] = useState(null);
+  const [editingPickupOriginalQuantities, setEditingPickupOriginalQuantities] = useState({});
   const [historyMode, setHistoryMode] = useState(null);
   const [returnsOpen, setReturnsOpen] = useState(false);
   const [returnEntries, setReturnEntries] = useState([]);
@@ -61,6 +82,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   const [status, setStatus] = useState(null);
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [confirmingPaymentId, setConfirmingPaymentId] = useState(null);
 
   useEffect(() => {
     if (role === "VENDOR" && vendorId) {
@@ -299,11 +321,18 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     setEditingPickupId(null);
     setPickupMode("create");
     setPickupQuantities({});
+    setEditingPickupOriginalQuantities({});
   };
 
   const updateTransactionQuantity = (product, nextValue) => {
     const parsed = Number(nextValue);
-    const quantity = Number.isFinite(parsed) ? Math.max(0, Math.min(Math.trunc(parsed), Number(product.current_stock || 0))) : 0;
+    // When changing an existing pickup, its original quantities are restored
+    // before the replacement is saved. They must therefore remain available
+    // in the editor even though they are not part of current displayed stock.
+    const availableStock = entryMode === "pickup" && pickupMode === "edit"
+      ? Number(product.current_stock || 0) + Number(editingPickupOriginalQuantities[product.id] || 0)
+      : Number(product.current_stock || 0);
+    const quantity = Number.isFinite(parsed) ? Math.max(0, Math.min(Math.trunc(parsed), availableStock)) : 0;
     const setQuantities = entryMode === "pickup"
       ? setPickupQuantities
       : entryMode === "return"
@@ -356,12 +385,43 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     }
   };
 
+  const handleConfirmPayment = async (entry) => {
+    setError(null);
+    setStatus(null);
+    setConfirmingPaymentId(entry.id);
+
+    try {
+      const res = await fetch(apiUrl(`/api/deliveries/${entry.id}/confirm-payment`), {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body.error || "Unable to confirm delivery payment.");
+      }
+
+      setPickupEntries((current) => current.map((record) => Number(record.id) === Number(entry.id)
+        ? { ...record, ...body.data }
+        : record));
+      setStatus(`Payment confirmed for delivery #${entry.id}.`);
+    } catch (err) {
+      setError(err.message || "Unable to confirm delivery payment.");
+    } finally {
+      setConfirmingPaymentId(null);
+    }
+  };
+
   if (historyMode) {
     const isPickupHistory = historyMode === 'pickups';
-    const title = isPickupHistory ? 'Vendor Pickup List' : 'Vendor Return History';
-    const description = isPickupHistory
-      ? 'Review every vendor pickup and the products included in each delivery.'
-      : 'Review grouped return records and every product included in each return.';
+    const isPaymentHistory = historyMode === 'payments';
+    const title = isPaymentHistory ? 'Delivery Payment Status' : isPickupHistory ? 'Vendor Pickup List' : 'Vendor Return History';
+    const description = isPaymentHistory
+      ? 'Confirm vendor delivery payments and review who completed each confirmation.'
+      : isPickupHistory
+        ? 'Review every vendor pickup and the products included in each delivery.'
+        : 'Review grouped return records and every product included in each return.';
+    const paidDeliveryCount = pickupEntries.filter((entry) => String(entry.payment_status || 'UNPAID').toUpperCase() === 'PAID').length;
+    const unpaidDeliveryCount = pickupEntries.length - paidDeliveryCount;
 
     return (
       <div className="dashboard-shell">
@@ -369,7 +429,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
           <header className="transaction-entry-header">
             <div>
               <button type="button" className="transaction-back" onClick={() => setHistoryMode(null)}>← Back to Deliveries</button>
-              <span className="transaction-eyebrow">{isPickupHistory ? 'Delivery records' : 'Return records'}</span>
+              <span className="transaction-eyebrow">{isPaymentHistory ? 'Payment confirmations' : isPickupHistory ? 'Delivery records' : 'Return records'}</span>
               <h2>{title}</h2>
               <p>{description}</p>
             </div>
@@ -382,16 +442,43 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
           <section className="transaction-history-list">
             <div className="transaction-history-heading">
               <div>
-                <span className="transaction-eyebrow">{isPickupHistory ? 'Pickup history' : 'Return history'}</span>
-                <h3>{isPickupHistory ? `${pickupEntries.length} delivery record${pickupEntries.length === 1 ? '' : 's'}` : `${returnEntries.length} return record${returnEntries.length === 1 ? '' : 's'}`}</h3>
+                <span className="transaction-eyebrow">{isPaymentHistory ? 'Payment status' : isPickupHistory ? 'Pickup history' : 'Return history'}</span>
+                <h3>{isPaymentHistory || isPickupHistory ? `${pickupEntries.length} delivery record${pickupEntries.length === 1 ? '' : 's'}` : `${returnEntries.length} return record${returnEntries.length === 1 ? '' : 's'}`}</h3>
               </div>
+              {isPaymentHistory && (
+                <div className="payment-status-summary" aria-label="Payment status totals">
+                  <span className="is-paid">{paidDeliveryCount} paid</span>
+                  <span className="is-unpaid">{unpaidDeliveryCount} unpaid</span>
+                </div>
+              )}
             </div>
 
-            {isPickupHistory ? (
+            {isPaymentHistory ? (
+              pickupEntries.length === 0 ? <p className="transaction-empty">No vendor deliveries available for payment confirmation.</p> : (
+                <div className="management-table-wrap payment-status-table">
+                  <table>
+                    <thead><tr><th>Delivery</th><th>Vendor</th><th>Product(s)</th><th>Date & Time</th><th>Amount</th><th>Status</th><th>Confirmation</th><th>Action</th></tr></thead>
+                    <tbody>{pickupEntries.map((entry) => {
+                      const isPaid = String(entry.payment_status || 'UNPAID').toUpperCase() === 'PAID';
+                      return <tr key={`payment-${entry.id}`}>
+                        <td data-label="Delivery">#{entry.id}</td>
+                        <td data-label="Vendor"><strong>{entry.vendor_name || entry.vendor_id}</strong><small>{getDisplayVendorId(entry)}</small></td>
+                        <td data-label="Product(s)">{entry.items || '-'}</td>
+                        <td data-label="Date & Time">{formatDeliveryDate(entry.delivery_date)}<small>{entry.delivery_time || '-'}</small></td>
+                        <td data-label="Amount"><strong>{formatCurrency(entry.total_amount)}</strong></td>
+                        <td data-label="Status"><PaymentStatusBadge status={entry.payment_status} /></td>
+                        <td data-label="Confirmation">{isPaid ? <>{entry.payment_confirmed_by_name || 'Authorized user'}<small>{formatConfirmationDateTime(entry.payment_confirmed_at)}</small></> : <span className="payment-awaiting">Awaiting confirmation</span>}</td>
+                        <td data-label="Action"><button type="button" className="small-button payment-confirm-button" disabled={isPaid || confirmingPaymentId === entry.id} onClick={() => handleConfirmPayment(entry)}>{confirmingPaymentId === entry.id ? 'Confirming…' : isPaid ? 'Confirmed' : 'Confirm Payment'}</button></td>
+                      </tr>;
+                    })}</tbody>
+                  </table>
+                </div>
+              )
+            ) : isPickupHistory ? (
               pickupEntries.length === 0 ? <p className="transaction-empty">No vendor pickups available.</p> : (
                 <div className="management-table-wrap">
                   <table>
-                    <thead><tr><th>Vendor ID</th><th>Vendor</th><th>Product(s)</th><th>Date</th><th>Pickup Time</th><th>Total</th>{canManagePickupEntries && <th>Action</th>}</tr></thead>
+                    <thead><tr><th>Vendor ID</th><th>Vendor</th><th>Product(s)</th><th>Date</th><th>Pickup Time</th><th>Total</th><th>Payment</th>{canManagePickupEntries && <th>Action</th>}</tr></thead>
                     <tbody>{pickupEntries.map((entry) => <tr key={entry.id}>
                       <td data-label="Vendor ID">{getDisplayVendorId(entry)}</td>
                       <td data-label="Vendor">{entry.vendor_name || entry.vendor_id}</td>
@@ -399,6 +486,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                       <td data-label="Date">{formatDeliveryDate(entry.delivery_date)}</td>
                       <td data-label="Pickup Time">{entry.delivery_time || '-'}</td>
                       <td data-label="Total">{formatCurrency(entry.total_amount)}</td>
+                      <td data-label="Payment"><PaymentStatusBadge status={entry.payment_status} /></td>
                       {canManagePickupEntries && <td data-label="Action" className="transaction-history-actions"><button type="button" className="small-button" onClick={() => openEditPickup(entry)}>Edit</button><button type="button" className="small-button" onClick={() => handleDeletePickup(entry.id)}>Delete</button></td>}
                     </tr>)}</tbody>
                   </table>
@@ -486,7 +574,9 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
         unit_price: "",
         total_price: "0.00",
       });
-      setPickupQuantities(Object.fromEntries(items.map((item) => [item.product_id, Number(item.quantity || 0)])));
+      const originalQuantities = Object.fromEntries(items.map((item) => [item.product_id, Number(item.quantity || 0)]));
+      setPickupQuantities(originalQuantities);
+      setEditingPickupOriginalQuantities(originalQuantities);
       setHistoryMode(null);
       setEntryMode("pickup");
       setProductSearch("");
@@ -656,6 +746,11 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
         if (!res.ok) {
           throw new Error(body.error || 'Unable to update vendor pickup');
         }
+        setPickupEntries((current) => current.map((record) => Number(record.id) === Number(editingPickupId) ? {
+          ...record,
+          ...body.data,
+          items: (body.data?.items || []).map((item) => `${item.product_name || item.product_id} (${item.quantity})`).join(', '),
+        } : record));
         setStatus(`Vendor pickup updated with ${transactionItems.length} product${transactionItems.length === 1 ? '' : 's'} — total ${formatCurrency(transactionTotal)}.`);
       } else {
         const res = await fetch(apiUrl('/api/deliveries'), {
@@ -754,7 +849,10 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                   {filteredCatalogProducts.map((product) => {
                     const quantity = Number(transactionQuantities[product.id] || 0);
                     const stock = Number(product.current_stock || 0);
-                    const canAdd = quantity < stock;
+                    const availableStock = entryMode === "pickup" && pickupMode === "edit"
+                      ? stock + Number(editingPickupOriginalQuantities[product.id] || 0)
+                      : stock;
+                    const canAdd = quantity < availableStock;
                     return (
                       <article className={`transaction-product-card tone-${Number(product.id) % 4}`} key={product.id}>
                         <div className="transaction-product-art">
@@ -774,13 +872,13 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                         <div className="transaction-product-copy">
                           <span>{product.category || "General"}</span>
                           <h4>{product.name}</h4>
-                          <p>{formatCurrency(product.selling_price)} · {stock} {product.unit || "units"} available</p>
+                          <p>{formatCurrency(product.selling_price)} · {availableStock} {product.unit || "units"} available</p>
                         </div>
                         <div className="transaction-quantity-control">
                           <button type="button" aria-label={`Remove one ${product.name}`} onClick={() => updateTransactionQuantity(product, quantity - 1)} disabled={quantity === 0}>−</button>
                           <label>
                             <span className="sr-only">Quantity for {product.name}</span>
-                            <input type="number" min="0" max={stock} value={quantity || ""} placeholder="0" onChange={(event) => updateTransactionQuantity(product, event.target.value)} />
+                            <input type="number" min="0" max={availableStock} value={quantity || ""} placeholder="0" onChange={(event) => updateTransactionQuantity(product, event.target.value)} />
                           </label>
                           <button type="button" aria-label={`Add one ${product.name}`} onClick={() => updateTransactionQuantity(product, quantity + 1)} disabled={!canAdd}>+</button>
                         </div>
@@ -843,6 +941,11 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
             {isDeliveriesView && (
               <button className="small-button" onClick={() => { setHistoryMode('pickups'); setError(null); setStatus(null); }}>
                 Vendor Pickup List
+              </button>
+            )}
+            {canManagePaymentStatus && (
+              <button className="small-button payment-status-nav-button" onClick={() => { setHistoryMode('payments'); setError(null); setStatus(null); }}>
+                Payment Status
               </button>
             )}
             {isDeliveriesView && role !== "VENDOR" && (
@@ -919,6 +1022,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                         <th>Date</th>
                         <th>Pickup Time</th>
                         <th>Total</th>
+                        <th>Payment</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -931,6 +1035,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                           <td data-label="Date">{formatDeliveryDate(entry.delivery_date)}</td>
                           <td data-label="Pickup Time">{entry.delivery_time || "-"}</td>
                           <td data-label="Total">{formatCurrency(entry.total_amount)}</td>
+                          <td data-label="Payment"><PaymentStatusBadge status={entry.payment_status} /></td>
                         </tr>
                       ))}
                     </tbody>

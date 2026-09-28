@@ -2996,6 +2996,17 @@ button[disabled] {
   color: #3272bf;
 }
 
+.product-search-row { align-items: end; display: flex; gap: .7rem; justify-content: space-between; margin-bottom: 1rem; }
+.product-search-field { color: #526a8c; display: grid; font-size: .72rem; font-weight: 800; gap: .35rem; letter-spacing: .04em; max-width: 420px; text-transform: uppercase; width: 100%; }
+.product-search-field input { background: #fff; border: 1px solid #c9d8ea; border-radius: 7px; color: #203a64; min-height: 42px; padding: .65rem .8rem; text-transform: none; }
+.product-search-field input:focus { border-color: #327bd0; box-shadow: 0 0 0 3px rgba(50, 123, 208, .12); outline: none; }
+
+@media (max-width: 640px) {
+  .product-search-row { align-items: stretch; flex-direction: column; }
+  .product-search-field { max-width: none; }
+  .product-search-row .small-button { min-height: 40px; width: 100%; }
+}
+
 @media (max-width: 640px) {
   .workspace-content .dashboard-shell,
   .workspace-content .account-management,

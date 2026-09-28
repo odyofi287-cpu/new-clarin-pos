@@ -191,6 +191,7 @@ function Dashboard({ token, role, viewMode = "dashboard" }) {
   const [calculatedSales, setCalculatedSales] = useState(null);
   const [error, setError] = useState(null);
   const [productsList, setProductsList] = useState([]);
+  const [productSearch, setProductSearch] = useState("");
   const [manageForm, setManageForm] = useState({ id: null, name: "", category: "", selling_price: "", current_stock: "", image_url: "" });
   const [usersList, setUsersList] = useState([]);
   const [manageError, setManageError] = useState(null);
@@ -351,7 +352,12 @@ function Dashboard({ token, role, viewMode = "dashboard" }) {
     );
   }
 
-  const inventoryProducts = (productsList.length ? productsList : data?.products || []).filter((product) => product.active === 1 || product.active === true);
+  const normalizedProductSearch = productSearch.trim().toLowerCase();
+  const matchesProductSearch = (product) => !normalizedProductSearch || `${product.name || ""} ${product.category || ""}`.toLowerCase().includes(normalizedProductSearch);
+  const inventoryProducts = (productsList.length ? productsList : data?.products || [])
+    .filter((product) => product.active === 1 || product.active === true)
+    .filter(matchesProductSearch);
+  const filteredProducts = productsList.filter(matchesProductSearch);
 
   const inventoryGrid = (
     <section className="management-page inventory-page">
@@ -364,9 +370,17 @@ function Dashboard({ token, role, viewMode = "dashboard" }) {
         <div className="management-count"><strong>{inventoryProducts.length}</strong><span>items</span></div>
       </div>
 
+      <div className="product-search-row">
+        <label className="product-search-field">
+          Search inventory
+          <input type="search" value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Search by product or category" />
+        </label>
+        {productSearch && <button type="button" className="small-button" onClick={() => setProductSearch("")}>Clear</button>}
+      </div>
+
       <div className="inventory-grid">
         {inventoryProducts.length === 0 ? (
-          <p className="muted-text">No inventory items available.</p>
+            <p className="muted-text">No inventory items match your search.</p>
         ) : (
           inventoryProducts.map((product) => (
             <article key={product.id} className="inventory-card">
@@ -557,6 +571,13 @@ function Dashboard({ token, role, viewMode = "dashboard" }) {
           {manageSuccess && <p className="success-message">{manageSuccess}</p>}
 
           <div className="management-panel">
+            <div className="product-search-row">
+              <label className="product-search-field">
+                Search products
+                <input type="search" value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Search by product or category" />
+              </label>
+              {productSearch && <button type="button" className="small-button" onClick={() => setProductSearch("")}>Clear</button>}
+            </div>
             <div className="management-toolbar">
               <div>
                 <h3>Catalog</h3>
@@ -570,7 +591,7 @@ function Dashboard({ token, role, viewMode = "dashboard" }) {
             </div>
 
             <div className="management-table-wrap">
-              {productsList.length === 0 ? <p>No products available.</p> : (
+              {filteredProducts.length === 0 ? <p>{productsList.length === 0 ? "No products available." : "No products match your search."}</p> : (
                 <table>
                   <thead>
                     <tr>
@@ -584,7 +605,7 @@ function Dashboard({ token, role, viewMode = "dashboard" }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {productsList.map((prod) => (
+                    {filteredProducts.map((prod) => (
                       <tr key={prod.id}>
                         <td data-label="Image">{prod.image_url ? <img className="product-thumb" src={prod.image_url} alt="" /> : <span className="product-thumb product-thumb-empty">{prod.name.slice(0, 1).toUpperCase()}</span>}</td>
                         <td data-label="Name">{prod.name}</td>

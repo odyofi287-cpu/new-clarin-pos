@@ -46,6 +46,9 @@ CREATE TABLE IF NOT EXISTS deliveries (
   delivery_date DATE NOT NULL,
   delivery_time TEXT,
   total_amount NUMERIC NOT NULL,
+  payment_status TEXT NOT NULL DEFAULT 'UNPAID' CHECK (payment_status IN ('UNPAID', 'PAID')),
+  payment_confirmed_at TIMESTAMPTZ,
+  payment_confirmed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
   created_by INTEGER NOT NULL REFERENCES users(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
