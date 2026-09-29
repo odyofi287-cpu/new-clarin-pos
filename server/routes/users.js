@@ -104,19 +104,36 @@ router.get("/vendors", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), as
 
     const vendors = await dbAll(
       req.db,
-      `SELECT v.id, v.name, v.vendor_code, v.active, v.created_at
+      `SELECT v.id, v.name, v.vendor_code, v.active, v.created_at,
+              (SELECT u.username
+               FROM users u
+               JOIN roles r ON r.id = u.role_id
+               WHERE u.vendor_id = v.id AND u.active = 1 AND r.name = 'VENDOR'
+               ORDER BY u.id ASC
+               LIMIT 1) AS username
        FROM vendors v
        ${whereClause}
        ORDER BY v.name ASC`,
       params,
-      `SELECT v.id, v.name, v.vendor_code, v.active, v.created_at
+      `SELECT v.id, v.name, v.vendor_code, v.active, v.created_at,
+              (SELECT u.username
+               FROM users u
+               JOIN roles r ON r.id = u.role_id
+               WHERE u.vendor_id = v.id AND u.active = 1 AND r.name = 'VENDOR'
+               ORDER BY u.id ASC
+               LIMIT 1) AS username
        FROM vendors v
        ${whereClause}
        ORDER BY v.name ASC`
     );
 
     const activeVendors = isInMemoryDb(req.db)
-      ? vendors.filter((vendor) => req.db.users.some((user) => user.vendor_id === vendor.id && user.active !== 0 && req.db.roles.find((role) => role.id === user.role_id)?.name === "VENDOR"))
+      ? vendors.flatMap((vendor) => {
+          const account = req.db.users.find((user) => user.vendor_id === vendor.id
+            && user.active !== 0
+            && req.db.roles.find((role) => role.id === user.role_id)?.name === "VENDOR");
+          return account ? [{ ...vendor, username: account.username || String(account.email || "").split("@")[0] }] : [];
+        })
       : vendors;
 
     res.json({ data: activeVendors });

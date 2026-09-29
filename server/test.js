@@ -540,11 +540,13 @@ test("Vendor accounts receive sequential system-assigned vendor records", async 
   assert(vendorList.data.some((vendor) => vendor.vendor_code === created.data.vendor_code));
   assert(vendorList.data.some((vendor) => vendor.vendor_code === secondCreated.data.vendor_code));
 
+  const updatedUsername = `${username}updated`;
+
   res = await fetch(`${base}/api/users/${created.data.id}`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({
-      username: created.data.username,
+      username: updatedUsername,
       email: created.data.email,
       name: 'Renamed Supplier Account',
       role: 'VENDOR',
@@ -559,6 +561,7 @@ test("Vendor accounts receive sequential system-assigned vendor records", async 
   vendorList = await res.json();
   const renamedVendor = vendorList.data.find((vendor) => vendor.id === created.data.vendor_id);
   assert.strictEqual(renamedVendor?.name, 'Renamed Supplier Account', 'Expected vendor selector data to reflect account edits');
+  assert.strictEqual(renamedVendor?.username, updatedUsername, 'Expected vendor selector data to reflect the registered username immediately');
 
   res = await fetch(`${base}/api/users/${created.data.id}`, {
     method: 'DELETE',

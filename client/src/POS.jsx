@@ -44,6 +44,12 @@ function getDisplayReturnId(entry) {
     : String(firstReturnId || "-");
 }
 
+function getVendorOptionLabel(vendor) {
+  const vendorCode = vendor.vendor_code || `VND-${String(vendor.id).padStart(4, "0")}`;
+  const username = vendor.username ? `@${vendor.username}` : "No username";
+  return `${vendor.name} (${username}) · ${vendorCode}`;
+}
+
 function POS({ token, role, vendorId, viewMode = "pos" }) {
   const REFRESH_INTERVAL_MS = 6000;
   const isPosEntryView = viewMode === "pos";
@@ -835,11 +841,11 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                     <option value="">Select vendor</option>
                     {vendors.map((vendor) => (
                       <option key={vendor.id} value={vendor.id}>
-                        {vendor.name} ({vendor.vendor_code || `VND-${String(vendor.id).padStart(4, "0")}`})
+                        {getVendorOptionLabel(vendor)}
                       </option>
                     ))}
                   </select>
-                  {selectedVendor && <small>{selectedVendor.vendor_code || `VND-${String(selectedVendor.id).padStart(4, "0")}`}</small>}
+                  {selectedVendor && <small>{selectedVendor.username ? `@${selectedVendor.username} · ` : ""}{selectedVendor.vendor_code || `VND-${String(selectedVendor.id).padStart(4, "0")}`}</small>}
                 </label>
                 {isPickupEntry && pickupMode === "edit" && (
                   <label className="transaction-payment-field">
@@ -1098,7 +1104,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                       <option value="">Select vendor</option>
                       {vendors.map((vendor) => (
                         <option key={vendor.id} value={vendor.vendor_id ?? vendor.id}>
-                          {vendor.name} ({vendor.vendor_code || `VND-${String(vendor.vendor_id ?? vendor.id).padStart(4, '0')}`})
+                          {getVendorOptionLabel(vendor)}
                         </option>
                       ))}
                     </select>
@@ -1173,7 +1179,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                       <option value="">Select vendor</option>
                       {vendors.map((vendor) => (
                         <option key={vendor.id} value={vendor.vendor_id ?? vendor.id}>
-                          {vendor.name} ({vendor.vendor_code || `VND-${String(vendor.vendor_id ?? vendor.id).padStart(4, '0')}`})
+                          {getVendorOptionLabel(vendor)}
                         </option>
                       ))}
                     </select>
