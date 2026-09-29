@@ -216,7 +216,7 @@ function TotalSales({ token, onBack }) {
                   <strong>{product.name}</strong>
                   <span>{product.category || "General"}</span>
                 </div>
-                <div className="total-sales-product-stat is-net"><span>Net sales</span><strong>{formatCurrency(product.net_sales)}</strong><small>Recorded + deliveries − returns</small></div>
+                <div className="total-sales-product-stat is-net"><span>Net sales</span><strong>{formatCurrency(product.net_sales)}</strong></div>
                 <div className="total-sales-product-stat"><span>Recorded sales</span><strong>{formatCurrency(product.recorded_sales)}</strong><small>{Number(product.recorded_quantity || 0).toLocaleString()} {product.unit || "units"}</small></div>
                 <div className="total-sales-product-stat"><span>Deliveries</span><strong>{formatCurrency(product.delivery_total)}</strong><small>{Number(product.delivered_quantity || 0).toLocaleString()} {product.unit || "units"}</small></div>
                 <div className="total-sales-product-stat is-return"><span>Returns</span><strong>-{formatCurrency(product.return_total)}</strong><small>{Number(product.returned_quantity || 0).toLocaleString()} {product.unit || "units"}</small></div>
