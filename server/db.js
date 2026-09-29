@@ -832,6 +832,9 @@ function migrateSchema(db) {
     db.exec("ALTER TABLE vendor_returns ADD COLUMN return_batch_id TEXT");
   }
   db.exec("CREATE INDEX IF NOT EXISTS idx_vendor_returns_batch_id ON vendor_returns(return_batch_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_sales_sale_date ON sales(sale_date)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_sale_items_sale_id ON sale_items(sale_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_sale_items_product_id ON sale_items(product_id)");
 }
 
 function createSchema(db) {

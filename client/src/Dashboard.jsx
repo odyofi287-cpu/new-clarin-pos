@@ -185,10 +185,9 @@ function SalesCalendar({ calendar }) {
   );
 }
 
-function Dashboard({ token, role, viewMode = "dashboard" }) {
+function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
   const REFRESH_INTERVAL_MS = 6000;
   const [data, setData] = useState(null);
-  const [calculatedSales, setCalculatedSales] = useState(null);
   const [error, setError] = useState(null);
   const [productsList, setProductsList] = useState([]);
   const [productSearch, setProductSearch] = useState("");
@@ -229,7 +228,6 @@ function Dashboard({ token, role, viewMode = "dashboard" }) {
             setError(payload.error);
           } else {
             setData(payload.data);
-            setCalculatedSales(payload.data.calculated_todays_sales);
           }
         })
         .catch(() => setError("Unable to load dashboard"));
@@ -468,13 +466,11 @@ function Dashboard({ token, role, viewMode = "dashboard" }) {
     <div className="dashboard-shell">
       {viewMode === "dashboard" && (
         <div className="dashboard-grid dashboard-metric-grid">
-            <div className="metric-card">
-              <span className="metric-label">Today's total sales</span>
-              <strong>{formatCurrency(calculatedSales ?? data.todays_total_sales)}</strong>
-              <button type="button" className="small-button" onClick={() => setCalculatedSales(data.calculated_todays_sales)}>
-                Recalculate Sales
-              </button>
-            </div>
+            <button type="button" className="metric-card total-sales-launch" onClick={() => onNavigate?.("total-sales")}>
+              <span className="metric-label">Total Sales</span>
+              <strong>{formatCurrency(data.todays_total_sales)}</strong>
+              <span className="total-sales-launch-footer"><span>Today's recorded sales</span><b>View analytics →</b></span>
+            </button>
             <div className="metric-card">
               <span className="metric-label">Today's delivery value</span>
               <strong>{formatCurrency(data.todays_total_deliveries)}</strong>

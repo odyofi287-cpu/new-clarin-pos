@@ -9,6 +9,120 @@ function getTodayString() {
   return getBusinessDate();
 }
 
+function dateFromKey(value) {
+  return new Date(`${value}T00:00:00Z`);
+}
+
+function dateKey(value) {
+  return value.toISOString().slice(0, 10);
+}
+
+function addUtcDays(value, days) {
+  const next = new Date(value);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+function startOfUtcWeek(value) {
+  const start = new Date(value);
+  const day = start.getUTCDay();
+  start.setUTCDate(start.getUTCDate() - (day === 0 ? 6 : day - 1));
+  return start;
+}
+
+export function buildRecordedSalesPeriods(sales = [], todayKey = getTodayString()) {
+  const today = dateFromKey(todayKey);
+  const normalizedSales = sales.map((sale) => ({
+    ...sale,
+    date: getCalendarDateKey(sale.sale_date),
+    total: Number(sale.total_amount || 0),
+  }));
+  const summarize = (start, end) => {
+    const matches = normalizedSales.filter((sale) => sale.date >= start && sale.date < end);
+    return {
+      total: matches.reduce((sum, sale) => sum + sale.total, 0),
+      transactions: matches.length,
+    };
+  };
+
+  const daily = [];
+  for (let offset = 13; offset >= 0; offset -= 1) {
+    const startDate = addUtcDays(today, -offset);
+    const start = dateKey(startDate);
+    daily.push({ period: start, ...summarize(start, dateKey(addUtcDays(startDate, 1))) });
+  }
+
+  const currentWeekStart = startOfUtcWeek(today);
+  const weekly = [];
+  for (let offset = 7; offset >= 0; offset -= 1) {
+    const startDate = addUtcDays(currentWeekStart, -offset * 7);
+    const endDate = addUtcDays(startDate, 7);
+    weekly.push({
+      period: dateKey(startDate),
+      period_end: dateKey(addUtcDays(endDate, -1)),
+      ...summarize(dateKey(startDate), dateKey(endDate)),
+    });
+  }
+
+  const monthly = [];
+  for (let offset = 11; offset >= 0; offset -= 1) {
+    const startDate = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - offset, 1));
+    const endDate = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth() + 1, 1));
+    monthly.push({
+      period: dateKey(startDate).slice(0, 7),
+      ...summarize(dateKey(startDate), dateKey(endDate)),
+    });
+  }
+
+  const weekStart = dateKey(currentWeekStart);
+  const weekEndDate = addUtcDays(currentWeekStart, 7);
+  const monthStartDate = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+  const monthEndDate = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 1));
+
+  return {
+    daily,
+    weekly,
+    monthly,
+    current: {
+      daily: summarize(todayKey, dateKey(addUtcDays(today, 1))),
+      weekly: summarize(weekStart, dateKey(weekEndDate)),
+      monthly: summarize(dateKey(monthStartDate), dateKey(monthEndDate)),
+      week_start: weekStart,
+      week_end: dateKey(addUtcDays(weekEndDate, -1)),
+      month: dateKey(monthStartDate).slice(0, 7),
+    },
+  };
+}
+
+function buildProductSales(products = [], saleItems = []) {
+  const productMap = new Map(products.map((product) => [Number(product.id), product]));
+  const totals = new Map();
+
+  saleItems.forEach((item) => {
+    const productId = Number(item.product_id);
+    const row = totals.get(productId) || { quantity_sold: 0, sales_total: 0, saleIds: new Set() };
+    row.quantity_sold += Number(item.quantity || 0);
+    row.sales_total += Number(item.quantity || 0) * Number(item.unit_price || 0);
+    row.saleIds.add(Number(item.sale_id));
+    totals.set(productId, row);
+  });
+
+  return [...totals.entries()].map(([productId, total]) => {
+    const product = productMap.get(productId) || {};
+    return {
+      product_id: productId,
+      name: product.name || "Unknown product",
+      category: product.category || "General",
+      image_url: product.image_url || null,
+      unit: product.unit || "units",
+      quantity_sold: total.quantity_sold,
+      sales_total: total.sales_total,
+      transaction_count: total.saleIds.size,
+      average_unit_price: total.quantity_sold ? total.sales_total / total.quantity_sold : 0,
+    };
+  }).sort((a, b) => b.sales_total - a.sales_total || a.name.localeCompare(b.name));
+}
+
 export function getCalendarDateKey(value) {
   if (value instanceof Date) return getBusinessDate(value);
   const match = String(value || "").match(/^(\d{4}-\d{2}-\d{2})/);
@@ -90,6 +204,104 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (re
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to load dashboard" });
+  }
+});
+
+router.get("/total-sales", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+  try {
+    const today = getTodayString();
+    let sales;
+    let products;
+    let allTimeTotal;
+    let allTimeTransactions;
+    let allTimeItems;
+
+    if (isInMemoryDb(req.db)) {
+      sales = req.db.sales.map((sale) => ({ ...sale }));
+      products = buildProductSales(req.db.products, req.db.sale_items);
+      allTimeTotal = sales.reduce((sum, sale) => sum + Number(sale.total_amount || 0), 0);
+      allTimeTransactions = sales.length;
+      allTimeItems = req.db.sale_items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    } else {
+      const chartStartDate = new Date(Date.UTC(
+        dateFromKey(today).getUTCFullYear(),
+        dateFromKey(today).getUTCMonth() - 11,
+        1
+      ));
+      const [salesRows, totals, productRows] = await Promise.all([
+        dbAll(
+          req.db,
+          "SELECT id, sale_date, total_amount FROM sales WHERE sale_date >= $1 ORDER BY sale_date ASC",
+          [dateKey(chartStartDate)],
+          "SELECT id, sale_date, total_amount FROM sales WHERE sale_date >= ? ORDER BY sale_date ASC"
+        ),
+        dbGet(
+          req.db,
+          `SELECT COALESCE(SUM(total_amount), 0) AS all_time_total,
+                  COUNT(*) AS all_time_transactions,
+                  COALESCE((SELECT SUM(quantity) FROM sale_items), 0) AS all_time_items
+             FROM sales`
+        ),
+        dbAll(
+          req.db,
+          `SELECT p.id AS product_id, p.name, p.category, p.image_url, p.unit,
+                  sold.quantity_sold, sold.sales_total, sold.transaction_count,
+                  CASE WHEN sold.quantity_sold > 0
+                       THEN sold.sales_total / sold.quantity_sold
+                       ELSE 0 END AS average_unit_price
+             FROM (
+               SELECT product_id,
+                      SUM(quantity) AS quantity_sold,
+                      SUM(quantity * unit_price) AS sales_total,
+                      COUNT(DISTINCT sale_id) AS transaction_count
+                 FROM sale_items
+                GROUP BY product_id
+             ) sold
+             JOIN products p ON p.id = sold.product_id
+            ORDER BY sold.sales_total DESC, p.name ASC`
+        ),
+      ]);
+      sales = salesRows;
+      products = productRows.map((product) => ({
+        ...product,
+        product_id: Number(product.product_id),
+        quantity_sold: Number(product.quantity_sold || 0),
+        sales_total: Number(product.sales_total || 0),
+        transaction_count: Number(product.transaction_count || 0),
+        average_unit_price: Number(product.average_unit_price || 0),
+        image_url: product.image_url || null,
+      }));
+      allTimeTotal = Number(totals.all_time_total || 0);
+      allTimeTransactions = Number(totals.all_time_transactions || 0);
+      allTimeItems = Number(totals.all_time_items || 0);
+    }
+
+    const periods = buildRecordedSalesPeriods(sales, today);
+    const productSalesTotal = products.reduce((sum, product) => sum + Number(product.sales_total || 0), 0);
+
+    res.json({
+      data: {
+        generated_for: today,
+        summary: {
+          ...periods.current,
+          all_time: {
+            total: allTimeTotal,
+            transactions: allTimeTransactions,
+            items: allTimeItems,
+          },
+        },
+        daily: periods.daily,
+        weekly: periods.weekly,
+        monthly: periods.monthly,
+        products: products.map((product) => ({
+          ...product,
+          share_percent: productSalesTotal > 0 ? (Number(product.sales_total || 0) / productSalesTotal) * 100 : 0,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to load total sales analytics" });
   }
 });
 

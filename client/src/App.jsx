@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import Dashboard from "./Dashboard";
+import TotalSales from "./TotalSales";
 import Reports from "./Reports";
 import POS from "./POS";
 import useAuth from "./hooks/useAuth";
@@ -205,6 +206,7 @@ function App() {
   const navigate = (nextView) => {
     const orderedViews = [
       "dashboard",
+      ...(role !== "VENDOR" ? ["total-sales"] : []),
       ...(role !== "VENDOR" ? ["pos"] : []),
       "deliveries",
       ...(role !== "VENDOR" ? ["sales-history"] : []),
@@ -240,7 +242,7 @@ function App() {
 
   const accountName = username || "Account";
 
-  const activeNavId = view;
+  const activeNavId = view === "total-sales" ? "dashboard" : view;
 
   const handleNavClick = (item) => {
     if (item.view) {
@@ -570,7 +572,7 @@ function App() {
                     <span />
                   </button>
                   <div>
-                  <h2>{view === "dashboard" ? "Dashboard" : view === "pos" ? "POS" : view === "products" ? "Products" : view === "inventory" ? "Inventory" : view === "deliveries" ? "Vendor Deliveries" : view === "sales-history" ? "Sales & Pickup History" : view === "users" ? "Account Management" : "Reports"}</h2>
+                  <h2>{view === "dashboard" ? "Dashboard" : view === "total-sales" ? "Total Sales" : view === "pos" ? "POS" : view === "products" ? "Products" : view === "inventory" ? "Inventory" : view === "deliveries" ? "Vendor Deliveries" : view === "sales-history" ? "Sales & Pickup History" : view === "users" ? "Account Management" : "Reports"}</h2>
                   </div>
                 </div>
                 <div className="workspace-meta">
@@ -584,7 +586,8 @@ function App() {
                 className={`workspace-view-transition ${transitionDirection === "backward" ? "is-backward" : "is-forward"}`}
                 aria-live="polite"
               >
-                {view === "dashboard" && <Dashboard token={token} role={role} vendorId={vendorId} viewMode="dashboard" />}
+                {view === "dashboard" && <Dashboard token={token} role={role} vendorId={vendorId} viewMode="dashboard" onNavigate={navigate} />}
+                {view === "total-sales" && role !== "VENDOR" && <TotalSales token={token} onBack={() => navigate("dashboard")} />}
                 {view === "pos" && <POS token={token} role={role} vendorId={vendorId} viewMode="pos" />}
                 {view === "products" && <Dashboard token={token} role={role} vendorId={vendorId} viewMode="products" />}
                 {view === "inventory" && <Dashboard token={token} role={role} vendorId={vendorId} viewMode="inventory" />}

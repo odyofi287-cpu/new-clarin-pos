@@ -5,7 +5,7 @@ process.env.NODE_ENV = "test";
 
 const { default: app } = await import("./app.js");
 const { getBusinessDate } = await import("./businessDate.js");
-const { buildSalesCalendar, buildVendorPaymentSummary } = await import("./routes/dashboard.js");
+const { buildRecordedSalesPeriods, buildSalesCalendar, buildVendorPaymentSummary } = await import("./routes/dashboard.js");
 const srv = app.listen(0);
 const port = srv.address().port;
 const base = `http://127.0.0.1:${port}`;
@@ -28,6 +28,22 @@ test("Sales calendar groups Postgres date objects by their Manila calendar date"
   );
   assert.strictEqual(calendar.daily.find((row) => row.period === "2026-09-19")?.recorded_sales, 1000);
   assert.strictEqual(calendar.monthly.find((row) => row.period === "2026-09")?.recorded_sales, 1000);
+});
+
+test("Recorded sales periods group daily, weekly, and monthly totals", () => {
+  const periods = buildRecordedSalesPeriods([
+    { sale_date: "2026-09-30", total_amount: 100 },
+    { sale_date: "2026-09-29", total_amount: 75 },
+    { sale_date: "2026-09-21", total_amount: 25 },
+    { sale_date: "2026-08-15", total_amount: 40 },
+  ], "2026-09-30");
+
+  assert.strictEqual(periods.current.daily.total, 100);
+  assert.strictEqual(periods.current.weekly.total, 175);
+  assert.strictEqual(periods.current.monthly.total, 200);
+  assert.strictEqual(periods.daily.length, 14);
+  assert.strictEqual(periods.weekly.length, 8);
+  assert.strictEqual(periods.monthly.length, 12);
 });
 
 test("Vendor payment summary separates statuses and deducts grouped return amounts", () => {
@@ -706,6 +722,22 @@ test("Admin dashboard returns operational metrics", async () => {
   assert.strictEqual(body.data.sales_calendar.monthly.length, 12);
 });
 
+test("Admin total sales analytics retains product images and period summaries", async () => {
+  const token = await login("admin@clarin.local", "Admin123!");
+  const res = await fetch(`${base}/api/dashboard/total-sales`, { headers: { Authorization: `Bearer ${token}` } });
+  assert.strictEqual(res.status, 200);
+  const body = await res.json();
+  assert.strictEqual(body.data.daily.length, 14);
+  assert.strictEqual(body.data.weekly.length, 8);
+  assert.strictEqual(body.data.monthly.length, 12);
+  assert.strictEqual(typeof body.data.summary.daily.total, "number");
+  assert.strictEqual(typeof body.data.summary.weekly.total, "number");
+  assert.strictEqual(typeof body.data.summary.monthly.total, "number");
+  assert(body.data.products.length > 0, "Expected product sales analytics");
+  assert(body.data.products.every((product) => Object.hasOwn(product, "image_url")));
+  assert(body.data.products.every((product) => typeof product.sales_total === "number"));
+});
+
 test("Staff can view recorded sales history", async () => {
   const token = await login("staff@clarin.local", "Staff123!");
   const res = await fetch(`${base}/api/sales`, { headers: { Authorization: `Bearer ${token}` } });
@@ -786,6 +818,9 @@ test("Vendor dashboard returns vendor-only delivery summary", async () => {
   );
   assert(Array.isArray(body.data.vendor_summary.recent_deliveries));
   assert(body.data.vendor_summary.recent_deliveries.every((delivery) => ["PAID", "UNPAID"].includes(delivery.payment_status)));
+
+  const analyticsResponse = await fetch(`${base}/api/dashboard/total-sales`, { headers: { Authorization: `Bearer ${token}` } });
+  assert.strictEqual(analyticsResponse.status, 403);
 });
 
 test("Unauthorized requests are blocked", async () => {
