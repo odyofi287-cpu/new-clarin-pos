@@ -2,7 +2,7 @@ import express from "express";
 import { randomUUID } from "node:crypto";
 import { requireRole } from "../middleware/auth.js";
 import { publishDataChange } from "../events.js";
-import { dbAll, dbGet, dbRun, withTransaction } from "./dbCompat.js";
+import { dbAll, dbGet, dbRun, isInMemoryDb, withTransaction } from "./dbCompat.js";
 
 const router = express.Router();
 
@@ -39,6 +39,90 @@ function groupReturnRows(rows) {
   }));
 }
 
+async function getVendorReturnableProducts(db, vendorId) {
+  if (isInMemoryDb(db)) {
+    const deliveryIds = new Set(
+      db.deliveries
+        .filter((delivery) => Number(delivery.vendor_id) === Number(vendorId))
+        .map((delivery) => Number(delivery.id))
+    );
+    const deliveredByProduct = new Map();
+    const returnedByProduct = new Map();
+
+    for (const item of db.delivery_items) {
+      if (!deliveryIds.has(Number(item.delivery_id))) continue;
+      const productId = Number(item.product_id);
+      deliveredByProduct.set(productId, (deliveredByProduct.get(productId) || 0) + Number(item.quantity || 0));
+    }
+    for (const entry of db.vendor_returns) {
+      if (Number(entry.vendor_id) !== Number(vendorId)) continue;
+      const productId = Number(entry.product_id);
+      returnedByProduct.set(productId, (returnedByProduct.get(productId) || 0) + Number(entry.quantity || 0));
+    }
+
+    return [...deliveredByProduct.entries()]
+      .map(([productId, deliveredQuantity]) => {
+        const product = db.products.find((entry) => Number(entry.id) === productId);
+        const returnedQuantity = returnedByProduct.get(productId) || 0;
+        return product ? {
+          ...product,
+          delivered_quantity: deliveredQuantity,
+          returned_quantity: returnedQuantity,
+          returnable_quantity: Math.max(deliveredQuantity - returnedQuantity, 0),
+        } : null;
+      })
+      .filter((product) => product && product.returnable_quantity > 0)
+      .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  }
+
+  const rows = await dbAll(
+    db,
+    `SELECT p.id, p.name, p.category, p.selling_price, p.current_stock, p.minimum_stock, p.unit, p.active,
+            COALESCE(SUM(di.quantity), 0) AS delivered_quantity,
+            COALESCE(returned.returned_quantity, 0) AS returned_quantity
+     FROM deliveries d
+     JOIN delivery_items di ON di.delivery_id = d.id
+     JOIN products p ON p.id = di.product_id
+     LEFT JOIN (
+       SELECT vendor_id, product_id, SUM(quantity) AS returned_quantity
+       FROM vendor_returns
+       GROUP BY vendor_id, product_id
+     ) returned ON returned.vendor_id = d.vendor_id AND returned.product_id = di.product_id
+     WHERE d.vendor_id = $1
+     GROUP BY p.id, p.name, p.category, p.selling_price, p.current_stock, p.minimum_stock, p.unit, p.active, returned.returned_quantity
+     ORDER BY p.name ASC`,
+    [vendorId],
+    `SELECT p.id, p.name, p.category, p.selling_price, p.current_stock, p.minimum_stock, p.unit, p.active,
+            COALESCE(SUM(di.quantity), 0) AS delivered_quantity,
+            COALESCE(returned.returned_quantity, 0) AS returned_quantity
+     FROM deliveries d
+     JOIN delivery_items di ON di.delivery_id = d.id
+     JOIN products p ON p.id = di.product_id
+     LEFT JOIN (
+       SELECT vendor_id, product_id, SUM(quantity) AS returned_quantity
+       FROM vendor_returns
+       GROUP BY vendor_id, product_id
+     ) returned ON returned.vendor_id = d.vendor_id AND returned.product_id = di.product_id
+     WHERE d.vendor_id = ?
+     GROUP BY p.id, p.name, p.category, p.selling_price, p.current_stock, p.minimum_stock, p.unit, p.active, returned.returned_quantity
+     ORDER BY p.name ASC`
+  );
+
+  return rows
+    .map((product) => {
+      const deliveredQuantity = Number(product.delivered_quantity || 0);
+      const returnedQuantity = Number(product.returned_quantity || 0);
+      return {
+        ...product,
+        selling_price: Number(product.selling_price || 0),
+        delivered_quantity: deliveredQuantity,
+        returned_quantity: returnedQuantity,
+        returnable_quantity: Math.max(deliveredQuantity - returnedQuantity, 0),
+      };
+    })
+    .filter((product) => product.returnable_quantity > 0);
+}
+
 router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     let sql = `
@@ -69,6 +153,29 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (re
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to load vendor returns" });
+  }
+});
+
+router.get("/eligible-products", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
+  try {
+    const vendorId = Number(req.query.vendor_id);
+    if (!Number.isInteger(vendorId) || vendorId <= 0) {
+      return res.status(400).json({ error: "A valid vendor is required" });
+    }
+    if (req.user.role === "VENDOR" && Number(req.user.vendor_id) !== vendorId) {
+      return res.status(403).json({ error: "You can only view products delivered to your own vendor account" });
+    }
+
+    const vendor = await dbGet(req.db, "SELECT id FROM vendors WHERE id = $1", [vendorId], "SELECT id FROM vendors WHERE id = ?");
+    if (!vendor) {
+      return res.status(404).json({ error: "Vendor not found" });
+    }
+
+    const products = await getVendorReturnableProducts(req.db, vendorId);
+    res.json({ data: products });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to load delivered products for this vendor" });
   }
 });
 
@@ -126,6 +233,32 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
 
     const returnBatchId = randomUUID();
     const createdReturns = await withTransaction(req.db, async () => {
+      if (!isInMemoryDb(req.db)) {
+        await dbGet(
+          req.db,
+          "SELECT id FROM vendors WHERE id = $1 FOR UPDATE",
+          [vendorId],
+          "SELECT id FROM vendors WHERE id = ?"
+        );
+      }
+
+      const eligibleProducts = await getVendorReturnableProducts(req.db, vendorId);
+      const eligibleById = new Map(eligibleProducts.map((product) => [Number(product.id), product]));
+      const requestedByProduct = new Map();
+      for (const item of returnItems) {
+        requestedByProduct.set(item.productId, (requestedByProduct.get(item.productId) || 0) + item.qty);
+      }
+      for (const [productId, requestedQuantity] of requestedByProduct) {
+        const eligibleProduct = eligibleById.get(productId);
+        if (!eligibleProduct) {
+          const product = returnItems.find((item) => item.productId === productId)?.product;
+          throw new Error(`${product?.name || `Product ${productId}`} has no delivered units available for return from this vendor`);
+        }
+        if (requestedQuantity > Number(eligibleProduct.returnable_quantity || 0)) {
+          throw new Error(`Only ${eligibleProduct.returnable_quantity} delivered ${eligibleProduct.unit || "units"} of ${eligibleProduct.name} remain available for return`);
+        }
+      }
+
       const rows = [];
       for (const item of returnItems) {
         const result = await dbRun(

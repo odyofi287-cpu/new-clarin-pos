@@ -205,6 +205,14 @@ test("Staff can record and list vendor returns and exclude them from sales total
   assert(product, "Expected a product for return testing");
   assert(secondProduct, "Expected a second product for a multi-product return");
 
+  const eligibleBeforeRes = await fetch(`${base}/api/vendor-returns/eligible-products?vendor_id=1`, { headers: { Authorization: `Bearer ${token}` } });
+  assert.strictEqual(eligibleBeforeRes.status, 200);
+  const eligibleBefore = (await eligibleBeforeRes.json()).data;
+  assert(eligibleBefore.every((item) => Number(item.delivered_quantity) > 0), "Only delivered products should be return-eligible");
+  const firstEligibleBefore = eligibleBefore.find((item) => item.id === product.id);
+  const secondEligibleBefore = eligibleBefore.find((item) => item.id === secondProduct.id);
+  assert(firstEligibleBefore && secondEligibleBefore, "Expected both delivered products in the vendor-scoped catalog");
+
   const createRes = await fetch(`${base}/api/vendor-returns`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
@@ -226,6 +234,19 @@ test("Staff can record and list vendor returns and exclude them from sales total
   assert.strictEqual(created.data.return_code, `RTN-${String(created.data.return_id).padStart(4, '0')}`);
   assert.strictEqual(created.data.items[0].vendor_id, 1);
   assert.strictEqual(created.data.items[0].quantity, 2);
+
+  const eligibleAfterCreateRes = await fetch(`${base}/api/vendor-returns/eligible-products?vendor_id=1`, { headers: { Authorization: `Bearer ${token}` } });
+  assert.strictEqual(eligibleAfterCreateRes.status, 200);
+  const eligibleAfterCreate = (await eligibleAfterCreateRes.json()).data;
+  assert.strictEqual(
+    eligibleAfterCreate.find((item) => item.id === product.id)?.returnable_quantity,
+    firstEligibleBefore.returnable_quantity - 2,
+    "A return should reduce the vendor's remaining returnable delivered units"
+  );
+  assert.strictEqual(
+    eligibleAfterCreate.find((item) => item.id === secondProduct.id)?.returnable_quantity,
+    secondEligibleBefore.returnable_quantity - 1
+  );
 
   const listRes = await fetch(`${base}/api/vendor-returns`, { headers: { Authorization: `Bearer ${token}` } });
   assert.strictEqual(listRes.status, 200);
@@ -257,12 +278,45 @@ test("Staff can record and list vendor returns and exclude them from sales total
   const afterDeleteRes = await fetch(`${base}/api/vendor-returns`, { headers: { Authorization: `Bearer ${token}` } });
   const afterDelete = await afterDeleteRes.json();
   assert(!afterDelete.data.some((entry) => entry.return_batch_id === created.data.return_batch_id), 'Expected every item in the return batch to be removed');
+
+  const eligibleAfterDeleteRes = await fetch(`${base}/api/vendor-returns/eligible-products?vendor_id=1`, { headers: { Authorization: `Bearer ${token}` } });
+  const eligibleAfterDelete = (await eligibleAfterDeleteRes.json()).data;
+  assert.strictEqual(eligibleAfterDelete.find((item) => item.id === product.id)?.returnable_quantity, firstEligibleBefore.returnable_quantity);
+
+  const excessiveReturnRes = await fetch(`${base}/api/vendor-returns`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      vendor_id: 1,
+      return_date: '2026-08-20',
+      return_time: '10:00',
+      items: [{ product_id: product.id, quantity: firstEligibleBefore.returnable_quantity + 1 }],
+    })
+  });
+  assert.strictEqual(excessiveReturnRes.status, 400, "Returns must not exceed the vendor's remaining delivered units");
+
+  const undeliveredProductRes = await fetch(`${base}/api/vendor-returns`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      vendor_id: 2,
+      return_date: '2026-08-20',
+      return_time: '10:15',
+      items: [{ product_id: product.id, quantity: 1, total_product_price_returned: product.selling_price }],
+    })
+  });
+  assert.strictEqual(undeliveredProductRes.status, 400, "Products never delivered to a vendor must not be returnable");
 });
 
 test("Vendor can view returns but cannot create or delete them", async () => {
   const token = await login("vendor@clarin.local", "Vendor123!");
   const listRes = await fetch(`${base}/api/vendor-returns`, { headers: { Authorization: `Bearer ${token}` } });
   assert.strictEqual(listRes.status, 200);
+
+  const ownProductsRes = await fetch(`${base}/api/vendor-returns/eligible-products?vendor_id=1`, { headers: { Authorization: `Bearer ${token}` } });
+  assert.strictEqual(ownProductsRes.status, 200);
+  const otherProductsRes = await fetch(`${base}/api/vendor-returns/eligible-products?vendor_id=2`, { headers: { Authorization: `Bearer ${token}` } });
+  assert.strictEqual(otherProductsRes.status, 403);
 
   const createRes = await fetch(`${base}/api/vendor-returns`, {
     method: 'POST',

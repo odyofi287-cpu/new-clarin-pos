@@ -67,6 +67,10 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   const [pickupQuantities, setPickupQuantities] = useState({});
   const [saleQuantities, setSaleQuantities] = useState({});
   const [returnQuantities, setReturnQuantities] = useState({});
+  const [returnProducts, setReturnProducts] = useState([]);
+  const [returnProductsLoading, setReturnProductsLoading] = useState(false);
+  const [returnProductsError, setReturnProductsError] = useState(null);
+  const [returnEligibilityVersion, setReturnEligibilityVersion] = useState(0);
   const [pickupEntries, setPickupEntries] = useState([]);
   const [salesHistory, setSalesHistory] = useState([]);
   const [pickupMode, setPickupMode] = useState("create");
@@ -220,6 +224,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       loadPickupRecords();
       loadVendorReturns();
       loadSalesHistory();
+      setReturnEligibilityVersion((current) => current + 1);
     };
 
     const intervalId = window.setInterval(refreshData, REFRESH_INTERVAL_MS);
@@ -230,6 +235,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       loadPickupRecords();
       loadVendorReturns();
       loadSalesHistory();
+      setReturnEligibilityVersion((current) => current + 1);
     };
     const handleVendorsUpdated = () => {
       loadVendors();
@@ -247,6 +253,55 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     };
   }, [token, role, vendorId]);
 
+  useEffect(() => {
+    const selectedVendorId = Number(returnForm.vendor_id);
+    if (entryMode !== "return" || !selectedVendorId) {
+      setReturnProducts([]);
+      setReturnProductsLoading(false);
+      setReturnProductsError(null);
+      return undefined;
+    }
+
+    let active = true;
+    const controller = new AbortController();
+    setReturnProductsLoading(true);
+    setReturnProductsError(null);
+
+    fetch(apiUrl(`/api/vendor-returns/eligible-products?vendor_id=${encodeURIComponent(selectedVendorId)}`), {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || "Unable to load delivered products");
+        if (active) {
+          const deliveredProducts = body.data || [];
+          const returnableByProduct = new Map(deliveredProducts.map((product) => [String(product.id), Number(product.returnable_quantity || 0)]));
+          setReturnProducts(deliveredProducts);
+          setReturnQuantities((current) => Object.fromEntries(
+            Object.entries(current)
+              .filter(([productId]) => returnableByProduct.has(String(productId)))
+              .map(([productId, quantity]) => [productId, Math.min(Number(quantity || 0), returnableByProduct.get(String(productId)))])
+          ));
+        }
+      })
+      .catch((fetchError) => {
+        if (active && fetchError.name !== "AbortError") {
+          setReturnProducts([]);
+          setReturnProductsError(fetchError.message || "Unable to load delivered products");
+        }
+      })
+      .finally(() => {
+        if (active) setReturnProductsLoading(false);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [token, entryMode, returnForm.vendor_id, returnEligibilityVersion]);
+
   const getDisplayVendorId = (entry) => {
     if (entry?.vendor_code) return entry.vendor_code;
     const assignedVendor = vendors.find((vendor) => String(vendor.id) === String(entry?.vendor_id ?? vendorId));
@@ -263,17 +318,18 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     : entryMode === "return"
       ? returnQuantities
       : saleQuantities;
+  const catalogProducts = entryMode === "return" ? returnProducts : products;
   const filteredCatalogProducts = useMemo(() => {
     const search = productSearch.trim().toLowerCase();
-    if (!search) return products;
-    return products.filter((product) => [product.name, product.category, product.unit]
+    if (!search) return catalogProducts;
+    return catalogProducts.filter((product) => [product.name, product.category, product.unit]
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(search)));
-  }, [products, productSearch]);
+  }, [catalogProducts, productSearch]);
 
-  const transactionItems = useMemo(() => products
+  const transactionItems = useMemo(() => catalogProducts
     .map((product) => ({ ...product, quantity: Number(transactionQuantities[product.id] || 0) }))
-    .filter((product) => Number.isInteger(product.quantity) && product.quantity > 0), [products, transactionQuantities]);
+    .filter((product) => Number.isInteger(product.quantity) && product.quantity > 0), [catalogProducts, transactionQuantities]);
 
   const transactionQuantityTotal = useMemo(
     () => transactionItems.reduce((total, item) => total + item.quantity, 0),
@@ -346,9 +402,11 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     // When changing an existing pickup, its original quantities are restored
     // before the replacement is saved. They must therefore remain available
     // in the editor even though they are not part of current displayed stock.
-    const availableStock = entryMode === "pickup" && pickupMode === "edit"
-      ? Number(product.current_stock || 0) + Number(editingPickupOriginalQuantities[product.id] || 0)
-      : Number(product.current_stock || 0);
+    const availableStock = entryMode === "return"
+      ? Number(product.returnable_quantity || 0)
+      : entryMode === "pickup" && pickupMode === "edit"
+        ? Number(product.current_stock || 0) + Number(editingPickupOriginalQuantities[product.id] || 0)
+        : Number(product.current_stock || 0);
     const quantity = Number.isFinite(parsed) ? Math.max(0, Math.min(Math.trunc(parsed), availableStock)) : 0;
     const setQuantities = entryMode === "pickup"
       ? setPickupQuantities
@@ -377,6 +435,22 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       total_product_price_returned: "0.00",
     });
     setReturnQuantities({});
+    setReturnProducts([]);
+    setReturnProductsError(null);
+    setReturnProductsLoading(false);
+  };
+
+  const handleTransactionVendorChange = (event, isReturnEntry) => {
+    const nextVendorId = event.target.value;
+    if (isReturnEntry) {
+      setReturnForm((current) => ({ ...current, vendor_id: nextVendorId }));
+      setReturnQuantities({});
+      setReturnProducts([]);
+      setReturnProductsError(null);
+      setProductSearch("");
+      return;
+    }
+    setPickupForm((current) => ({ ...current, vendor_id: nextVendorId }));
   };
 
   const handleDeleteReturn = async (entry) => {
@@ -837,7 +911,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                 </label>
                 <label className="transaction-vendor-field">
                   Vendor
-                  <select value={entryForm.vendor_id} onChange={(event) => isReturnEntry ? setReturnForm({ ...returnForm, vendor_id: event.target.value }) : setPickupForm({ ...pickupForm, vendor_id: event.target.value })} required>
+                  <select value={entryForm.vendor_id} onChange={(event) => handleTransactionVendorChange(event, isReturnEntry)} required>
                     <option value="">Select vendor</option>
                     {vendors.map((vendor) => (
                       <option key={vendor.id} value={vendor.id}>
@@ -864,25 +938,42 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
               <div className="transaction-catalog-heading">
                 <div>
                   <span className="transaction-eyebrow">Products</span>
-                  <h3>Build this {isPickupEntry ? "pickup" : isReturnEntry ? "return" : "sale"}</h3>
-                  <p>Enter a quantity for each product you want to include.</p>
+                  <h3>{isReturnEntry && !entryForm.vendor_id ? "Select a vendor first" : `Build this ${isPickupEntry ? "pickup" : isReturnEntry ? "return" : "sale"}`}</h3>
+                  <p>{isReturnEntry
+                    ? entryForm.vendor_id
+                      ? "Only products delivered to the selected vendor are shown. Enter the quantity being returned."
+                      : "Choose a vendor above to load that vendor's delivered products."
+                    : "Enter a quantity for each product you want to include."}</p>
                 </div>
-                <label className="transaction-search">
-                  <span className="sr-only">Search products</span>
-                  <input value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Search products or categories" />
-                </label>
+                {(!isReturnEntry || entryForm.vendor_id) && (
+                  <label className="transaction-search">
+                    <span className="sr-only">Search products</span>
+                    <input value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Search products or categories" />
+                  </label>
+                )}
               </div>
 
-              {filteredCatalogProducts.length === 0 ? (
-                <p className="transaction-empty">No products match your search.</p>
+              {isReturnEntry && !entryForm.vendor_id ? (
+                <div className="transaction-vendor-required">
+                  <span aria-hidden="true">↖</span>
+                  <div><strong>Vendor selection required</strong><p>The product list will appear after you choose a vendor.</p></div>
+                </div>
+              ) : isReturnEntry && returnProductsLoading ? (
+                <p className="transaction-empty">Loading products delivered to this vendor...</p>
+              ) : isReturnEntry && returnProductsError ? (
+                <p className="transaction-empty transaction-empty-error">{returnProductsError}</p>
+              ) : filteredCatalogProducts.length === 0 ? (
+                <p className="transaction-empty">{isReturnEntry && !productSearch ? "This vendor has no delivered products remaining for return." : "No products match your search."}</p>
               ) : (
                 <div className="transaction-product-grid">
                   {filteredCatalogProducts.map((product) => {
                     const quantity = Number(transactionQuantities[product.id] || 0);
                     const stock = Number(product.current_stock || 0);
-                    const availableStock = entryMode === "pickup" && pickupMode === "edit"
-                      ? stock + Number(editingPickupOriginalQuantities[product.id] || 0)
-                      : stock;
+                    const availableStock = isReturnEntry
+                      ? Number(product.returnable_quantity || 0)
+                      : entryMode === "pickup" && pickupMode === "edit"
+                        ? stock + Number(editingPickupOriginalQuantities[product.id] || 0)
+                        : stock;
                     const canAdd = quantity < availableStock;
                     return (
                       <article className={`transaction-product-card tone-${Number(product.id) % 4}`} key={product.id}>
@@ -903,7 +994,10 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                         <div className="transaction-product-copy">
                           <span>{product.category || "General"}</span>
                           <h4>{product.name}</h4>
-                          <p>{formatCurrency(product.selling_price)} · {availableStock} {product.unit || "units"} available</p>
+                          <p>{formatCurrency(product.selling_price)} · {isReturnEntry ? `${Number(product.delivered_quantity || 0)} ${product.unit || "units"} delivered` : `${availableStock} ${product.unit || "units"} available`}</p>
+                          {isReturnEntry && Number(product.returned_quantity || 0) > 0 && (
+                            <small className="transaction-return-balance">{Number(product.returned_quantity)} returned · {availableStock} remaining</small>
+                          )}
                         </div>
                         <div className="transaction-quantity-control">
                           <button type="button" aria-label={`Remove one ${product.name}`} onClick={() => updateTransactionQuantity(product, quantity - 1)} disabled={quantity === 0}>−</button>
