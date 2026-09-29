@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Dashboard from "./Dashboard";
 import Reports from "./Reports";
 import POS from "./POS";
@@ -6,6 +6,11 @@ import useAuth from "./hooks/useAuth";
 import { apiUrl } from "./api";
 import AccountManagement from "./AccountManagement";
 import "./mobile.css";
+
+const MOBILE_SIDEBAR_BREAKPOINT = 980;
+const SIDEBAR_EDGE_SWIPE_ZONE = 40;
+const SIDEBAR_SWIPE_DISTANCE = 64;
+const SIDEBAR_SWIPE_DIRECTION_RATIO = 1.2;
 
 function NavIcon({ kind }) {
   if (kind === "dashboard") {
@@ -95,6 +100,7 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarHoverExpanded, setSidebarHoverExpanded] = useState(false);
   const [clock, setClock] = useState(new Date());
+  const sidebarGesture = useRef(null);
 
   useEffect(() => {
     fetch(apiUrl("/api/health"))
@@ -259,6 +265,77 @@ function App() {
     setSidebarCollapsed((current) => !current);
   };
 
+  const resetSidebarGesture = () => {
+    sidebarGesture.current = null;
+  };
+
+  const handleSidebarTouchStart = (event) => {
+    if (window.innerWidth > MOBILE_SIDEBAR_BREAKPOINT || event.touches.length !== 1) {
+      resetSidebarGesture();
+      return;
+    }
+
+    const touch = event.touches[0];
+    const target = event.target;
+    const startedInSidebarLayer = target instanceof Element && Boolean(target.closest(".sidebar-shell, .sidebar-backdrop"));
+
+    if ((!sidebarOpen && touch.clientX > SIDEBAR_EDGE_SWIPE_ZONE) || (sidebarOpen && !startedInSidebarLayer)) {
+      resetSidebarGesture();
+      return;
+    }
+
+    sidebarGesture.current = {
+      mode: sidebarOpen ? "close" : "open",
+      startX: touch.clientX,
+      startY: touch.clientY,
+      lastX: touch.clientX,
+      lastY: touch.clientY,
+      direction: null,
+    };
+  };
+
+  const handleSidebarTouchMove = (event) => {
+    const gesture = sidebarGesture.current;
+    if (!gesture || event.touches.length !== 1) return;
+
+    const touch = event.touches[0];
+    const deltaX = touch.clientX - gesture.startX;
+    const deltaY = touch.clientY - gesture.startY;
+    gesture.lastX = touch.clientX;
+    gesture.lastY = touch.clientY;
+
+    if (!gesture.direction && (Math.abs(deltaX) >= 10 || Math.abs(deltaY) >= 10)) {
+      gesture.direction = Math.abs(deltaX) > Math.abs(deltaY) * SIDEBAR_SWIPE_DIRECTION_RATIO
+        ? "horizontal"
+        : "vertical";
+    }
+
+    if (gesture.direction === "horizontal") {
+      event.preventDefault();
+    }
+  };
+
+  const handleSidebarTouchEnd = (event) => {
+    const gesture = sidebarGesture.current;
+    if (!gesture) return;
+
+    const touch = event.changedTouches[0];
+    const endX = touch?.clientX ?? gesture.lastX;
+    const endY = touch?.clientY ?? gesture.lastY;
+    const deltaX = endX - gesture.startX;
+    const deltaY = endY - gesture.startY;
+    const isHorizontalSwipe = Math.abs(deltaX) >= SIDEBAR_SWIPE_DISTANCE
+      && Math.abs(deltaX) > Math.abs(deltaY) * SIDEBAR_SWIPE_DIRECTION_RATIO;
+
+    if (isHorizontalSwipe && gesture.mode === "open" && deltaX > 0) {
+      setSidebarOpen(true);
+    } else if (isHorizontalSwipe && gesture.mode === "close" && deltaX < 0) {
+      setSidebarOpen(false);
+    }
+
+    resetSidebarGesture();
+  };
+
   const dateLabel = clock.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
@@ -408,13 +485,22 @@ function App() {
             </div>
           </section>
         ) : (
-          <div className={`workspace-shell ${sidebarOpen ? "sidebar-open" : ""} ${sidebarCollapsed ? "sidebar-collapsed" : ""} ${sidebarHoverExpanded ? "sidebar-hover-expanded" : ""}`}>
+          <div
+            className={`workspace-shell ${sidebarOpen ? "sidebar-open" : ""} ${sidebarCollapsed ? "sidebar-collapsed" : ""} ${sidebarHoverExpanded ? "sidebar-hover-expanded" : ""}`}
+            onTouchStart={handleSidebarTouchStart}
+            onTouchMove={handleSidebarTouchMove}
+            onTouchEnd={handleSidebarTouchEnd}
+            onTouchCancel={resetSidebarGesture}
+          >
             <button
               type="button"
               className="sidebar-backdrop"
               aria-label="Close navigation menu"
               onClick={() => setSidebarOpen(false)}
             />
+            <div className="sidebar-swipe-hint" aria-hidden="true">
+              <span>›</span>
+            </div>
             <aside
               className="sidebar-shell"
               onMouseEnter={() => {
@@ -461,6 +547,7 @@ function App() {
               </nav>
 
               <div className="sidebar-footer">
+                <div className="sidebar-swipe-close-tip" aria-hidden="true"><span>←</span> Swipe left to close</div>
                 <div className="sidebar-account-card">
                     {profilePicture ? <img className="sidebar-account-avatar-image" src={profilePicture} alt="" /> : <div className="sidebar-account-avatar" aria-hidden="true">{accountName.slice(0, 1).toUpperCase()}</div>}
                   <div className="sidebar-account-copy">

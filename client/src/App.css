@@ -268,6 +268,11 @@ button:focus-visible,
   display: none;
 }
 
+.sidebar-swipe-hint,
+.sidebar-swipe-close-tip {
+  display: none;
+}
+
 .sidebar-nav {
   display: grid;
   gap: 0.55rem;
@@ -2781,6 +2786,8 @@ button[disabled] {
 @media (max-width: 980px) {
   .workspace-shell {
     grid-template-columns: 1fr;
+    overscroll-behavior-x: none;
+    touch-action: pan-y;
   }
 
   .workspace-shell.sidebar-collapsed.sidebar-hover-expanded {
@@ -2813,6 +2820,39 @@ button[disabled] {
     pointer-events: auto;
   }
 
+  .sidebar-swipe-hint {
+    align-items: center;
+    background: linear-gradient(180deg, #397fda, #205ea9);
+    border: 1px solid rgba(255, 255, 255, 0.72);
+    border-left: 0;
+    border-radius: 0 999px 999px 0;
+    box-shadow: 0 6px 18px rgba(25, 82, 153, 0.26);
+    color: #ffffff;
+    display: flex;
+    height: 3.5rem;
+    justify-content: center;
+    left: 0;
+    opacity: 0.78;
+    pointer-events: none;
+    position: fixed;
+    top: 50%;
+    transform: translateY(-50%);
+    transition: opacity 0.22s ease, transform 0.22s ease;
+    width: 0.75rem;
+    z-index: 18;
+  }
+
+  .sidebar-swipe-hint span {
+    font-size: 1rem;
+    line-height: 1;
+    transform: translateX(-0.02rem);
+  }
+
+  .workspace-shell.sidebar-open .sidebar-swipe-hint {
+    opacity: 0;
+    transform: translate(-100%, -50%);
+  }
+
   .workspace-shell.sidebar-collapsed {
     grid-template-columns: 1fr;
   }
@@ -2832,6 +2872,26 @@ button[disabled] {
 
   .workspace-shell.sidebar-open .sidebar-shell {
     transform: translate3d(0, 0, 0);
+  }
+
+  .sidebar-swipe-close-tip {
+    align-items: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    color: rgba(220, 231, 251, 0.72);
+    display: flex;
+    font-size: 0.68rem;
+    font-weight: 700;
+    gap: 0.42rem;
+    justify-content: center;
+    letter-spacing: 0.04em;
+    margin: -0.1rem 0 0.15rem;
+    padding: 0 0 0.6rem;
+    text-transform: uppercase;
+  }
+
+  .sidebar-swipe-close-tip span {
+    color: #8ab9ff;
+    font-size: 0.95rem;
   }
 
   .workspace-shell.sidebar-collapsed .sidebar-brand-copy,
