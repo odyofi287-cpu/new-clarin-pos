@@ -303,11 +303,17 @@ function Dashboard({ token, role, viewMode = "dashboard" }) {
   }
 
   if (data.vendor_summary) {
+    const paymentSummary = data.vendor_summary.payment_summary || {};
+    const paidDeliveryCount = Number(paymentSummary.paid_delivery_count || 0);
+    const unpaidDeliveryCount = Number(paymentSummary.unpaid_delivery_count || 0);
+    const returnCount = Number(paymentSummary.return_count || 0);
+    const totalDeliveryCount = Number(paymentSummary.total_delivery_count || (paidDeliveryCount + unpaidDeliveryCount));
+
     return (
-      <div className="dashboard-shell">
+      <div className="dashboard-shell vendor-dashboard">
         <section className="dashboard-card">
           <h2>Vendor Dashboard</h2>
-          <div className="dashboard-grid">
+          <div className="dashboard-grid vendor-today-grid">
             <div className="metric-card">
               <span className="metric-label">Today's deliveries</span>
               <strong>{data.vendor_summary.today_delivery_count}</strong>
@@ -317,6 +323,56 @@ function Dashboard({ token, role, viewMode = "dashboard" }) {
               <strong>{formatCurrency(data.vendor_summary.today_delivery_total)}</strong>
             </div>
           </div>
+        </section>
+
+        <section className="dashboard-card vendor-payment-overview">
+          <div className="vendor-payment-heading">
+            <div>
+              <span className="vendor-payment-kicker">Payment overview</span>
+              <h3>Delivery account summary</h3>
+              <p>Track paid and unpaid deliveries, with vendor returns deducted from the account total.</p>
+            </div>
+            <span className="vendor-payment-live">Live</span>
+          </div>
+
+          <div className="vendor-payment-grid">
+            <article className="vendor-payment-card is-paid">
+              <div className="vendor-payment-card-head">
+                <span>Paid deliveries</span>
+                <span className="vendor-payment-status">Paid</span>
+              </div>
+              <div className="vendor-payment-count"><strong>{paidDeliveryCount}</strong><span>{paidDeliveryCount === 1 ? "delivery" : "deliveries"}</span></div>
+              <div className="vendor-payment-amount"><span>Paid amount</span><strong>{formatCurrency(paymentSummary.paid_delivery_amount)}</strong></div>
+            </article>
+
+            <article className="vendor-payment-card is-unpaid">
+              <div className="vendor-payment-card-head">
+                <span>Unpaid deliveries</span>
+                <span className="vendor-payment-status">Unpaid</span>
+              </div>
+              <div className="vendor-payment-count"><strong>{unpaidDeliveryCount}</strong><span>{unpaidDeliveryCount === 1 ? "delivery" : "deliveries"}</span></div>
+              <div className="vendor-payment-amount"><span>Unpaid amount</span><strong>{formatCurrency(paymentSummary.unpaid_delivery_amount)}</strong></div>
+            </article>
+
+            <article className="vendor-payment-card is-return">
+              <div className="vendor-payment-card-head">
+                <span>Return adjustments</span>
+                <span className="vendor-payment-status">Deducted</span>
+              </div>
+              <div className="vendor-payment-count"><strong>{returnCount}</strong><span>{returnCount === 1 ? "return" : "returns"}</span></div>
+              <div className="vendor-payment-amount"><span>Amount deducted</span><strong>-{formatCurrency(paymentSummary.return_adjustment_amount)}</strong></div>
+            </article>
+
+            <article className="vendor-payment-card is-net">
+              <div className="vendor-payment-card-head">
+                <span>Net payable total</span>
+                <span className="vendor-payment-status">Adjusted</span>
+              </div>
+              <div className="vendor-payment-count"><strong>{totalDeliveryCount}</strong><span>{totalDeliveryCount === 1 ? "delivery" : "deliveries"}</span></div>
+              <div className="vendor-payment-amount"><span>After returns</span><strong>{formatCurrency(paymentSummary.net_account_amount)}</strong></div>
+            </article>
+          </div>
+          <p className="vendor-payment-formula">Net payable total = paid deliveries + unpaid deliveries − vendor returns.</p>
         </section>
 
         <section className="dashboard-card">
@@ -331,6 +387,7 @@ function Dashboard({ token, role, viewMode = "dashboard" }) {
                   <th>Date</th>
                   <th>Time</th>
                   <th>Items</th>
+                  <th>Payment</th>
                   <th>Total</th>
                 </tr>
               </thead>
@@ -341,6 +398,7 @@ function Dashboard({ token, role, viewMode = "dashboard" }) {
                     <td data-label="Date">{formatRecordDate(delivery.delivery_date)}</td>
                     <td data-label="Time">{formatRecordTime(delivery.delivery_time)}</td>
                     <td data-label="Items">{delivery.items || "-"}</td>
+                    <td data-label="Payment"><span className={`vendor-delivery-payment ${String(delivery.payment_status || "UNPAID").toUpperCase() === "PAID" ? "is-paid" : "is-unpaid"}`}>{String(delivery.payment_status || "UNPAID").toUpperCase() === "PAID" ? "Paid" : "Unpaid"}</span></td>
                     <td data-label="Total">{formatCurrency(delivery.total_amount)}</td>
                   </tr>
                 ))}

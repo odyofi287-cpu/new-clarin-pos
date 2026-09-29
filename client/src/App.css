@@ -1664,6 +1664,216 @@ tbody tr:last-child td {
   color: #15294d;
 }
 
+.vendor-payment-overview {
+  display: grid;
+  gap: 1.15rem;
+}
+
+.vendor-payment-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.vendor-payment-heading h3 {
+  margin: 0.2rem 0 0.35rem;
+}
+
+.vendor-payment-heading p {
+  color: #657a9c;
+  margin: 0;
+  max-width: 690px;
+}
+
+.vendor-payment-kicker {
+  color: #3272bf;
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.vendor-payment-live {
+  align-items: center;
+  background: #eaf8f1;
+  border: 1px solid #c4ead8;
+  border-radius: 999px;
+  color: #177253;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 800;
+  gap: 0.4rem;
+  padding: 0.35rem 0.65rem;
+  text-transform: uppercase;
+}
+
+.vendor-payment-live::before {
+  background: #25a977;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px rgba(37, 169, 119, 0.12);
+  content: "";
+  height: 0.42rem;
+  width: 0.42rem;
+}
+
+.vendor-payment-grid {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.vendor-payment-card {
+  background: linear-gradient(145deg, #ffffff, #f8fbff);
+  border: 1px solid #dbe7f4;
+  border-radius: 12px;
+  box-shadow: 0 9px 24px rgba(38, 75, 122, 0.07);
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  overflow: hidden;
+  padding: 1.05rem;
+  position: relative;
+}
+
+.vendor-payment-card::before {
+  background: #2d74c8;
+  content: "";
+  height: 3px;
+  inset: 0 0 auto;
+  position: absolute;
+}
+
+.vendor-payment-card.is-paid::before { background: #23a573; }
+.vendor-payment-card.is-unpaid::before { background: #e09a2e; }
+.vendor-payment-card.is-return::before { background: #d45c67; }
+.vendor-payment-card.is-net::before { background: #3272bf; }
+
+.vendor-payment-card-head {
+  align-items: center;
+  color: #526a8c;
+  display: flex;
+  font-size: 0.78rem;
+  font-weight: 800;
+  gap: 0.55rem;
+  justify-content: space-between;
+  text-transform: uppercase;
+}
+
+.vendor-payment-status,
+.vendor-delivery-payment {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  padding: 0.27rem 0.52rem;
+  white-space: nowrap;
+}
+
+.vendor-payment-card.is-paid .vendor-payment-status,
+.vendor-delivery-payment.is-paid {
+  background: #e4f7ee;
+  border-color: #bde6d2;
+  color: #137451;
+}
+
+.vendor-payment-card.is-unpaid .vendor-payment-status,
+.vendor-delivery-payment.is-unpaid {
+  background: #fff3e2;
+  border-color: #f1d6ae;
+  color: #9a5a08;
+}
+
+.vendor-payment-card.is-return .vendor-payment-status {
+  background: #fff0f2;
+  border-color: #f1c9ce;
+  color: #a33d4a;
+}
+
+.vendor-payment-card.is-net .vendor-payment-status {
+  background: #eaf3ff;
+  border-color: #c8dcf5;
+  color: #245f9f;
+}
+
+.vendor-payment-count {
+  align-items: baseline;
+  display: flex;
+  gap: 0.45rem;
+}
+
+.workspace-content .vendor-payment-count strong {
+  color: #1e3564;
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.vendor-payment-count span {
+  color: #7489a7;
+  font-size: 0.76rem;
+}
+
+.vendor-payment-amount {
+  border-top: 1px solid #e7eef7;
+  display: grid;
+  gap: 0.25rem;
+  padding-top: 0.8rem;
+}
+
+.vendor-payment-amount span {
+  color: #7489a7;
+  font-size: 0.72rem;
+}
+
+.workspace-content .vendor-payment-amount strong {
+  color: #1d477d;
+  font-size: clamp(1rem, 1.55vw, 1.25rem);
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.workspace-content .vendor-payment-card.is-return .vendor-payment-amount strong { color: #ae4350; }
+.workspace-content .vendor-payment-card.is-net .vendor-payment-amount strong { color: #2268bd; }
+
+.vendor-payment-formula {
+  background: #f3f7fc;
+  border: 1px solid #e0e9f4;
+  border-radius: 8px;
+  color: #607796;
+  font-size: 0.78rem;
+  margin: 0;
+  padding: 0.65rem 0.8rem;
+}
+
+@media (max-width: 1050px) {
+  .vendor-payment-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .vendor-payment-heading {
+    flex-direction: column;
+  }
+
+  .vendor-payment-live {
+    align-self: flex-start;
+  }
+
+  .vendor-payment-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .vendor-payment-card {
+    gap: 0.8rem;
+    padding: 0.95rem;
+  }
+}
+
 .dashboard-charts .table-pair {
   display: grid;
   gap: 1.25rem;

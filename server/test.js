@@ -5,7 +5,7 @@ process.env.NODE_ENV = "test";
 
 const { default: app } = await import("./app.js");
 const { getBusinessDate } = await import("./businessDate.js");
-const { buildSalesCalendar } = await import("./routes/dashboard.js");
+const { buildSalesCalendar, buildVendorPaymentSummary } = await import("./routes/dashboard.js");
 const srv = app.listen(0);
 const port = srv.address().port;
 const base = `http://127.0.0.1:${port}`;
@@ -28,6 +28,30 @@ test("Sales calendar groups Postgres date objects by their Manila calendar date"
   );
   assert.strictEqual(calendar.daily.find((row) => row.period === "2026-09-19")?.recorded_sales, 1000);
   assert.strictEqual(calendar.monthly.find((row) => row.period === "2026-09")?.recorded_sales, 1000);
+});
+
+test("Vendor payment summary separates statuses and deducts grouped return amounts", () => {
+  const summary = buildVendorPaymentSummary(
+    [
+      { id: 1, payment_status: "PAID", total_amount: 100 },
+      { id: 2, payment_status: "UNPAID", total_amount: 80 },
+      { id: 3, payment_status: null, total_amount: 20 },
+    ],
+    [
+      { id: 1, return_batch_id: "batch-a", total_product_price_returned: 20 },
+      { id: 2, return_batch_id: "batch-a", total_product_price_returned: 10 },
+      { id: 3, return_batch_id: null, total_product_price_returned: 5 },
+    ]
+  );
+
+  assert.strictEqual(summary.paid_delivery_count, 1);
+  assert.strictEqual(summary.paid_delivery_amount, 100);
+  assert.strictEqual(summary.unpaid_delivery_count, 2);
+  assert.strictEqual(summary.unpaid_delivery_amount, 100);
+  assert.strictEqual(summary.return_count, 2);
+  assert.strictEqual(summary.return_adjustment_amount, 35);
+  assert.strictEqual(summary.gross_delivery_amount, 200);
+  assert.strictEqual(summary.net_account_amount, 165);
 });
 
 async function login(email, password) {
@@ -697,7 +721,16 @@ test("Vendor dashboard returns vendor-only delivery summary", async () => {
   const body = await res.json();
   assert(body.data.vendor_summary);
   assert(typeof body.data.vendor_summary.today_delivery_count === 'number');
+  assert(body.data.vendor_summary.payment_summary);
+  assert.strictEqual(typeof body.data.vendor_summary.payment_summary.paid_delivery_count, 'number');
+  assert.strictEqual(typeof body.data.vendor_summary.payment_summary.unpaid_delivery_count, 'number');
+  assert.strictEqual(typeof body.data.vendor_summary.payment_summary.return_adjustment_amount, 'number');
+  assert.strictEqual(
+    body.data.vendor_summary.payment_summary.net_account_amount,
+    body.data.vendor_summary.payment_summary.gross_delivery_amount - body.data.vendor_summary.payment_summary.return_adjustment_amount
+  );
   assert(Array.isArray(body.data.vendor_summary.recent_deliveries));
+  assert(body.data.vendor_summary.recent_deliveries.every((delivery) => ["PAID", "UNPAID"].includes(delivery.payment_status)));
 });
 
 test("Unauthorized requests are blocked", async () => {
