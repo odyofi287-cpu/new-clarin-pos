@@ -198,6 +198,8 @@ test("Staff can record and list vendor returns and exclude them from sales total
   const created = await createRes.json();
   assert.strictEqual(created.data.item_count, 2);
   assert(created.data.return_batch_id, 'Expected a shared return batch ID');
+  assert.strictEqual(created.data.return_id, Math.min(...created.data.items.map((item) => item.id)));
+  assert.strictEqual(created.data.return_code, `RTN-${String(created.data.return_id).padStart(4, '0')}`);
   assert.strictEqual(created.data.items[0].vendor_id, 1);
   assert.strictEqual(created.data.items[0].quantity, 2);
 
@@ -207,6 +209,8 @@ test("Staff can record and list vendor returns and exclude them from sales total
   assert(Array.isArray(list.data));
   const returnBatch = list.data.find((entry) => entry.return_batch_id === created.data.return_batch_id);
   assert(returnBatch, 'Expected multi-product return to be grouped in history');
+  assert.strictEqual(returnBatch.id, Math.min(...created.data.items.map((item) => item.id)), 'Expected grouped history to use a numeric return ID');
+  assert.strictEqual(returnBatch.return_code, created.data.return_code, 'Expected a stable formatted return ID');
   assert.strictEqual(Number(returnBatch.quantity), 3);
   assert(returnBatch.items.some((item) => item.includes(product.name)) && returnBatch.items.some((item) => item.includes(secondProduct.name)), 'Expected grouped return products');
   assert.deepStrictEqual([...returnBatch.return_ids].sort((a, b) => a - b), created.data.items.map((item) => item.id).sort((a, b) => a - b));

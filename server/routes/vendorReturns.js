@@ -12,7 +12,7 @@ function groupReturnRows(rows) {
   for (const row of rows) {
     const groupId = row.return_batch_id || `legacy-${row.id}`;
     const group = groups.get(groupId) || {
-      id: groupId,
+      id: Number(row.id),
       return_batch_id: row.return_batch_id || null,
       vendor_id: row.vendor_id,
       vendor_name: row.vendor_name,
@@ -28,10 +28,15 @@ function groupReturnRows(rows) {
     group.quantity += Number(row.quantity || 0);
     group.total_product_price_returned += Number(row.total_product_price_returned || 0);
     group.return_ids.push(row.id);
+    group.id = Math.min(Number(group.id), Number(row.id));
     groups.set(groupId, group);
   }
 
-  return [...groups.values()];
+  return [...groups.values()].map((group) => ({
+    ...group,
+    return_code: `RTN-${String(group.id).padStart(4, "0")}`,
+    return_ids: group.return_ids.sort((a, b) => Number(a) - Number(b)),
+  }));
 }
 
 router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
@@ -148,8 +153,12 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
     });
 
     publishDataChange("vendor-return");
+    const primaryReturnId = Math.min(...createdReturns.map((item) => Number(item.id)));
     res.status(201).json({
       data: {
+        id: primaryReturnId,
+        return_id: primaryReturnId,
+        return_code: `RTN-${String(primaryReturnId).padStart(4, "0")}`,
         items: createdReturns,
         item_count: createdReturns.length,
         return_batch_id: returnBatchId,

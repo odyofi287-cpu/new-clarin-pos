@@ -35,6 +35,15 @@ function PaymentStatusBadge({ status }) {
   return <span className={`payment-status-badge ${isPaid ? "is-paid" : "is-unpaid"}`}>{isPaid ? "Paid" : "Unpaid"}</span>;
 }
 
+function getDisplayReturnId(entry) {
+  if (entry?.return_code) return entry.return_code;
+  const firstReturnId = Array.isArray(entry?.return_ids) ? entry.return_ids[0] : entry?.id;
+  const numericId = Number(firstReturnId);
+  return Number.isInteger(numericId) && numericId > 0
+    ? `RTN-${String(numericId).padStart(4, "0")}`
+    : String(firstReturnId || "-");
+}
+
 function POS({ token, role, vendorId, viewMode = "pos" }) {
   const REFRESH_INTERVAL_MS = 6000;
   const isPosEntryView = viewMode === "pos";
@@ -500,7 +509,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                   <table>
                     <thead><tr><th>Return ID</th><th>Vendor</th><th>Products</th><th>Date</th><th>Time</th><th>Qty</th><th>Returned Amount</th>{role !== 'VENDOR' && <th>Action</th>}</tr></thead>
                     <tbody>{returnEntries.map((entry) => <tr key={entry.id}>
-                      <td data-label="Return ID">{entry.id}</td>
+                      <td data-label="Return ID">{getDisplayReturnId(entry)}</td>
                       <td data-label="Vendor">{entry.vendor_name || entry.vendor_id}</td>
                       <td data-label="Products">{entry.items || entry.product_name || entry.product_id}</td>
                       <td data-label="Date">{formatDeliveryDate(entry.return_date)}</td>
@@ -672,8 +681,10 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       setProductSearch("");
       resetReturnForm();
       const selectedVendor = vendors.find((vendor) => Number(vendor.id) === vendorId);
+      const primaryReturnId = body.data?.return_id || returnedItems[0]?.id;
       const returnBatch = {
-        id: body.data?.return_batch_id || returnedItems[0]?.id,
+        id: primaryReturnId,
+        return_code: body.data?.return_code || (primaryReturnId ? `RTN-${String(primaryReturnId).padStart(4, "0")}` : null),
         return_batch_id: body.data?.return_batch_id || null,
         vendor_id: vendorId,
         vendor_name: selectedVendor?.name,
