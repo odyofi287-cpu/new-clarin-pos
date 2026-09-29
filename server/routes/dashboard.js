@@ -30,18 +30,46 @@ function startOfUtcWeek(value) {
   return start;
 }
 
-export function buildRecordedSalesPeriods(sales = [], todayKey = getTodayString()) {
+export function buildCombinedSalesPeriods(sales = [], deliveries = [], returns = [], todayKey = getTodayString()) {
   const today = dateFromKey(todayKey);
-  const normalizedSales = sales.map((sale) => ({
-    ...sale,
-    date: getCalendarDateKey(sale.sale_date),
-    total: Number(sale.total_amount || 0),
-  }));
+  const normalizedRows = [
+    ...sales.map((sale, index) => ({
+      kind: "recorded",
+      date: getCalendarDateKey(sale.sale_date),
+      total: Number(sale.total_amount || 0),
+      transaction_key: `sale-${sale.id ?? index}`,
+    })),
+    ...deliveries.map((delivery, index) => ({
+      kind: "delivery",
+      date: getCalendarDateKey(delivery.delivery_date),
+      total: Number(delivery.total_amount || 0),
+      transaction_key: `delivery-${delivery.id ?? index}`,
+    })),
+    ...returns.map((entry, index) => ({
+      kind: "return",
+      date: getCalendarDateKey(entry.return_date),
+      total: Number(entry.total_product_price_returned || 0),
+      transaction_key: `return-${entry.return_batch_id || entry.id || index}`,
+    })),
+  ];
   const summarize = (start, end) => {
-    const matches = normalizedSales.filter((sale) => sale.date >= start && sale.date < end);
+    const matches = normalizedRows.filter((row) => row.date >= start && row.date < end);
+    const recordedSales = matches
+      .filter((row) => row.kind === "recorded")
+      .reduce((sum, row) => sum + row.total, 0);
+    const deliveryTotal = matches
+      .filter((row) => row.kind === "delivery")
+      .reduce((sum, row) => sum + row.total, 0);
+    const returnTotal = matches
+      .filter((row) => row.kind === "return")
+      .reduce((sum, row) => sum + row.total, 0);
+
     return {
-      total: matches.reduce((sum, sale) => sum + sale.total, 0),
-      transactions: matches.length,
+      recorded_sales: recordedSales,
+      delivery_total: deliveryTotal,
+      return_total: returnTotal,
+      total: recordedSales + deliveryTotal - returnTotal,
+      transactions: new Set(matches.map((row) => row.transaction_key)).size,
     };
   };
 
@@ -94,16 +122,40 @@ export function buildRecordedSalesPeriods(sales = [], todayKey = getTodayString(
   };
 }
 
-function buildProductSales(products = [], saleItems = []) {
+function buildProductSales(products = [], saleItems = [], deliveryItems = [], returns = []) {
   const productMap = new Map(products.map((product) => [Number(product.id), product]));
   const totals = new Map();
 
+  const getTotal = (productId) => totals.get(productId) || {
+    recorded_quantity: 0,
+    delivered_quantity: 0,
+    returned_quantity: 0,
+    recorded_sales: 0,
+    delivery_total: 0,
+    return_total: 0,
+  };
+
   saleItems.forEach((item) => {
     const productId = Number(item.product_id);
-    const row = totals.get(productId) || { quantity_sold: 0, sales_total: 0, saleIds: new Set() };
-    row.quantity_sold += Number(item.quantity || 0);
-    row.sales_total += Number(item.quantity || 0) * Number(item.unit_price || 0);
-    row.saleIds.add(Number(item.sale_id));
+    const row = getTotal(productId);
+    row.recorded_quantity += Number(item.quantity || 0);
+    row.recorded_sales += Number(item.quantity || 0) * Number(item.unit_price || 0);
+    totals.set(productId, row);
+  });
+
+  deliveryItems.forEach((item) => {
+    const productId = Number(item.product_id);
+    const row = getTotal(productId);
+    row.delivered_quantity += Number(item.quantity || 0);
+    row.delivery_total += Number(item.quantity || 0) * Number(item.unit_cost || 0);
+    totals.set(productId, row);
+  });
+
+  returns.forEach((entry) => {
+    const productId = Number(entry.product_id);
+    const row = getTotal(productId);
+    row.returned_quantity += Number(entry.quantity || 0);
+    row.return_total += Number(entry.total_product_price_returned || 0);
     totals.set(productId, row);
   });
 
@@ -115,12 +167,11 @@ function buildProductSales(products = [], saleItems = []) {
       category: product.category || "General",
       image_url: product.image_url || null,
       unit: product.unit || "units",
-      quantity_sold: total.quantity_sold,
-      sales_total: total.sales_total,
-      transaction_count: total.saleIds.size,
-      average_unit_price: total.quantity_sold ? total.sales_total / total.quantity_sold : 0,
+      ...total,
+      net_quantity: total.recorded_quantity + total.delivered_quantity - total.returned_quantity,
+      net_sales: total.recorded_sales + total.delivery_total - total.return_total,
     };
-  }).sort((a, b) => b.sales_total - a.sales_total || a.name.localeCompare(b.name));
+  }).sort((a, b) => b.net_sales - a.net_sales || a.name.localeCompare(b.name));
 }
 
 export function getCalendarDateKey(value) {
@@ -211,91 +262,136 @@ router.get("/total-sales", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (r
   try {
     const today = getTodayString();
     let sales;
+    let deliveries;
+    let returns;
     let products;
-    let allTimeTotal;
-    let allTimeTransactions;
-    let allTimeItems;
+    let allTimeSummary;
 
     if (isInMemoryDb(req.db)) {
       sales = req.db.sales.map((sale) => ({ ...sale }));
-      products = buildProductSales(req.db.products, req.db.sale_items);
-      allTimeTotal = sales.reduce((sum, sale) => sum + Number(sale.total_amount || 0), 0);
-      allTimeTransactions = sales.length;
-      allTimeItems = req.db.sale_items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+      deliveries = req.db.deliveries.map((delivery) => ({ ...delivery }));
+      returns = req.db.vendor_returns.map((entry) => ({ ...entry }));
+      products = buildProductSales(req.db.products, req.db.sale_items, req.db.delivery_items, req.db.vendor_returns);
+      const recordedSales = sales.reduce((sum, sale) => sum + Number(sale.total_amount || 0), 0);
+      const deliveryTotal = deliveries.reduce((sum, delivery) => sum + Number(delivery.total_amount || 0), 0);
+      const returnTotal = returns.reduce((sum, entry) => sum + Number(entry.total_product_price_returned || 0), 0);
+      allTimeSummary = {
+        recorded_sales: recordedSales,
+        delivery_total: deliveryTotal,
+        return_total: returnTotal,
+        total: recordedSales + deliveryTotal - returnTotal,
+        transactions: sales.length + deliveries.length + new Set(returns.map((entry) => entry.return_batch_id || `legacy-${entry.id}`)).size,
+      };
     } else {
       const chartStartDate = new Date(Date.UTC(
         dateFromKey(today).getUTCFullYear(),
         dateFromKey(today).getUTCMonth() - 11,
         1
       ));
-      const [salesRows, totals, productRows] = await Promise.all([
+      const [salesRows, deliveryRows, returnRows, totals, productRows] = await Promise.all([
         dbAll(
           req.db,
           "SELECT id, sale_date, total_amount FROM sales WHERE sale_date >= $1 ORDER BY sale_date ASC",
           [dateKey(chartStartDate)],
           "SELECT id, sale_date, total_amount FROM sales WHERE sale_date >= ? ORDER BY sale_date ASC"
         ),
+        dbAll(
+          req.db,
+          "SELECT id, delivery_date, total_amount FROM deliveries WHERE delivery_date >= $1 ORDER BY delivery_date ASC",
+          [dateKey(chartStartDate)],
+          "SELECT id, delivery_date, total_amount FROM deliveries WHERE delivery_date >= ? ORDER BY delivery_date ASC"
+        ),
+        dbAll(
+          req.db,
+          "SELECT id, return_batch_id, return_date, total_product_price_returned FROM vendor_returns WHERE return_date >= $1 ORDER BY return_date ASC",
+          [dateKey(chartStartDate)],
+          "SELECT id, return_batch_id, return_date, total_product_price_returned FROM vendor_returns WHERE return_date >= ? ORDER BY return_date ASC"
+        ),
         dbGet(
           req.db,
-          `SELECT COALESCE(SUM(total_amount), 0) AS all_time_total,
-                  COUNT(*) AS all_time_transactions,
-                  COALESCE((SELECT SUM(quantity) FROM sale_items), 0) AS all_time_items
-             FROM sales`
+          `SELECT COALESCE((SELECT SUM(total_amount) FROM sales), 0) AS recorded_sales,
+                  COALESCE((SELECT SUM(total_amount) FROM deliveries), 0) AS delivery_total,
+                  COALESCE((SELECT SUM(total_product_price_returned) FROM vendor_returns), 0) AS return_total,
+                  (SELECT COUNT(*) FROM sales) +
+                  (SELECT COUNT(*) FROM deliveries) +
+                  (SELECT COUNT(DISTINCT COALESCE(return_batch_id, 'legacy-' || CAST(id AS TEXT))) FROM vendor_returns) AS transactions`
         ),
         dbAll(
           req.db,
           `SELECT p.id AS product_id, p.name, p.category, p.image_url, p.unit,
-                  sold.quantity_sold, sold.sales_total, sold.transaction_count,
-                  CASE WHEN sold.quantity_sold > 0
-                       THEN sold.sales_total / sold.quantity_sold
-                       ELSE 0 END AS average_unit_price
+                  activity.recorded_quantity, activity.delivered_quantity, activity.returned_quantity,
+                  activity.recorded_sales, activity.delivery_total, activity.return_total,
+                  activity.recorded_quantity + activity.delivered_quantity - activity.returned_quantity AS net_quantity,
+                  activity.recorded_sales + activity.delivery_total - activity.return_total AS net_sales
              FROM (
                SELECT product_id,
-                      SUM(quantity) AS quantity_sold,
-                      SUM(quantity * unit_price) AS sales_total,
-                      COUNT(DISTINCT sale_id) AS transaction_count
-                 FROM sale_items
+                      SUM(recorded_quantity) AS recorded_quantity,
+                      SUM(delivered_quantity) AS delivered_quantity,
+                      SUM(returned_quantity) AS returned_quantity,
+                      SUM(recorded_sales) AS recorded_sales,
+                      SUM(delivery_total) AS delivery_total,
+                      SUM(return_total) AS return_total
+                 FROM (
+                   SELECT product_id, quantity AS recorded_quantity, 0 AS delivered_quantity, 0 AS returned_quantity,
+                          quantity * unit_price AS recorded_sales, 0 AS delivery_total, 0 AS return_total
+                     FROM sale_items
+                   UNION ALL
+                   SELECT product_id, 0, quantity, 0, 0, quantity * unit_cost, 0
+                     FROM delivery_items
+                   UNION ALL
+                   SELECT product_id, 0, 0, quantity, 0, 0, total_product_price_returned
+                     FROM vendor_returns
+                 ) product_activity
                 GROUP BY product_id
-             ) sold
-             JOIN products p ON p.id = sold.product_id
-            ORDER BY sold.sales_total DESC, p.name ASC`
+             ) activity
+             JOIN products p ON p.id = activity.product_id
+            ORDER BY net_sales DESC, p.name ASC`
         ),
       ]);
       sales = salesRows;
+      deliveries = deliveryRows;
+      returns = returnRows;
       products = productRows.map((product) => ({
         ...product,
         product_id: Number(product.product_id),
-        quantity_sold: Number(product.quantity_sold || 0),
-        sales_total: Number(product.sales_total || 0),
-        transaction_count: Number(product.transaction_count || 0),
-        average_unit_price: Number(product.average_unit_price || 0),
+        recorded_quantity: Number(product.recorded_quantity || 0),
+        delivered_quantity: Number(product.delivered_quantity || 0),
+        returned_quantity: Number(product.returned_quantity || 0),
+        recorded_sales: Number(product.recorded_sales || 0),
+        delivery_total: Number(product.delivery_total || 0),
+        return_total: Number(product.return_total || 0),
+        net_quantity: Number(product.net_quantity || 0),
+        net_sales: Number(product.net_sales || 0),
         image_url: product.image_url || null,
       }));
-      allTimeTotal = Number(totals.all_time_total || 0);
-      allTimeTransactions = Number(totals.all_time_transactions || 0);
-      allTimeItems = Number(totals.all_time_items || 0);
+      const recordedSales = Number(totals.recorded_sales || 0);
+      const deliveryTotal = Number(totals.delivery_total || 0);
+      const returnTotal = Number(totals.return_total || 0);
+      allTimeSummary = {
+        recorded_sales: recordedSales,
+        delivery_total: deliveryTotal,
+        return_total: returnTotal,
+        total: recordedSales + deliveryTotal - returnTotal,
+        transactions: Number(totals.transactions || 0),
+      };
     }
 
-    const periods = buildRecordedSalesPeriods(sales, today);
-    const productSalesTotal = products.reduce((sum, product) => sum + Number(product.sales_total || 0), 0);
+    const periods = buildCombinedSalesPeriods(sales, deliveries, returns, today);
+    const productSalesTotal = products.reduce((sum, product) => sum + Math.max(Number(product.net_sales || 0), 0), 0);
 
     res.json({
       data: {
         generated_for: today,
         summary: {
           ...periods.current,
-          all_time: {
-            total: allTimeTotal,
-            transactions: allTimeTransactions,
-            items: allTimeItems,
-          },
+          all_time: allTimeSummary,
         },
         daily: periods.daily,
         weekly: periods.weekly,
         monthly: periods.monthly,
         products: products.map((product) => ({
           ...product,
-          share_percent: productSalesTotal > 0 ? (Number(product.sales_total || 0) / productSalesTotal) * 100 : 0,
+          share_percent: productSalesTotal > 0 ? (Math.max(Number(product.net_sales || 0), 0) / productSalesTotal) * 100 : 0,
         })),
       },
     });

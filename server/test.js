@@ -5,7 +5,7 @@ process.env.NODE_ENV = "test";
 
 const { default: app } = await import("./app.js");
 const { getBusinessDate } = await import("./businessDate.js");
-const { buildRecordedSalesPeriods, buildSalesCalendar, buildVendorPaymentSummary } = await import("./routes/dashboard.js");
+const { buildCombinedSalesPeriods, buildSalesCalendar, buildVendorPaymentSummary } = await import("./routes/dashboard.js");
 const srv = app.listen(0);
 const port = srv.address().port;
 const base = `http://127.0.0.1:${port}`;
@@ -30,17 +30,31 @@ test("Sales calendar groups Postgres date objects by their Manila calendar date"
   assert.strictEqual(calendar.monthly.find((row) => row.period === "2026-09")?.recorded_sales, 1000);
 });
 
-test("Recorded sales periods group daily, weekly, and monthly totals", () => {
-  const periods = buildRecordedSalesPeriods([
-    { sale_date: "2026-09-30", total_amount: 100 },
-    { sale_date: "2026-09-29", total_amount: 75 },
-    { sale_date: "2026-09-21", total_amount: 25 },
-    { sale_date: "2026-08-15", total_amount: 40 },
-  ], "2026-09-30");
+test("Sales periods apply recorded sales plus deliveries less returns", () => {
+  const periods = buildCombinedSalesPeriods(
+    [
+      { sale_date: "2026-09-30", total_amount: 100 },
+      { sale_date: "2026-09-29", total_amount: 75 },
+      { sale_date: "2026-09-21", total_amount: 25 },
+      { sale_date: "2026-08-15", total_amount: 40 },
+    ],
+    [
+      { delivery_date: "2026-09-30", total_amount: 30 },
+      { delivery_date: "2026-09-29", total_amount: 20 },
+    ],
+    [
+      { return_date: "2026-09-30", total_product_price_returned: 10 },
+      { return_date: "2026-09-29", total_product_price_returned: 5 },
+    ],
+    "2026-09-30"
+  );
 
-  assert.strictEqual(periods.current.daily.total, 100);
-  assert.strictEqual(periods.current.weekly.total, 175);
-  assert.strictEqual(periods.current.monthly.total, 200);
+  assert.strictEqual(periods.current.daily.recorded_sales, 100);
+  assert.strictEqual(periods.current.daily.delivery_total, 30);
+  assert.strictEqual(periods.current.daily.return_total, 10);
+  assert.strictEqual(periods.current.daily.total, 120);
+  assert.strictEqual(periods.current.weekly.total, 210);
+  assert.strictEqual(periods.current.monthly.total, 235);
   assert.strictEqual(periods.daily.length, 14);
   assert.strictEqual(periods.weekly.length, 8);
   assert.strictEqual(periods.monthly.length, 12);
@@ -733,9 +747,14 @@ test("Admin total sales analytics retains product images and period summaries", 
   assert.strictEqual(typeof body.data.summary.daily.total, "number");
   assert.strictEqual(typeof body.data.summary.weekly.total, "number");
   assert.strictEqual(typeof body.data.summary.monthly.total, "number");
+  assert.strictEqual(
+    body.data.summary.all_time.total,
+    body.data.summary.all_time.recorded_sales + body.data.summary.all_time.delivery_total - body.data.summary.all_time.return_total
+  );
   assert(body.data.products.length > 0, "Expected product sales analytics");
   assert(body.data.products.every((product) => Object.hasOwn(product, "image_url")));
-  assert(body.data.products.every((product) => typeof product.sales_total === "number"));
+  assert(body.data.products.every((product) => typeof product.net_sales === "number"));
+  assert(body.data.products.every((product) => product.net_sales === product.recorded_sales + product.delivery_total - product.return_total));
 });
 
 test("Staff can view recorded sales history", async () => {

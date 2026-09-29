@@ -467,9 +467,9 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
       {viewMode === "dashboard" && (
         <div className="dashboard-grid dashboard-metric-grid">
             <button type="button" className="metric-card total-sales-launch" onClick={() => onNavigate?.("total-sales")}>
-              <span className="metric-label">Total Sales</span>
-              <strong>{formatCurrency(data.todays_total_sales)}</strong>
-              <span className="total-sales-launch-footer"><span>Today's recorded sales</span><b>View analytics →</b></span>
+              <span className="metric-label">Sales</span>
+              <strong>{formatCurrency(data.calculated_todays_sales)}</strong>
+              <span className="total-sales-launch-footer"><b>View analytics →</b></span>
             </button>
             <div className="metric-card">
               <span className="metric-label">Today's delivery value</span>

@@ -3716,7 +3716,7 @@ button[disabled] {
   display: flex;
   font-size: 0.72rem;
   gap: 0.5rem;
-  justify-content: space-between;
+  justify-content: flex-end;
   margin-top: 0.75rem;
 }
 
@@ -3965,6 +3965,14 @@ button[disabled] {
   width: 100%;
 }
 
+.total-sales-bar-track i.is-negative {
+  background: linear-gradient(180deg, #e79898, #c85d68);
+}
+
+.total-sales-bar-value.is-negative {
+  color: #b45260;
+}
+
 .total-sales-products {
   display: grid;
   gap: 1rem;
@@ -4064,7 +4072,8 @@ button[disabled] {
 .total-sales-product-name strong,
 .total-sales-product-name span,
 .total-sales-product-stat span,
-.total-sales-product-stat strong {
+.total-sales-product-stat strong,
+.total-sales-product-stat small {
   display: block;
 }
 
@@ -4085,6 +4094,20 @@ button[disabled] {
   font-size: 0.78rem;
   margin-top: 0.2rem;
   overflow-wrap: anywhere;
+}
+
+.total-sales-product-stat small {
+  color: #8798af;
+  font-size: 0.62rem;
+  margin-top: 0.22rem;
+}
+
+.total-sales-product-stat.is-net strong {
+  color: #1f6fbf;
+}
+
+.total-sales-product-stat.is-return strong {
+  color: #b45260;
 }
 
 .total-sales-share > span {

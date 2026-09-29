@@ -39,14 +39,14 @@ function ProductImage({ product }) {
 }
 
 function SalesBarChart({ title, description, rows, labelFor }) {
-  const max = Math.max(...rows.map((row) => Number(row.total || 0)), 1);
+  const max = Math.max(...rows.map((row) => Math.abs(Number(row.total || 0))), 1);
   const total = rows.reduce((sum, row) => sum + Number(row.total || 0), 0);
 
   return (
     <article className="total-sales-chart-card">
       <div className="total-sales-chart-heading">
         <div>
-          <span className="chart-kicker">Recorded sales</span>
+          <span className="chart-kicker">Net sales</span>
           <h3>{title}</h3>
           <p>{description}</p>
         </div>
@@ -54,11 +54,12 @@ function SalesBarChart({ title, description, rows, labelFor }) {
       </div>
       <div className="total-sales-bars" role="img" aria-label={`${title} chart`}>
         {rows.map((row) => {
-          const height = Number(row.total || 0) > 0 ? Math.max((Number(row.total) / max) * 100, 5) : 2;
+          const amount = Number(row.total || 0);
+          const height = amount !== 0 ? Math.max((Math.abs(amount) / max) * 100, 5) : 2;
           return (
             <div className="total-sales-bar-column" key={row.period} title={`${labelFor(row)}: ${formatCurrency(row.total)}`}>
-              <span className="total-sales-bar-value">{Number(row.total || 0) > 0 ? formatCompactCurrency(row.total) : ""}</span>
-              <div className="total-sales-bar-track"><i style={{ height: `${height}%` }} /></div>
+              <span className={`total-sales-bar-value ${amount < 0 ? "is-negative" : ""}`}>{amount !== 0 ? formatCompactCurrency(amount) : ""}</span>
+              <div className="total-sales-bar-track"><i className={amount < 0 ? "is-negative" : ""} style={{ height: `${height}%` }} /></div>
               <span className="total-sales-bar-label">{labelFor(row)}</span>
             </div>
           );
@@ -137,12 +138,12 @@ function TotalSales({ token, onBack }) {
           <button type="button" className="total-sales-back" onClick={onBack}>Back to dashboard</button>
           <span className="management-kicker">Sales intelligence</span>
           <h2>Total Sales</h2>
-          <p>Review recorded sales by day, week, month, and product from one live workspace.</p>
+          <p>Sales are calculated as recorded sales plus deliveries, less recorded returns.</p>
         </div>
         <div className="total-sales-hero-total">
-          <span>All-time recorded sales</span>
+          <span>All-time sales</span>
           <strong>{formatCurrency(summary.all_time?.total)}</strong>
-          <small>{Number(summary.all_time?.transactions || 0).toLocaleString()} transactions</small>
+          <small>{formatCurrency(summary.all_time?.recorded_sales)} + {formatCurrency(summary.all_time?.delivery_total)} − {formatCurrency(summary.all_time?.return_total)}</small>
         </div>
       </section>
 
@@ -163,9 +164,9 @@ function TotalSales({ token, onBack }) {
           <small>{formatDate(`${summary.month}-01`, { month: "long", year: "numeric" })} · {summary.monthly?.transactions || 0} transactions</small>
         </article>
         <article className="total-sales-summary-card is-items">
-          <span>All-time items sold</span>
-          <strong>{Number(summary.all_time?.items || 0).toLocaleString()}</strong>
-          <small>Across all recorded product sales</small>
+          <span>Returns deducted</span>
+          <strong>-{formatCurrency(summary.all_time?.return_total)}</strong>
+          <small>All-time recorded vendor returns</small>
         </article>
       </section>
 
@@ -195,7 +196,7 @@ function TotalSales({ token, onBack }) {
           <div>
             <span className="chart-kicker">Product performance</span>
             <h3>Sales per Product</h3>
-            <p>Lifetime recorded revenue and units sold, ranked by sales value.</p>
+            <p>Product totals use recorded sales + deliveries − recorded returns.</p>
           </div>
           <label className="total-sales-search">
             <span>Search products</span>
@@ -204,7 +205,7 @@ function TotalSales({ token, onBack }) {
         </div>
 
         {filteredProducts.length === 0 ? (
-          <div className="total-sales-empty">{search ? "No sold products match your search." : "No recorded product sales are available yet."}</div>
+          <div className="total-sales-empty">{search ? "No products match your search." : "No product sales activity is available yet."}</div>
         ) : (
           <div className="total-sales-product-list">
             {filteredProducts.map((product, index) => (
@@ -215,10 +216,10 @@ function TotalSales({ token, onBack }) {
                   <strong>{product.name}</strong>
                   <span>{product.category || "General"}</span>
                 </div>
-                <div className="total-sales-product-stat"><span>Sales</span><strong>{formatCurrency(product.sales_total)}</strong></div>
-                <div className="total-sales-product-stat"><span>Units sold</span><strong>{Number(product.quantity_sold || 0).toLocaleString()} {product.unit || "units"}</strong></div>
-                <div className="total-sales-product-stat"><span>Transactions</span><strong>{Number(product.transaction_count || 0).toLocaleString()}</strong></div>
-                <div className="total-sales-product-stat"><span>Average price</span><strong>{formatCurrency(product.average_unit_price)}</strong></div>
+                <div className="total-sales-product-stat is-net"><span>Net sales</span><strong>{formatCurrency(product.net_sales)}</strong><small>Recorded + deliveries − returns</small></div>
+                <div className="total-sales-product-stat"><span>Recorded sales</span><strong>{formatCurrency(product.recorded_sales)}</strong><small>{Number(product.recorded_quantity || 0).toLocaleString()} {product.unit || "units"}</small></div>
+                <div className="total-sales-product-stat"><span>Deliveries</span><strong>{formatCurrency(product.delivery_total)}</strong><small>{Number(product.delivered_quantity || 0).toLocaleString()} {product.unit || "units"}</small></div>
+                <div className="total-sales-product-stat is-return"><span>Returns</span><strong>-{formatCurrency(product.return_total)}</strong><small>{Number(product.returned_quantity || 0).toLocaleString()} {product.unit || "units"}</small></div>
                 <div className="total-sales-share"><span>{Number(product.share_percent || 0).toFixed(1)}%</span><i><b style={{ width: `${Math.min(Number(product.share_percent || 0), 100)}%` }} /></i></div>
               </article>
             ))}
