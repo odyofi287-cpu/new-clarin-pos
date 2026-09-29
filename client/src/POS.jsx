@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiUrl } from "./api";
 import "./history.css";
 import "./transaction-entry.css";
@@ -71,6 +71,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   const [returnProductsLoading, setReturnProductsLoading] = useState(false);
   const [returnProductsError, setReturnProductsError] = useState(null);
   const [returnEligibilityVersion, setReturnEligibilityVersion] = useState(0);
+  const loadedReturnVendorId = useRef(null);
   const [pickupEntries, setPickupEntries] = useState([]);
   const [salesHistory, setSalesHistory] = useState([]);
   const [pickupMode, setPickupMode] = useState("create");
@@ -256,6 +257,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   useEffect(() => {
     const selectedVendorId = Number(returnForm.vendor_id);
     if (entryMode !== "return" || !selectedVendorId) {
+      loadedReturnVendorId.current = null;
       setReturnProducts([]);
       setReturnProductsLoading(false);
       setReturnProductsError(null);
@@ -264,7 +266,11 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
 
     let active = true;
     const controller = new AbortController();
-    setReturnProductsLoading(true);
+    const isInitialVendorLoad = loadedReturnVendorId.current !== selectedVendorId;
+    if (isInitialVendorLoad) {
+      setReturnProducts([]);
+      setReturnProductsLoading(true);
+    }
     setReturnProductsError(null);
 
     fetch(apiUrl(`/api/vendor-returns/eligible-products?vendor_id=${encodeURIComponent(selectedVendorId)}`), {
@@ -278,6 +284,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
         if (active) {
           const deliveredProducts = body.data || [];
           const returnableByProduct = new Map(deliveredProducts.map((product) => [String(product.id), Number(product.returnable_quantity || 0)]));
+          loadedReturnVendorId.current = selectedVendorId;
           setReturnProducts(deliveredProducts);
           setReturnQuantities((current) => Object.fromEntries(
             Object.entries(current)
@@ -288,8 +295,10 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       })
       .catch((fetchError) => {
         if (active && fetchError.name !== "AbortError") {
-          setReturnProducts([]);
-          setReturnProductsError(fetchError.message || "Unable to load delivered products");
+          if (isInitialVendorLoad) {
+            setReturnProducts([]);
+            setReturnProductsError(fetchError.message || "Unable to load delivered products");
+          }
         }
       })
       .finally(() => {
@@ -438,6 +447,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     setReturnProducts([]);
     setReturnProductsError(null);
     setReturnProductsLoading(false);
+    loadedReturnVendorId.current = null;
   };
 
   const handleTransactionVendorChange = (event, isReturnEntry) => {

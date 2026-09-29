@@ -209,6 +209,7 @@ test("Staff can record and list vendor returns and exclude them from sales total
   assert.strictEqual(eligibleBeforeRes.status, 200);
   const eligibleBefore = (await eligibleBeforeRes.json()).data;
   assert(eligibleBefore.every((item) => Number(item.delivered_quantity) > 0), "Only delivered products should be return-eligible");
+  assert(eligibleBefore.every((item) => Object.hasOwn(item, "image_url")), "Return-eligible products should include their image data");
   const firstEligibleBefore = eligibleBefore.find((item) => item.id === product.id);
   const secondEligibleBefore = eligibleBefore.find((item) => item.id === secondProduct.id);
   assert(firstEligibleBefore && secondEligibleBefore, "Expected both delivered products in the vendor-scoped catalog");

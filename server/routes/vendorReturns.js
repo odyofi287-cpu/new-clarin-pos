@@ -66,6 +66,7 @@ async function getVendorReturnableProducts(db, vendorId) {
         const returnedQuantity = returnedByProduct.get(productId) || 0;
         return product ? {
           ...product,
+          image_url: product.image_url || null,
           delivered_quantity: deliveredQuantity,
           returned_quantity: returnedQuantity,
           returnable_quantity: Math.max(deliveredQuantity - returnedQuantity, 0),
@@ -77,34 +78,42 @@ async function getVendorReturnableProducts(db, vendorId) {
 
   const rows = await dbAll(
     db,
-    `SELECT p.id, p.name, p.category, p.selling_price, p.current_stock, p.minimum_stock, p.unit, p.active,
-            COALESCE(SUM(di.quantity), 0) AS delivered_quantity,
+    `SELECT p.id, p.name, p.category, p.image_url, p.selling_price, p.current_stock, p.minimum_stock, p.unit, p.active,
+            delivered.delivered_quantity,
             COALESCE(returned.returned_quantity, 0) AS returned_quantity
-     FROM deliveries d
-     JOIN delivery_items di ON di.delivery_id = d.id
-     JOIN products p ON p.id = di.product_id
+     FROM (
+       SELECT di.product_id, SUM(di.quantity) AS delivered_quantity
+       FROM deliveries d
+       JOIN delivery_items di ON di.delivery_id = d.id
+       WHERE d.vendor_id = $1
+       GROUP BY di.product_id
+     ) delivered
+     JOIN products p ON p.id = delivered.product_id
      LEFT JOIN (
-       SELECT vendor_id, product_id, SUM(quantity) AS returned_quantity
+       SELECT product_id, SUM(quantity) AS returned_quantity
        FROM vendor_returns
-       GROUP BY vendor_id, product_id
-     ) returned ON returned.vendor_id = d.vendor_id AND returned.product_id = di.product_id
-     WHERE d.vendor_id = $1
-     GROUP BY p.id, p.name, p.category, p.selling_price, p.current_stock, p.minimum_stock, p.unit, p.active, returned.returned_quantity
+       WHERE vendor_id = $2
+       GROUP BY product_id
+     ) returned ON returned.product_id = delivered.product_id
      ORDER BY p.name ASC`,
-    [vendorId],
-    `SELECT p.id, p.name, p.category, p.selling_price, p.current_stock, p.minimum_stock, p.unit, p.active,
-            COALESCE(SUM(di.quantity), 0) AS delivered_quantity,
+    [vendorId, vendorId],
+    `SELECT p.id, p.name, p.category, p.image_url, p.selling_price, p.current_stock, p.minimum_stock, p.unit, p.active,
+            delivered.delivered_quantity,
             COALESCE(returned.returned_quantity, 0) AS returned_quantity
-     FROM deliveries d
-     JOIN delivery_items di ON di.delivery_id = d.id
-     JOIN products p ON p.id = di.product_id
+     FROM (
+       SELECT di.product_id, SUM(di.quantity) AS delivered_quantity
+       FROM deliveries d
+       JOIN delivery_items di ON di.delivery_id = d.id
+       WHERE d.vendor_id = ?
+       GROUP BY di.product_id
+     ) delivered
+     JOIN products p ON p.id = delivered.product_id
      LEFT JOIN (
-       SELECT vendor_id, product_id, SUM(quantity) AS returned_quantity
+       SELECT product_id, SUM(quantity) AS returned_quantity
        FROM vendor_returns
-       GROUP BY vendor_id, product_id
-     ) returned ON returned.vendor_id = d.vendor_id AND returned.product_id = di.product_id
-     WHERE d.vendor_id = ?
-     GROUP BY p.id, p.name, p.category, p.selling_price, p.current_stock, p.minimum_stock, p.unit, p.active, returned.returned_quantity
+       WHERE vendor_id = ?
+       GROUP BY product_id
+     ) returned ON returned.product_id = delivered.product_id
      ORDER BY p.name ASC`
   );
 
