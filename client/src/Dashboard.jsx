@@ -305,7 +305,8 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
     const paidDeliveryCount = Number(paymentSummary.paid_delivery_count || 0);
     const unpaidDeliveryCount = Number(paymentSummary.unpaid_delivery_count || 0);
     const returnCount = Number(paymentSummary.return_count || 0);
-    const totalDeliveryCount = Number(paymentSummary.total_delivery_count || (paidDeliveryCount + unpaidDeliveryCount));
+    const netPayableAmount = Number(paymentSummary.unpaid_delivery_amount || 0)
+      - Number(paymentSummary.return_adjustment_amount || 0);
 
     return (
       <div className="dashboard-shell vendor-dashboard">
@@ -364,13 +365,13 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
             <article className="vendor-payment-card is-net">
               <div className="vendor-payment-card-head">
                 <span>Net payable total</span>
-                <span className="vendor-payment-status">Adjusted</span>
+                <span className="vendor-payment-status">Outstanding</span>
               </div>
-              <div className="vendor-payment-count"><strong>{totalDeliveryCount}</strong><span>{totalDeliveryCount === 1 ? "delivery" : "deliveries"}</span></div>
-              <div className="vendor-payment-amount"><span>After returns</span><strong>{formatCurrency(paymentSummary.net_account_amount)}</strong></div>
+              <div className="vendor-payment-count"><strong>{unpaidDeliveryCount}</strong><span>{unpaidDeliveryCount === 1 ? "unpaid delivery" : "unpaid deliveries"}</span></div>
+              <div className="vendor-payment-amount"><span>After returns</span><strong>{formatCurrency(netPayableAmount)}</strong></div>
             </article>
           </div>
-          <p className="vendor-payment-formula">Net payable total = paid deliveries + unpaid deliveries − vendor returns.</p>
+          <p className="vendor-payment-formula">Net payable total = unpaid deliveries − vendor returns.</p>
         </section>
 
         <section className="dashboard-card">

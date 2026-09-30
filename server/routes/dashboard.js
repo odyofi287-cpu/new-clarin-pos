@@ -232,6 +232,7 @@ export function buildVendorPaymentSummary(deliveries = [], returns = []) {
   const paidDeliveryAmount = sumDeliveries(paidDeliveries);
   const unpaidDeliveryAmount = sumDeliveries(unpaidDeliveries);
   const grossDeliveryAmount = paidDeliveryAmount + unpaidDeliveryAmount;
+  const netPayableAmount = unpaidDeliveryAmount - returnAdjustmentAmount;
 
   return {
     paid_delivery_count: paidDeliveries.length,
@@ -242,7 +243,9 @@ export function buildVendorPaymentSummary(deliveries = [], returns = []) {
     return_adjustment_amount: returnAdjustmentAmount,
     total_delivery_count: deliveries.length,
     gross_delivery_amount: grossDeliveryAmount,
-    net_account_amount: grossDeliveryAmount - returnAdjustmentAmount,
+    net_payable_amount: netPayableAmount,
+    // Retain the original field for older deployed clients.
+    net_account_amount: netPayableAmount,
   };
 }
 
@@ -717,18 +720,22 @@ async function vendorDashboard(req, res) {
      WHERE vendor_id = ?`
   );
 
+  const paidDeliveryAmount = Number(deliveryPaymentTotals.paid_delivery_amount || 0);
+  const unpaidDeliveryAmount = Number(deliveryPaymentTotals.unpaid_delivery_amount || 0);
   const grossDeliveryAmount = Number(deliveryPaymentTotals.gross_delivery_amount || 0);
   const returnAdjustmentAmount = Number(returnPaymentTotals.return_adjustment_amount || 0);
+  const netPayableAmount = unpaidDeliveryAmount - returnAdjustmentAmount;
   const paymentSummary = {
     paid_delivery_count: Number(deliveryPaymentTotals.paid_delivery_count || 0),
-    paid_delivery_amount: Number(deliveryPaymentTotals.paid_delivery_amount || 0),
+    paid_delivery_amount: paidDeliveryAmount,
     unpaid_delivery_count: Number(deliveryPaymentTotals.unpaid_delivery_count || 0),
-    unpaid_delivery_amount: Number(deliveryPaymentTotals.unpaid_delivery_amount || 0),
+    unpaid_delivery_amount: unpaidDeliveryAmount,
     return_count: Number(returnPaymentTotals.return_count || 0),
     return_adjustment_amount: returnAdjustmentAmount,
     total_delivery_count: Number(deliveryPaymentTotals.total_delivery_count || 0),
     gross_delivery_amount: grossDeliveryAmount,
-    net_account_amount: grossDeliveryAmount - returnAdjustmentAmount,
+    net_payable_amount: netPayableAmount,
+    net_account_amount: netPayableAmount,
   };
 
   return res.json({

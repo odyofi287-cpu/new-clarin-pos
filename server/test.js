@@ -81,7 +81,21 @@ test("Vendor payment summary separates statuses and deducts grouped return amoun
   assert.strictEqual(summary.return_count, 2);
   assert.strictEqual(summary.return_adjustment_amount, 35);
   assert.strictEqual(summary.gross_delivery_amount, 200);
-  assert.strictEqual(summary.net_account_amount, 165);
+  assert.strictEqual(summary.net_payable_amount, 65);
+  assert.strictEqual(summary.net_account_amount, 65);
+});
+
+test("Vendor payment summary excludes paid deliveries from net payable", () => {
+  const summary = buildVendorPaymentSummary(
+    [{ id: 1, payment_status: "PAID", total_amount: 100 }],
+    []
+  );
+
+  assert.strictEqual(summary.paid_delivery_amount, 100);
+  assert.strictEqual(summary.unpaid_delivery_amount, 0);
+  assert.strictEqual(summary.return_adjustment_amount, 0);
+  assert.strictEqual(summary.net_payable_amount, 0);
+  assert.strictEqual(summary.net_account_amount, 0);
 });
 
 async function login(email, password) {
@@ -832,8 +846,12 @@ test("Vendor dashboard returns vendor-only delivery summary", async () => {
   assert.strictEqual(typeof body.data.vendor_summary.payment_summary.unpaid_delivery_count, 'number');
   assert.strictEqual(typeof body.data.vendor_summary.payment_summary.return_adjustment_amount, 'number');
   assert.strictEqual(
+    body.data.vendor_summary.payment_summary.net_payable_amount,
+    body.data.vendor_summary.payment_summary.unpaid_delivery_amount - body.data.vendor_summary.payment_summary.return_adjustment_amount
+  );
+  assert.strictEqual(
     body.data.vendor_summary.payment_summary.net_account_amount,
-    body.data.vendor_summary.payment_summary.gross_delivery_amount - body.data.vendor_summary.payment_summary.return_adjustment_amount
+    body.data.vendor_summary.payment_summary.net_payable_amount
   );
   assert(Array.isArray(body.data.vendor_summary.recent_deliveries));
   assert(body.data.vendor_summary.recent_deliveries.every((delivery) => ["PAID", "UNPAID"].includes(delivery.payment_status)));
