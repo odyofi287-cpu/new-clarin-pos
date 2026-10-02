@@ -4,6 +4,7 @@ import { fileURLToPath } from "url";
 import { createRequire } from 'module';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import pg from 'pg';
+import { getBusinessDate } from './businessDate.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = path.join(__dirname, "data");
@@ -1027,15 +1028,15 @@ function seedInitialData(db) {
     }
 
     if (db.deliveries.length === 0) {
-      db.deliveries.push({ id: 1, vendor_id: 1, delivery_date: new Date().toISOString().split("T")[0], total_amount: 150.0, payment_status: "UNPAID", payment_confirmed_at: null, payment_confirmed_by: null, created_by: 1, created_at: new Date().toISOString() });
-      db.deliveries.push({ id: 2, vendor_id: 2, delivery_date: new Date().toISOString().split("T")[0], total_amount: 100.0, payment_status: "UNPAID", payment_confirmed_at: null, payment_confirmed_by: null, created_by: 1, created_at: new Date().toISOString() });
+      db.deliveries.push({ id: 1, vendor_id: 1, delivery_date: getBusinessDate(), total_amount: 150.0, payment_status: "UNPAID", payment_confirmed_at: null, payment_confirmed_by: null, created_by: 1, created_at: new Date().toISOString() });
+      db.deliveries.push({ id: 2, vendor_id: 2, delivery_date: getBusinessDate(), total_amount: 100.0, payment_status: "UNPAID", payment_confirmed_at: null, payment_confirmed_by: null, created_by: 1, created_at: new Date().toISOString() });
       db.delivery_items.push({ id: 1, delivery_id: 1, product_id: 1, quantity: 20, unit_cost: 25.0 });
       db.delivery_items.push({ id: 2, delivery_id: 1, product_id: 2, quantity: 10, unit_cost: 20.0 });
       db.delivery_items.push({ id: 3, delivery_id: 2, product_id: 2, quantity: 15, unit_cost: 22.0 });
     }
 
     if (db.sales.length === 0) {
-      const today = new Date().toISOString().split("T")[0];
+      const today = getBusinessDate();
       db.sales.push({ id: 1, sale_date: today, total_amount: 210.0, user_id: 2, created_at: new Date().toISOString() });
       db.sales.push({ id: 2, sale_date: today, total_amount: 120.0, user_id: 2, created_at: new Date().toISOString() });
       db.sale_items.push({ id: 1, sale_id: 1, product_id: 1, quantity: 3, unit_price: 35.0 });
@@ -1159,13 +1160,13 @@ function seedInitialData(db) {
     const water = db.prepare("SELECT id FROM products WHERE name = ?").get("Mineral Water");
 
     if (vendorId1 !== null && adminUser) {
-      const delivery1 = insertDelivery.run(vendorId1, new Date().toISOString().split("T")[0], 150.0, adminUser.id);
+      const delivery1 = insertDelivery.run(vendorId1, getBusinessDate(), 150.0, adminUser.id);
       insertDeliveryItem.run(delivery1.lastInsertRowid, cola.id, 20, 25.0);
       insertDeliveryItem.run(delivery1.lastInsertRowid, water.id, 10, 20.0);
     }
 
     if (vendorId2 !== null && adminUser) {
-      const delivery2 = insertDelivery.run(vendorId2, new Date().toISOString().split("T")[0], 100.0, adminUser.id);
+      const delivery2 = insertDelivery.run(vendorId2, getBusinessDate(), 100.0, adminUser.id);
       insertDeliveryItem.run(delivery2.lastInsertRowid, water.id, 15, 22.0);
     }
   }
@@ -1175,7 +1176,7 @@ function seedInitialData(db) {
     const insertSale = db.prepare("INSERT INTO sales (sale_date, total_amount, user_id) VALUES (?, ?, ?)");
     const insertSaleItem = db.prepare("INSERT INTO sale_items (sale_id, product_id, quantity, unit_price) VALUES (?, ?, ?, ?)");
     const staffUser = db.prepare("SELECT id FROM users WHERE email = ?").get("staff@clarin.local");
-    const today = new Date().toISOString().split("T")[0];
+    const today = getBusinessDate();
     if (staffUser) {
       const sale1 = insertSale.run(today, 210.0, staffUser.id);
       insertSaleItem.run(sale1.lastInsertRowid, 1, 3, 35.0);
