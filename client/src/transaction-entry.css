@@ -291,6 +291,22 @@
 .transaction-history-list td { color: #26466f; vertical-align: top; }
 .transaction-history-actions { display: flex; gap: 0.5rem; }
 .payment-status-nav-button { border-color: #b9d8c8; color: #176344; }
+.payment-history-controls { align-items: flex-end; display: grid; gap: 0.55rem; justify-items: end; }
+.payment-vendor-filter { color: #71849d; display: grid; font-size: 0.61rem; font-weight: 850; gap: 0.24rem; letter-spacing: 0.06em; min-width: min(100%, 280px); text-transform: uppercase; }
+.payment-vendor-filter select {
+  appearance: none;
+  background: #ffffff linear-gradient(45deg, transparent 50%, #66809f 50%) calc(100% - 15px) 50% / 5px 5px no-repeat;
+  border: 1px solid #cbdbea;
+  border-radius: 9px;
+  color: #294f79;
+  font-size: 0.72rem;
+  font-weight: 750;
+  min-height: 2.15rem;
+  padding: 0.42rem 1.75rem 0.42rem 0.65rem;
+  text-transform: none;
+  width: 100%;
+}
+.payment-vendor-filter select:focus { border-color: #79a7d5; box-shadow: 0 0 0 3px rgba(46, 119, 196, 0.12); outline: 0; }
 .payment-status-summary { align-items: center; display: flex; flex-wrap: wrap; gap: 0.45rem; justify-content: flex-end; }
 .payment-status-summary span {
   align-items: center;
@@ -484,6 +500,8 @@
   .transaction-history-list table { min-width: 0; }
   .transaction-history-actions { align-items: stretch; flex-direction: column; }
   .transaction-history-heading { align-items: flex-start; flex-direction: column; gap: 0.7rem; }
+  .payment-history-controls { justify-items: stretch; width: 100%; }
+  .payment-vendor-filter { min-width: 0; width: 100%; }
   .payment-status-summary { justify-content: flex-start; }
   .payment-account-main { grid-template-areas: "identity" "meta" "amounts" "actions"; grid-template-columns: 1fr; padding: 0.82rem; }
   .payment-account-meta { align-items: center; grid-template-columns: auto minmax(0, 1fr); }

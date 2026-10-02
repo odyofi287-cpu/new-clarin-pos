@@ -93,6 +93,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   const [editingPickupId, setEditingPickupId] = useState(null);
   const [editingPickupOriginalQuantities, setEditingPickupOriginalQuantities] = useState({});
   const [historyMode, setHistoryMode] = useState(null);
+  const [paymentVendorFilter, setPaymentVendorFilter] = useState("");
   const [returnsOpen, setReturnsOpen] = useState(false);
   const [returnEntries, setReturnEntries] = useState([]);
   const [returnForm, setReturnForm] = useState({
@@ -621,9 +622,17 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       : isPickupHistory
         ? 'Review every vendor pickup and the products included in each delivery.'
         : 'Review grouped return records and every product included in each return.';
-    const paidDeliveryCount = pickupEntries.filter((entry) => String(entry.payment_status || 'UNPAID').toUpperCase() === 'PAID').length;
-    const unpaidDeliveryCount = pickupEntries.length - paidDeliveryCount;
-    const outstandingPaymentAmount = pickupEntries
+    const paymentVendorOptions = [...new Map(pickupEntries.map((entry) => [String(entry.vendor_id), {
+      id: entry.vendor_id,
+      name: entry.vendor_name || `Vendor ${entry.vendor_id}`,
+      vendor_code: getDisplayVendorId(entry),
+    }])).values()].sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    const filteredPaymentEntries = paymentVendorFilter
+      ? pickupEntries.filter((entry) => String(entry.vendor_id) === String(paymentVendorFilter))
+      : pickupEntries;
+    const paidDeliveryCount = filteredPaymentEntries.filter((entry) => String(entry.payment_status || 'UNPAID').toUpperCase() === 'PAID').length;
+    const unpaidDeliveryCount = filteredPaymentEntries.length - paidDeliveryCount;
+    const outstandingPaymentAmount = filteredPaymentEntries
       .filter((entry) => String(entry.payment_status || 'UNPAID').toUpperCase() !== 'PAID')
       .reduce((sum, entry) => sum + Number(entry.amount_due ?? entry.total_amount ?? 0), 0);
 
@@ -647,21 +656,30 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
             <div className="transaction-history-heading">
               <div>
                 <span className="transaction-eyebrow">{isPaymentHistory ? 'Payment status' : isPickupHistory ? 'Pickup history' : 'Return history'}</span>
-                <h3>{isPaymentHistory || isPickupHistory ? `${pickupEntries.length} delivery record${pickupEntries.length === 1 ? '' : 's'}` : `${returnEntries.length} return record${returnEntries.length === 1 ? '' : 's'}`}</h3>
+                <h3>{isPaymentHistory ? `${filteredPaymentEntries.length} delivery account${filteredPaymentEntries.length === 1 ? '' : 's'}` : isPickupHistory ? `${pickupEntries.length} delivery record${pickupEntries.length === 1 ? '' : 's'}` : `${returnEntries.length} return record${returnEntries.length === 1 ? '' : 's'}`}</h3>
               </div>
               {isPaymentHistory && (
-                <div className="payment-status-summary" aria-label="Payment status totals">
-                  <span className="is-paid"><b>{paidDeliveryCount}</b> Paid</span>
-                  <span className="is-unpaid"><b>{unpaidDeliveryCount}</b> Unpaid</span>
-                  <span className="is-due"><b>{formatCurrency(outstandingPaymentAmount)}</b> Outstanding</span>
+                <div className="payment-history-controls">
+                  <label className="payment-vendor-filter">
+                    <span>Filter by vendor</span>
+                    <select value={paymentVendorFilter} onChange={(event) => setPaymentVendorFilter(event.target.value)}>
+                      <option value="">All vendors</option>
+                      {paymentVendorOptions.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name} · {vendor.vendor_code}</option>)}
+                    </select>
+                  </label>
+                  <div className="payment-status-summary" aria-label="Filtered payment status totals">
+                    <span className="is-paid"><b>{paidDeliveryCount}</b> Paid</span>
+                    <span className="is-unpaid"><b>{unpaidDeliveryCount}</b> Unpaid</span>
+                    <span className="is-due"><b>{formatCurrency(outstandingPaymentAmount)}</b> Outstanding</span>
+                  </div>
                 </div>
               )}
             </div>
 
             {isPaymentHistory ? (
-              pickupEntries.length === 0 ? <p className="transaction-empty">No vendor deliveries available for payment confirmation.</p> : (
+              filteredPaymentEntries.length === 0 ? <p className="transaction-empty">{paymentVendorFilter ? 'No delivery accounts are available for the selected vendor.' : 'No vendor deliveries are available for payment confirmation.'}</p> : (
                 <div className="payment-status-board">
-                  {pickupEntries.map((entry) => {
+                  {filteredPaymentEntries.map((entry) => {
                     const isPaid = String(entry.payment_status || 'UNPAID').toUpperCase() === 'PAID';
                     const isExpanded = expandedPaymentIds.has(entry.id);
                     const amountDue = Number(entry.amount_due ?? entry.total_amount ?? 0);
@@ -1251,7 +1269,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
               </button>
             )}
             {canManagePaymentStatus && (
-              <button className="small-button payment-status-nav-button" onClick={() => { setHistoryMode('payments'); setError(null); setStatus(null); }}>
+              <button className="small-button payment-status-nav-button" onClick={() => { setPaymentVendorFilter(''); setHistoryMode('payments'); setError(null); setStatus(null); }}>
                 Payment Status
               </button>
             )}
