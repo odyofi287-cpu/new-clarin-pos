@@ -5,7 +5,7 @@ process.env.NODE_ENV = "test";
 
 const { default: app } = await import("./app.js");
 const { getBusinessDate } = await import("./businessDate.js");
-const { buildCombinedSalesPeriods, buildSalesCalendar, buildVendorPaymentSummary } = await import("./routes/dashboard.js");
+const { buildCombinedSalesPeriods, buildSalesCalendar, buildVendorPaymentSummary, buildVendorDailyPaymentHistory } = await import("./routes/dashboard.js");
 const srv = app.listen(0);
 const port = srv.address().port;
 const base = `http://127.0.0.1:${port}`;
@@ -98,6 +98,26 @@ test("Vendor payment summary excludes paid deliveries from net payable", () => {
   assert.strictEqual(summary.net_account_amount, 0);
 });
 
+test("Vendor daily payment history separates account totals by business date", () => {
+  const history = buildVendorDailyPaymentHistory(
+    [
+      { id: 1, delivery_date: "2026-10-02", payment_status: "PAID", total_amount: 100 },
+      { id: 2, delivery_date: "2026-10-02", payment_status: "UNPAID", total_amount: 80 },
+      { id: 3, delivery_date: "2026-10-01", payment_status: "UNPAID", total_amount: 50 },
+    ],
+    [
+      { id: 1, return_batch_id: "today", return_date: "2026-10-02", total_product_price_returned: 20 },
+      { id: 2, return_batch_id: "yesterday", return_date: "2026-10-01", total_product_price_returned: 10 },
+    ]
+  );
+
+  assert.deepStrictEqual(history.map((day) => day.account_date), ["2026-10-02", "2026-10-01"]);
+  assert.strictEqual(history[0].paid_delivery_amount, 100);
+  assert.strictEqual(history[0].unpaid_delivery_amount, 80);
+  assert.strictEqual(history[0].net_payable_amount, 60);
+  assert.strictEqual(history[1].net_payable_amount, 40);
+});
+
 async function login(email, password) {
   const res = await fetch(`${base}/api/auth/login`, {
     method: "POST",
@@ -147,6 +167,7 @@ test("Vendor can login and list only own deliveries", async () => {
 
 test("Staff can record a vendor pickup", async () => {
   const token = await login("staff@clarin.local", "Staff123!");
+  const today = getBusinessDate();
   const userRes = await fetch(`${base}/api/users`, { headers: { Authorization: `Bearer ${token}` } });
   assert.strictEqual(userRes.status, 403, "Staff should not access the user list");
 
@@ -169,7 +190,7 @@ test("Staff can record a vendor pickup", async () => {
     headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({
       vendor_id: 1,
-      pickup_datetime: '2026-08-16T09:30:00',
+      pickup_datetime: `${today}T09:30:00`,
       items: [{ product_id: product.id, quantity: 4 }, { product_id: secondProduct.id, quantity: 2 }],
     })
   });
@@ -192,6 +213,7 @@ test("Staff can record a vendor pickup", async () => {
 
 test("Authorized staff can confirm delivery payment while vendors remain read-only", async () => {
   const staffToken = await login("staff@clarin.local", "Staff123!");
+  const today = getBusinessDate();
   const productsRes = await fetch(`${base}/api/products?active=1`, { headers: { Authorization: `Bearer ${staffToken}` } });
   const product = (await productsRes.json()).data[0];
   assert(product, "Expected a product for payment confirmation testing");
@@ -201,7 +223,7 @@ test("Authorized staff can confirm delivery payment while vendors remain read-on
     headers: { "content-type": "application/json", Authorization: `Bearer ${staffToken}` },
     body: JSON.stringify({
       vendor_id: 1,
-      pickup_datetime: "2026-08-18T14:15:00",
+      pickup_datetime: `${today}T14:15:00`,
       items: [{ product_id: product.id, quantity: 1, unit_cost: product.selling_price }],
     }),
   });
@@ -242,6 +264,7 @@ test("Authorized staff can confirm delivery payment while vendors remain read-on
 
 test("Staff can record and list vendor returns and exclude them from sales totals", async () => {
   const token = await login("staff@clarin.local", "Staff123!");
+  const today = getBusinessDate();
   const productsRes = await fetch(`${base}/api/products?active=1`, { headers: { Authorization: `Bearer ${token}` } });
   const products = await productsRes.json();
   const product = products.data.find((item) => item.id === 1) || products.data[0];
@@ -251,18 +274,35 @@ test("Staff can record and list vendor returns and exclude them from sales total
 
   const eligibleBeforeRes = await fetch(`${base}/api/vendor-returns/eligible-products?vendor_id=1`, { headers: { Authorization: `Bearer ${token}` } });
   assert.strictEqual(eligibleBeforeRes.status, 200);
-  const eligibleBefore = (await eligibleBeforeRes.json()).data;
+  const eligibleBeforeBody = await eligibleBeforeRes.json();
+  assert.strictEqual(eligibleBeforeBody.business_date, today);
+  const eligibleBefore = eligibleBeforeBody.data;
   assert(eligibleBefore.every((item) => Number(item.delivered_quantity) > 0), "Only delivered products should be return-eligible");
   assert(eligibleBefore.every((item) => Object.hasOwn(item, "image_url")), "Return-eligible products should include their image data");
   const firstEligibleBefore = eligibleBefore.find((item) => item.id === product.id);
   const secondEligibleBefore = eligibleBefore.find((item) => item.id === secondProduct.id);
   assert(firstEligibleBefore && secondEligibleBefore, "Expected both delivered products in the vendor-scoped catalog");
+  assert.strictEqual(Number(firstEligibleBefore.delivered_quantity), 24, "Paid delivery units must not remain return-eligible");
+  assert.strictEqual(Number(secondEligibleBefore.delivered_quantity), 12, "Only today's unpaid delivery units should be return-eligible");
+
+  const backdatedReturnRes = await fetch(`${base}/api/vendor-returns`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      vendor_id: 1,
+      return_date: '2026-01-01',
+      return_time: '08:00',
+      items: [{ product_id: product.id, quantity: 1 }],
+    }),
+  });
+  assert.strictEqual(backdatedReturnRes.status, 400, "Returns must be limited to the current business day");
+  assert.match((await backdatedReturnRes.json()).error, /today's deliveries/i);
 
   const createRes = await fetch(`${base}/api/vendor-returns`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({
-      return_date: '2026-08-20',
+      return_date: today,
       return_time: '09:45',
       vendor_id: 1,
       items: [
@@ -305,7 +345,7 @@ test("Staff can record and list vendor returns and exclude them from sales total
   assert(returnBatch.items.some((item) => item.includes(product.name)) && returnBatch.items.some((item) => item.includes(secondProduct.name)), 'Expected grouped return products');
   assert.deepStrictEqual([...returnBatch.return_ids].sort((a, b) => a - b), created.data.items.map((item) => item.id).sort((a, b) => a - b));
 
-  const salesRes = await fetch(`${base}/api/reports/sales?start_date=2026-08-20&end_date=2026-08-20`, { headers: { Authorization: `Bearer ${token}` } });
+  const salesRes = await fetch(`${base}/api/reports/sales?start_date=${today}&end_date=${today}`, { headers: { Authorization: `Bearer ${token}` } });
   assert.strictEqual(salesRes.status, 200);
   const sales = await salesRes.json();
   assert(Array.isArray(sales.data));
@@ -333,7 +373,7 @@ test("Staff can record and list vendor returns and exclude them from sales total
     headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({
       vendor_id: 1,
-      return_date: '2026-08-20',
+      return_date: today,
       return_time: '10:00',
       items: [{ product_id: product.id, quantity: firstEligibleBefore.returnable_quantity + 1 }],
     })
@@ -345,7 +385,7 @@ test("Staff can record and list vendor returns and exclude them from sales total
     headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({
       vendor_id: 2,
-      return_date: '2026-08-20',
+      return_date: today,
       return_time: '10:15',
       items: [{ product_id: product.id, quantity: 1, total_product_price_returned: product.selling_price }],
     })
@@ -853,8 +893,16 @@ test("Vendor dashboard returns vendor-only delivery summary", async () => {
   assert.strictEqual(res.status, 200);
   const body = await res.json();
   assert(body.data.vendor_summary);
+  assert.strictEqual(body.data.vendor_summary.account_date, getBusinessDate());
   assert(typeof body.data.vendor_summary.today_delivery_count === 'number');
   assert(body.data.vendor_summary.payment_summary);
+  assert(Array.isArray(body.data.vendor_summary.daily_history));
+  assert(body.data.vendor_summary.daily_history.length > 1, "Expected prior daily account summaries to remain in history");
+  assert.strictEqual(body.data.vendor_summary.daily_history[0].account_date, getBusinessDate());
+  assert.deepStrictEqual(
+    body.data.vendor_summary.daily_history[0].total_delivery_count,
+    body.data.vendor_summary.payment_summary.total_delivery_count
+  );
   assert.strictEqual(typeof body.data.vendor_summary.payment_summary.paid_delivery_count, 'number');
   assert.strictEqual(typeof body.data.vendor_summary.payment_summary.unpaid_delivery_count, 'number');
   assert.strictEqual(typeof body.data.vendor_summary.payment_summary.return_adjustment_amount, 'number');

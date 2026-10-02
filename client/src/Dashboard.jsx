@@ -306,6 +306,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
     const paidDeliveryCount = Number(paymentSummary.paid_delivery_count || 0);
     const unpaidDeliveryCount = Number(paymentSummary.unpaid_delivery_count || 0);
     const returnCount = Number(paymentSummary.return_count || 0);
+    const dailyHistory = data.vendor_summary.daily_history || [];
     const netPayableAmount = Number(paymentSummary.unpaid_delivery_amount || 0)
       - Number(paymentSummary.return_adjustment_amount || 0);
 
@@ -328,11 +329,11 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
         <section className="dashboard-card vendor-payment-overview">
           <div className="vendor-payment-heading">
             <div>
-              <span className="vendor-payment-kicker">Payment overview</span>
-              <h3>Delivery account summary</h3>
-              <p>Track paid and unpaid deliveries, with vendor returns deducted from the account total.</p>
+              <span className="vendor-payment-kicker">Today's payment overview</span>
+              <h3>Daily delivery account summary</h3>
+              <p>Resets each Manila business day. Previous daily totals remain available in the history below.</p>
             </div>
-            <span className="vendor-payment-live">Live</span>
+            <span className="vendor-payment-live">{formatRecordDate(data.vendor_summary.account_date)}</span>
           </div>
 
           <div className="vendor-payment-grid">
@@ -373,6 +374,34 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
             </article>
           </div>
           <p className="vendor-payment-formula">Net payable total = unpaid deliveries − vendor returns.</p>
+        </section>
+
+        <section className="dashboard-card vendor-daily-history">
+          <div className="vendor-payment-heading">
+            <div>
+              <span className="vendor-payment-kicker">Account monitoring</span>
+              <h3>Daily delivery account history</h3>
+              <p>Review each day's paid, unpaid, returned, and outstanding totals.</p>
+            </div>
+            <span className="vendor-payment-live">{dailyHistory.length} days</span>
+          </div>
+          {dailyHistory.length === 0 ? (
+            <p>No delivery account history is available.</p>
+          ) : (
+            <div className="management-table-wrap">
+              <table>
+                <thead><tr><th>Date</th><th>Deliveries</th><th>Paid</th><th>Unpaid</th><th>Returns</th><th>Net Payable</th></tr></thead>
+                <tbody>{dailyHistory.map((day) => <tr key={day.account_date}>
+                  <td data-label="Date"><strong>{formatRecordDate(day.account_date)}</strong></td>
+                  <td data-label="Deliveries">{day.total_delivery_count}<small>{formatCurrency(day.gross_delivery_amount)}</small></td>
+                  <td data-label="Paid">{day.paid_delivery_count}<small>{formatCurrency(day.paid_delivery_amount)}</small></td>
+                  <td data-label="Unpaid">{day.unpaid_delivery_count}<small>{formatCurrency(day.unpaid_delivery_amount)}</small></td>
+                  <td data-label="Returns">{day.return_count}<small>-{formatCurrency(day.return_adjustment_amount)}</small></td>
+                  <td data-label="Net Payable"><strong>{formatCurrency(day.net_payable_amount)}</strong></td>
+                </tr>)}</tbody>
+              </table>
+            </div>
+          )}
         </section>
 
         <section className="dashboard-card">

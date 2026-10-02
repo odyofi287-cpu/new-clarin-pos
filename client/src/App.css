@@ -1854,6 +1854,22 @@ tbody tr:last-child td {
   padding: 0.65rem 0.8rem;
 }
 
+.vendor-daily-history {
+  display: grid;
+  gap: 1rem;
+}
+
+.vendor-daily-history td small {
+  color: #7489a7;
+  display: block;
+  font-size: 0.72rem;
+  margin-top: 0.2rem;
+}
+
+.vendor-daily-history .management-table-wrap {
+  margin: 0;
+}
+
 @media (max-width: 1050px) {
   .vendor-payment-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -30,6 +30,17 @@ function formatConfirmationDateTime(value) {
   }).format(parsed);
 }
 
+function getManilaBusinessDate() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 function PaymentStatusBadge({ status }) {
   const isPaid = String(status || "UNPAID").toUpperCase() === "PAID";
   return <span className={`payment-status-badge ${isPaid ? "is-paid" : "is-unpaid"}`}>{isPaid ? "Paid" : "Unpaid"}</span>;
@@ -81,7 +92,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   const [returnsOpen, setReturnsOpen] = useState(false);
   const [returnEntries, setReturnEntries] = useState([]);
   const [returnForm, setReturnForm] = useState({
-    return_date: "",
+    return_date: getManilaBusinessDate(),
     return_time: "",
     vendor_id: "",
     product_id: "",
@@ -285,6 +296,9 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
           const deliveredProducts = body.data || [];
           const returnableByProduct = new Map(deliveredProducts.map((product) => [String(product.id), Number(product.returnable_quantity || 0)]));
           loadedReturnVendorId.current = selectedVendorId;
+          if (body.business_date) {
+            setReturnForm((current) => ({ ...current, return_date: body.business_date }));
+          }
           setReturnProducts(deliveredProducts);
           setReturnQuantities((current) => Object.fromEntries(
             Object.entries(current)
@@ -435,7 +449,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
 
   const resetReturnForm = () => {
     setReturnForm({
-      return_date: "",
+      return_date: getManilaBusinessDate(),
       return_time: "",
       vendor_id: "",
       product_id: "",
@@ -902,7 +916,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                 <button type="button" className="transaction-back" onClick={closeTransactionEntry}>← Back to POS</button>
                 <span className="transaction-eyebrow">{isPickupEntry ? "Vendor fulfillment" : isReturnEntry ? "Vendor returns" : "Point-of-sale checkout"}</span>
                 <h2>{isPickupEntry ? (pickupMode === "edit" ? "Edit Vendor Pickup" : "Add Vendor Pickup") : isReturnEntry ? "Record Vendor Return" : "Record Sale"}</h2>
-                <p>{isPickupEntry ? "Choose the vendor, pickup schedule, and every product included in this delivery." : isReturnEntry ? "Choose the vendor, return schedule, and every product included in this return." : "Add products and quantities to create one complete recorded sale."}</p>
+                <p>{isPickupEntry ? "Choose the vendor, pickup schedule, and every product included in this delivery." : isReturnEntry ? "Choose a vendor and return products from today's unpaid deliveries." : "Add products and quantities to create one complete recorded sale."}</p>
               </div>
               <button type="button" className="small-button" onClick={closeTransactionEntry}>Cancel</button>
             </header>
@@ -913,7 +927,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
               <section className={`transaction-details ${isPickupEntry && pickupMode === "edit" ? "has-payment-status" : ""}`} aria-label={isReturnEntry ? "Return details" : "Pickup details"}>
                 <label>
                   {isReturnEntry ? "Return date" : "Pickup date"}
-                  <input type="date" value={isReturnEntry ? returnForm.return_date : pickupForm.pickup_date} onChange={(event) => isReturnEntry ? setReturnForm({ ...returnForm, return_date: event.target.value }) : setPickupForm({ ...pickupForm, pickup_date: event.target.value })} required />
+                  <input type="date" value={isReturnEntry ? returnForm.return_date : pickupForm.pickup_date} onChange={(event) => isReturnEntry ? setReturnForm({ ...returnForm, return_date: event.target.value }) : setPickupForm({ ...pickupForm, pickup_date: event.target.value })} readOnly={isReturnEntry} min={isReturnEntry ? returnForm.return_date : undefined} max={isReturnEntry ? returnForm.return_date : undefined} required />
                 </label>
                 <label>
                   {isReturnEntry ? "Return time" : "Pickup time"}
@@ -951,8 +965,8 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                   <h3>{isReturnEntry && !entryForm.vendor_id ? "Select a vendor first" : `Build this ${isPickupEntry ? "pickup" : isReturnEntry ? "return" : "sale"}`}</h3>
                   <p>{isReturnEntry
                     ? entryForm.vendor_id
-                      ? "Only products delivered to the selected vendor are shown. Enter the quantity being returned."
-                      : "Choose a vendor above to load that vendor's delivered products."
+                      ? "Only products from today's unpaid deliveries are shown. Enter the quantity being returned."
+                      : "Choose a vendor above to load products from today's unpaid deliveries."
                     : "Enter a quantity for each product you want to include."}</p>
                 </div>
                 {(!isReturnEntry || entryForm.vendor_id) && (
@@ -973,7 +987,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
               ) : isReturnEntry && returnProductsError ? (
                 <p className="transaction-empty transaction-empty-error">{returnProductsError}</p>
               ) : filteredCatalogProducts.length === 0 ? (
-                <p className="transaction-empty">{isReturnEntry && !productSearch ? "This vendor has no delivered products remaining for return." : "No products match your search."}</p>
+                <p className="transaction-empty">{isReturnEntry && !productSearch ? "This vendor has no products from today's unpaid deliveries remaining for return." : "No products match your search."}</p>
               ) : (
                 <div className="transaction-product-grid">
                   {filteredCatalogProducts.map((product) => {
@@ -1193,7 +1207,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                 <div className="pos-modal-form-grid" style={{ gridColumn: '1 / -1' }}>
                   <label>
                     Return Date
-                    <input type="date" value={returnForm.return_date} onChange={(event) => setReturnForm({ ...returnForm, return_date: event.target.value })} required />
+                    <input type="date" value={returnForm.return_date} readOnly min={returnForm.return_date} max={returnForm.return_date} required />
                   </label>
                   <label>
                     Return Time

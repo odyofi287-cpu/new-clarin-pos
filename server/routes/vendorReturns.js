@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { requireRole } from "../middleware/auth.js";
 import { publishDataChange } from "../events.js";
 import { dbAll, dbGet, dbRun, isInMemoryDb, withTransaction } from "./dbCompat.js";
+import { getBusinessDate } from "../businessDate.js";
 
 const router = express.Router();
 
@@ -39,11 +40,19 @@ function groupReturnRows(rows) {
   }));
 }
 
-async function getVendorReturnableProducts(db, vendorId) {
+function getDateKey(value) {
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  const match = String(value || "").match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : "";
+}
+
+async function getVendorReturnableProducts(db, vendorId, businessDate = getBusinessDate()) {
   if (isInMemoryDb(db)) {
     const deliveryIds = new Set(
       db.deliveries
-        .filter((delivery) => Number(delivery.vendor_id) === Number(vendorId))
+        .filter((delivery) => Number(delivery.vendor_id) === Number(vendorId)
+          && getDateKey(delivery.delivery_date) === businessDate
+          && String(delivery.payment_status || "UNPAID").toUpperCase() !== "PAID")
         .map((delivery) => Number(delivery.id))
     );
     const deliveredByProduct = new Map();
@@ -55,7 +64,7 @@ async function getVendorReturnableProducts(db, vendorId) {
       deliveredByProduct.set(productId, (deliveredByProduct.get(productId) || 0) + Number(item.quantity || 0));
     }
     for (const entry of db.vendor_returns) {
-      if (Number(entry.vendor_id) !== Number(vendorId)) continue;
+      if (Number(entry.vendor_id) !== Number(vendorId) || getDateKey(entry.return_date) !== businessDate) continue;
       const productId = Number(entry.product_id);
       returnedByProduct.set(productId, (returnedByProduct.get(productId) || 0) + Number(entry.quantity || 0));
     }
@@ -86,17 +95,19 @@ async function getVendorReturnableProducts(db, vendorId) {
        FROM deliveries d
        JOIN delivery_items di ON di.delivery_id = d.id
        WHERE d.vendor_id = $1
+         AND d.delivery_date = $2
+         AND UPPER(COALESCE(d.payment_status, 'UNPAID')) <> 'PAID'
        GROUP BY di.product_id
      ) delivered
      JOIN products p ON p.id = delivered.product_id
      LEFT JOIN (
        SELECT product_id, SUM(quantity) AS returned_quantity
        FROM vendor_returns
-       WHERE vendor_id = $2
+       WHERE vendor_id = $3 AND return_date = $4
        GROUP BY product_id
      ) returned ON returned.product_id = delivered.product_id
      ORDER BY p.name ASC`,
-    [vendorId, vendorId],
+    [vendorId, businessDate, vendorId, businessDate],
     `SELECT p.id, p.name, p.category, p.image_url, p.selling_price, p.current_stock, p.minimum_stock, p.unit, p.active,
             delivered.delivered_quantity,
             COALESCE(returned.returned_quantity, 0) AS returned_quantity
@@ -105,13 +116,15 @@ async function getVendorReturnableProducts(db, vendorId) {
        FROM deliveries d
        JOIN delivery_items di ON di.delivery_id = d.id
        WHERE d.vendor_id = ?
+         AND d.delivery_date = ?
+         AND UPPER(COALESCE(d.payment_status, 'UNPAID')) <> 'PAID'
        GROUP BY di.product_id
      ) delivered
      JOIN products p ON p.id = delivered.product_id
      LEFT JOIN (
        SELECT product_id, SUM(quantity) AS returned_quantity
        FROM vendor_returns
-       WHERE vendor_id = ?
+       WHERE vendor_id = ? AND return_date = ?
        GROUP BY product_id
      ) returned ON returned.product_id = delivered.product_id
      ORDER BY p.name ASC`
@@ -180,8 +193,9 @@ router.get("/eligible-products", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VE
       return res.status(404).json({ error: "Vendor not found" });
     }
 
-    const products = await getVendorReturnableProducts(req.db, vendorId);
-    res.json({ data: products });
+    const businessDate = getBusinessDate();
+    const products = await getVendorReturnableProducts(req.db, vendorId, businessDate);
+    res.json({ data: products, business_date: businessDate });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to load delivered products for this vendor" });
@@ -213,6 +227,10 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
     }
     if (!return_time) {
       return res.status(400).json({ error: "Return time is required" });
+    }
+    const businessDate = getBusinessDate();
+    if (getDateKey(return_date) !== businessDate) {
+      return res.status(400).json({ error: `Returns can only be recorded for today's deliveries (${businessDate})` });
     }
     const vendor = await dbGet(req.db, "SELECT id, name FROM vendors WHERE id = $1", [vendorId], "SELECT id, name FROM vendors WHERE id = ?");
     if (!vendor) {
@@ -251,7 +269,7 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
         );
       }
 
-      const eligibleProducts = await getVendorReturnableProducts(req.db, vendorId);
+      const eligibleProducts = await getVendorReturnableProducts(req.db, vendorId, businessDate);
       const eligibleById = new Map(eligibleProducts.map((product) => [Number(product.id), product]));
       const requestedByProduct = new Map();
       for (const item of returnItems) {

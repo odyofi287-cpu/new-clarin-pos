@@ -249,6 +249,28 @@ export function buildVendorPaymentSummary(deliveries = [], returns = []) {
   };
 }
 
+export function buildVendorDailyPaymentHistory(deliveries = [], returns = []) {
+  const dates = new Set();
+  deliveries.forEach((delivery) => {
+    const date = getCalendarDateKey(delivery.delivery_date);
+    if (date) dates.add(date);
+  });
+  returns.forEach((entry) => {
+    const date = getCalendarDateKey(entry.return_date);
+    if (date) dates.add(date);
+  });
+
+  return [...dates]
+    .sort((a, b) => b.localeCompare(a))
+    .map((accountDate) => ({
+      account_date: accountDate,
+      ...buildVendorPaymentSummary(
+        deliveries.filter((delivery) => getCalendarDateKey(delivery.delivery_date) === accountDate),
+        returns.filter((entry) => getCalendarDateKey(entry.return_date) === accountDate)
+      ),
+    }));
+}
+
 router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     if (req.user.role === "VENDOR") {
@@ -605,7 +627,12 @@ async function vendorDashboard(req, res) {
       .filter((delivery) => Number(delivery.vendor_id) === Number(req.user.vendor_id));
     const vendorReturnRecords = req.db.vendor_returns
       .filter((entry) => Number(entry.vendor_id) === Number(req.user.vendor_id));
-    const paymentSummary = buildVendorPaymentSummary(vendorDeliveryRecords, vendorReturnRecords);
+    const todayDeliveryRecords = vendorDeliveryRecords
+      .filter((delivery) => getCalendarDateKey(delivery.delivery_date) === today);
+    const todayReturnRecords = vendorReturnRecords
+      .filter((entry) => getCalendarDateKey(entry.return_date) === today);
+    const paymentSummary = buildVendorPaymentSummary(todayDeliveryRecords, todayReturnRecords);
+    const dailyHistory = buildVendorDailyPaymentHistory(vendorDeliveryRecords, vendorReturnRecords);
     const deliveries = vendorDeliveryRecords
       .slice()
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
@@ -623,12 +650,9 @@ async function vendorDashboard(req, res) {
         created_at: delivery.created_at,
       }));
 
-    const todayCount = vendorDeliveryRecords.filter(
-      (delivery) => delivery.delivery_date === today
-    ).length;
+    const todayCount = todayDeliveryRecords.length;
 
-    const todayTotal = vendorDeliveryRecords
-      .filter((delivery) => delivery.delivery_date === today)
+    const todayTotal = todayDeliveryRecords
       .reduce((sum, delivery) => sum + Number(delivery.total_amount || 0), 0);
 
     return res.json({
@@ -636,7 +660,9 @@ async function vendorDashboard(req, res) {
         vendor_summary: {
           today_delivery_count: todayCount,
           today_delivery_total: todayTotal,
+          account_date: today,
           payment_summary: paymentSummary,
+          daily_history: dailyHistory,
           recent_deliveries: deliveries,
         },
       },
@@ -682,68 +708,39 @@ async function vendorDashboard(req, res) {
     "SELECT COALESCE(SUM(total_amount), 0) AS total FROM deliveries WHERE vendor_id = ? AND delivery_date = ?"
   )).total;
 
-  const deliveryPaymentTotals = await dbGet(
+  const vendorPaymentDeliveries = await dbAll(
     req.db,
-    `SELECT
-       COALESCE(SUM(CASE WHEN UPPER(COALESCE(payment_status, 'UNPAID')) = 'PAID' THEN 1 ELSE 0 END), 0) AS paid_delivery_count,
-       COALESCE(SUM(CASE WHEN UPPER(COALESCE(payment_status, 'UNPAID')) = 'PAID' THEN total_amount ELSE 0 END), 0) AS paid_delivery_amount,
-       COALESCE(SUM(CASE WHEN UPPER(COALESCE(payment_status, 'UNPAID')) <> 'PAID' THEN 1 ELSE 0 END), 0) AS unpaid_delivery_count,
-       COALESCE(SUM(CASE WHEN UPPER(COALESCE(payment_status, 'UNPAID')) <> 'PAID' THEN total_amount ELSE 0 END), 0) AS unpaid_delivery_amount,
-       COUNT(*) AS total_delivery_count,
-       COALESCE(SUM(total_amount), 0) AS gross_delivery_amount
-     FROM deliveries
-     WHERE vendor_id = $1`,
+    `SELECT id, delivery_date, total_amount, COALESCE(payment_status, 'UNPAID') AS payment_status
+     FROM deliveries WHERE vendor_id = $1`,
     [req.user.vendor_id],
-    `SELECT
-       COALESCE(SUM(CASE WHEN UPPER(COALESCE(payment_status, 'UNPAID')) = 'PAID' THEN 1 ELSE 0 END), 0) AS paid_delivery_count,
-       COALESCE(SUM(CASE WHEN UPPER(COALESCE(payment_status, 'UNPAID')) = 'PAID' THEN total_amount ELSE 0 END), 0) AS paid_delivery_amount,
-       COALESCE(SUM(CASE WHEN UPPER(COALESCE(payment_status, 'UNPAID')) <> 'PAID' THEN 1 ELSE 0 END), 0) AS unpaid_delivery_count,
-       COALESCE(SUM(CASE WHEN UPPER(COALESCE(payment_status, 'UNPAID')) <> 'PAID' THEN total_amount ELSE 0 END), 0) AS unpaid_delivery_amount,
-       COUNT(*) AS total_delivery_count,
-       COALESCE(SUM(total_amount), 0) AS gross_delivery_amount
-     FROM deliveries
-     WHERE vendor_id = ?`
+    `SELECT id, delivery_date, total_amount, COALESCE(payment_status, 'UNPAID') AS payment_status
+     FROM deliveries WHERE vendor_id = ?`
   );
 
-  const returnPaymentTotals = await dbGet(
+  const vendorPaymentReturns = await dbAll(
     req.db,
-    `SELECT
-       COUNT(DISTINCT COALESCE(return_batch_id, 'legacy-' || id::text)) AS return_count,
-       COALESCE(SUM(total_product_price_returned), 0) AS return_adjustment_amount
-     FROM vendor_returns
-     WHERE vendor_id = $1`,
+    `SELECT id, return_batch_id, return_date, total_product_price_returned
+     FROM vendor_returns WHERE vendor_id = $1`,
     [req.user.vendor_id],
-    `SELECT
-       COUNT(DISTINCT COALESCE(return_batch_id, 'legacy-' || CAST(id AS TEXT))) AS return_count,
-       COALESCE(SUM(total_product_price_returned), 0) AS return_adjustment_amount
-     FROM vendor_returns
-     WHERE vendor_id = ?`
+    `SELECT id, return_batch_id, return_date, total_product_price_returned
+     FROM vendor_returns WHERE vendor_id = ?`
   );
 
-  const paidDeliveryAmount = Number(deliveryPaymentTotals.paid_delivery_amount || 0);
-  const unpaidDeliveryAmount = Number(deliveryPaymentTotals.unpaid_delivery_amount || 0);
-  const grossDeliveryAmount = Number(deliveryPaymentTotals.gross_delivery_amount || 0);
-  const returnAdjustmentAmount = Number(returnPaymentTotals.return_adjustment_amount || 0);
-  const netPayableAmount = unpaidDeliveryAmount - returnAdjustmentAmount;
-  const paymentSummary = {
-    paid_delivery_count: Number(deliveryPaymentTotals.paid_delivery_count || 0),
-    paid_delivery_amount: paidDeliveryAmount,
-    unpaid_delivery_count: Number(deliveryPaymentTotals.unpaid_delivery_count || 0),
-    unpaid_delivery_amount: unpaidDeliveryAmount,
-    return_count: Number(returnPaymentTotals.return_count || 0),
-    return_adjustment_amount: returnAdjustmentAmount,
-    total_delivery_count: Number(deliveryPaymentTotals.total_delivery_count || 0),
-    gross_delivery_amount: grossDeliveryAmount,
-    net_payable_amount: netPayableAmount,
-    net_account_amount: netPayableAmount,
-  };
+  const todayPaymentDeliveries = vendorPaymentDeliveries
+    .filter((delivery) => getCalendarDateKey(delivery.delivery_date) === today);
+  const todayPaymentReturns = vendorPaymentReturns
+    .filter((entry) => getCalendarDateKey(entry.return_date) === today);
+  const paymentSummary = buildVendorPaymentSummary(todayPaymentDeliveries, todayPaymentReturns);
+  const dailyHistory = buildVendorDailyPaymentHistory(vendorPaymentDeliveries, vendorPaymentReturns);
 
   return res.json({
     data: {
       vendor_summary: {
         today_delivery_count: todayDeliveryCount,
         today_delivery_total: todayDeliveryTotal,
+        account_date: today,
         payment_summary: paymentSummary,
+        daily_history: dailyHistory,
         recent_deliveries: vendorDeliveries,
       },
     },
