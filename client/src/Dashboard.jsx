@@ -208,7 +208,8 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
     }
 
     const loadProducts = () => {
-      fetch(apiUrl('/api/products?active=all'), { headers: { Authorization: `Bearer ${token}` } })
+      const productQuery = role === "VENDOR" ? "active=1" : "active=all";
+      fetch(apiUrl(`/api/products?${productQuery}`), { headers: { Authorization: `Bearer ${token}` } })
         .then((r) => r.json())
         .then((p) => {
           if (!p.error) {
@@ -292,7 +293,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
     return <div className="dashboard-shell"><p>Loading dashboard...</p></div>;
   }
 
-  if ((viewMode === "products" || viewMode === "inventory") && !(role === "SUPERADMIN" || role === "ADMIN" || role === "STAFF")) {
+  if (viewMode === "products" && !(role === "SUPERADMIN" || role === "ADMIN" || role === "STAFF")) {
     return <div className="dashboard-shell"><p className="error-message">You do not have access to inventory management.</p></div>;
   }
 
@@ -300,7 +301,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
     return <div className="dashboard-shell"><p className="error-message">You do not have access to Account Management.</p></div>;
   }
 
-  if (data.vendor_summary) {
+  if (data.vendor_summary && viewMode === "dashboard") {
     const paymentSummary = data.vendor_summary.payment_summary || {};
     const paidDeliveryCount = Number(paymentSummary.paid_delivery_count || 0);
     const unpaidDeliveryCount = Number(paymentSummary.unpaid_delivery_count || 0);
@@ -420,9 +421,9 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
     <section className="management-page inventory-page">
       <div className="management-hero">
         <div>
-          <span className="management-kicker">Live stock</span>
+          <span className="management-kicker">{role === "VENDOR" ? "Read-only stock monitor" : "Live stock"}</span>
           <h2>Inventory</h2>
-          <p>Track products and their available stock at a glance.</p>
+          <p>{role === "VENDOR" ? "Monitor the current stock of products available from the arena." : "Track products and their available stock at a glance."}</p>
         </div>
         <div className="management-count"><strong>{inventoryProducts.length}</strong><span>items</span></div>
       </div>
@@ -452,8 +453,8 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
                 <h3>{product.name}</h3>
                 <p>{product.category || "General"}</p>
                 <div className="inventory-stock-row">
-                  <span>Stock</span>
-                  <strong>{Number(product.current_stock || 0)}</strong>
+                  <span>Available stock</span>
+                  <strong>{Number(product.current_stock || 0)} {product.unit || "units"}</strong>
                 </div>
               </div>
             </article>

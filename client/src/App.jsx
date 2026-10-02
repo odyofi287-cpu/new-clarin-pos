@@ -234,7 +234,7 @@ function App() {
     ...(role !== "VENDOR" ? [{ id: "pos", label: "POS", description: "Sales entry and pickup recording", icon: "pos", view: "pos" }] : []),
     { id: "deliveries", label: "Vendor Deliveries", description: "Pickup list and vendor returns", icon: "deliveries", view: "deliveries" },
     ...(role !== "VENDOR" ? [{ id: "sales-history", label: "Sales & Pickup History", description: "Recorded sales and vendor pickups", icon: "sales", view: "sales-history" }] : []),
-    { id: "inventory", label: "Inventory", description: "Stock movement", icon: "inventory", view: "inventory" },
+    { id: "inventory", label: "Inventory", description: role === "VENDOR" ? "Current product stock" : "Stock movement", icon: "inventory", view: "inventory" },
     ...((role === "SUPERADMIN" || role === "ADMIN" || role === "STAFF") ? [{ id: "products", label: "Products", description: "Product catalog", icon: "products", view: "products" }] : []),
     { id: "reports", label: "Reports", description: "Sales and inventory reports", icon: "reports", view: "reports" },
     ...(role === "SUPERADMIN" ? [{ id: "users", label: "Users", description: "Account management", icon: "users", view: "users" }] : []),

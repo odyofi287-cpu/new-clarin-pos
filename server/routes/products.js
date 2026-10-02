@@ -28,7 +28,10 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (re
   try {
     const q = (req.query.q || "").toLowerCase();
     const activeParam = (req.query.active || '').toString().toLowerCase();
-    const includeInactive = activeParam === '0' || activeParam === 'false' || activeParam === 'all';
+    const requestedInactive = activeParam === '0' || activeParam === 'false' || activeParam === 'all';
+    // Vendor inventory access is read-only and limited to products currently
+    // offered by the arena. Operational roles can still request archived rows.
+    const includeInactive = req.user.role !== 'VENDOR' && requestedInactive;
     const products = await dbAll(
       req.db,
       `SELECT id, name, category, selling_price, current_stock, minimum_stock, unit, image_url, active FROM products${includeInactive ? '' : ' WHERE active = 1'}`

@@ -715,6 +715,19 @@ test("Vendor cannot access admin product creation endpoint", async () => {
   assert.strictEqual(res.status, 403);
 });
 
+test("Vendor can monitor active product stock through the inventory API", async () => {
+  const token = await login("vendor@clarin.local", "Vendor123!");
+  const res = await fetch(`${base}/api/products?active=all`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assert.strictEqual(res.status, 200);
+  const body = await res.json();
+  assert(Array.isArray(body.data));
+  assert(body.data.length > 0, "Expected active inventory products");
+  assert(body.data.every((product) => Number(product.active) === 1));
+  assert(body.data.every((product) => Number.isFinite(Number(product.current_stock))));
+});
+
 test("Vendor cannot use staff-only product update", async () => {
   const token = await login("vendor@clarin.local", "Vendor123!");
   const res = await fetch(`${base}/api/products/1`, {
