@@ -111,7 +111,6 @@ CREATE TABLE IF NOT EXISTS vendor_returns (
 );
 
 CREATE INDEX IF NOT EXISTS idx_vendor_returns_return_date ON vendor_returns(return_date);
-CREATE INDEX IF NOT EXISTS idx_vendor_returns_delivery_id ON vendor_returns(delivery_id);
 CREATE INDEX IF NOT EXISTS idx_vendor_returns_product_id ON vendor_returns(product_id);
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username);
