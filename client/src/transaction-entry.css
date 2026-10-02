@@ -75,6 +75,10 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.transaction-details.is-return-details {
+  grid-template-columns: minmax(145px, 0.6fr) minmax(145px, 0.6fr) minmax(220px, 1fr) minmax(260px, 1.25fr);
+}
+
 .transaction-details label {
   color: #34567f;
   display: grid;
@@ -98,6 +102,8 @@
   color: #6e86a5;
   font-size: 0.69rem;
 }
+
+.transaction-details .transaction-field-error { color: #a13f4b; }
 
 .transaction-catalog {
   display: grid;
@@ -210,6 +216,7 @@
   grid-template-columns: minmax(0, 1fr) auto auto;
   padding: 1rem;
 }
+.transaction-summary:has(.return-delivery-calculation) { grid-template-columns: minmax(0, 1fr) auto auto auto; }
 
 .transaction-summary .transaction-eyebrow,
 .transaction-summary p { color: #617c9e; }
@@ -223,6 +230,18 @@
 .transaction-total span { color: #59799e; display: block; font-size: 0.7rem; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; }
 .transaction-total strong { color: #123f75; font-size: 1.35rem; letter-spacing: -0.02em; }
 .transaction-summary .primary-button { background: linear-gradient(135deg, #2879e8, #174bad); box-shadow: 0 9px 18px rgba(31, 92, 184, 0.22); color: #ffffff; white-space: nowrap; }
+.return-delivery-calculation {
+  background: #edf6ff;
+  border: 1px solid #cfe2f6;
+  border-radius: 12px;
+  display: grid;
+  gap: 0.35rem;
+  min-width: 230px;
+  padding: 0.65rem 0.75rem;
+}
+.return-delivery-calculation > div { color: #557395; display: flex; font-size: 0.72rem; gap: 1rem; justify-content: space-between; }
+.return-delivery-calculation strong { color: #244f80; }
+.return-delivery-calculation .is-result { border-top: 1px solid #c8def4; color: #173f70; font-weight: 800; margin-top: 0.2rem; padding-top: 0.35rem; }
 .transaction-empty { background: #ffffff; border: 1px dashed #bbd1ea; border-radius: 12px; color: #6b83a2; padding: 1.2rem; text-align: center; }
 .transaction-empty-error { background: #fff7f7; border-color: #e9b9bf; color: #a13f4b; }
 
@@ -305,6 +324,24 @@
 .payment-confirm-button { border-color: #b9d8c8; color: #176344; min-width: 8.3rem; }
 .payment-confirm-button:not(:disabled):hover { background: #e7f6ef; border-color: #79bb9b; }
 .payment-confirm-button:disabled { background: #eef6f2; border-color: #d2e6dc; color: #6d8a7c; cursor: default; opacity: 1; }
+.payment-deduction { color: #e06a1a; }
+.payment-amount-due { color: #123f75; font-size: 0.94rem; }
+.payment-row-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; min-width: 190px; }
+.payment-products-button {
+  background: #eef5ff;
+  border: 1px solid #c8dcf4;
+  border-radius: 8px;
+  color: #2465ad;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 0.5rem 0.65rem;
+}
+.payment-products-button::before { display: none; }
+.payment-products-button:hover { background: #dfedff; box-shadow: none; transform: none; }
+.payment-products-row td { background: #f5f9fe; border-top: 0; padding: 0.7rem 1rem 1rem; }
+.payment-products-row div { background: #ffffff; border: 1px solid #d8e7f6; border-radius: 10px; display: grid; gap: 0.28rem; padding: 0.75rem 0.9rem; }
+.payment-products-row span { color: #6f86a4; font-size: 0.68rem; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; }
+.payment-products-row strong { color: #244d7c; font-size: 0.82rem; }
 
 @media (max-width: 760px) {
   .transaction-entry-page { padding: 0.9rem; }
@@ -312,10 +349,12 @@
   .transaction-catalog-heading { align-items: stretch; flex-direction: column; }
   .transaction-entry-header > .small-button { align-self: flex-start; }
   .transaction-details,
-  .transaction-details.has-payment-status { grid-template-columns: 1fr; padding: 0.8rem; }
+  .transaction-details.has-payment-status,
+  .transaction-details.is-return-details { grid-template-columns: 1fr; padding: 0.8rem; }
   .transaction-search { min-width: 0; width: 100%; }
   .transaction-product-grid { grid-template-columns: 1fr; }
   .transaction-summary { align-items: stretch; grid-template-columns: 1fr; }
+  .transaction-summary:has(.return-delivery-calculation) { grid-template-columns: 1fr; }
   .transaction-total { border-left: 0; border-top: 1px solid #cbdff3; padding: 0.75rem 0 0; }
   .transaction-summary .primary-button { width: 100%; }
   .transaction-history-list { padding: 0.8rem; }
@@ -325,4 +364,7 @@
   .payment-status-summary { justify-content: flex-start; }
   .payment-status-table table { min-width: 0; }
   .payment-confirm-button { min-width: 0; width: 100%; }
+  .payment-row-actions { min-width: 0; }
+  .payment-products-button { width: 100%; }
+  .payment-products-row td::before { display: none; }
 }

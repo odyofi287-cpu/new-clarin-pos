@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { apiUrl } from "./api";
 import "./history.css";
 import "./transaction-entry.css";
@@ -78,11 +78,15 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   const [pickupQuantities, setPickupQuantities] = useState({});
   const [saleQuantities, setSaleQuantities] = useState({});
   const [returnQuantities, setReturnQuantities] = useState({});
+  const [returnDeliveries, setReturnDeliveries] = useState([]);
+  const [returnDeliveriesLoading, setReturnDeliveriesLoading] = useState(false);
+  const [returnDeliveriesError, setReturnDeliveriesError] = useState(null);
   const [returnProducts, setReturnProducts] = useState([]);
   const [returnProductsLoading, setReturnProductsLoading] = useState(false);
   const [returnProductsError, setReturnProductsError] = useState(null);
   const [returnEligibilityVersion, setReturnEligibilityVersion] = useState(0);
   const loadedReturnVendorId = useRef(null);
+  const loadedReturnDeliveryKey = useRef(null);
   const [pickupEntries, setPickupEntries] = useState([]);
   const [salesHistory, setSalesHistory] = useState([]);
   const [pickupMode, setPickupMode] = useState("create");
@@ -95,6 +99,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     return_date: getManilaBusinessDate(),
     return_time: "",
     vendor_id: "",
+    delivery_id: "",
     product_id: "",
     quantity: "1",
     product_price: "",
@@ -115,6 +120,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [confirmingPaymentId, setConfirmingPaymentId] = useState(null);
+  const [expandedPaymentIds, setExpandedPaymentIds] = useState(() => new Set());
 
   useEffect(() => {
     if (role === "VENDOR" && vendorId) {
@@ -177,7 +183,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
           return;
         }
 
-        const records = (body.data || []).slice().sort((a, b) => String(b.delivery_date).localeCompare(String(a.delivery_date)));
+        const records = (body.data || []).slice().sort((a, b) => `${b.delivery_date || ''} ${b.delivery_time || ''} ${b.id}`.localeCompare(`${a.delivery_date || ''} ${a.delivery_time || ''} ${a.id}`));
         setPickupEntries(records);
       } catch (err) {
         if (active) setError("Unable to load pickup records");
@@ -269,6 +275,57 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     const selectedVendorId = Number(returnForm.vendor_id);
     if (entryMode !== "return" || !selectedVendorId) {
       loadedReturnVendorId.current = null;
+      setReturnDeliveries([]);
+      setReturnDeliveriesLoading(false);
+      setReturnDeliveriesError(null);
+      return undefined;
+    }
+
+    let active = true;
+    const controller = new AbortController();
+    const isInitialVendorLoad = loadedReturnVendorId.current !== selectedVendorId;
+    if (isInitialVendorLoad) setReturnDeliveriesLoading(true);
+    setReturnDeliveriesError(null);
+
+    fetch(apiUrl(`/api/vendor-returns/eligible-deliveries?vendor_id=${encodeURIComponent(selectedVendorId)}`), {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || "Unable to load today's deliveries");
+        if (active) {
+          loadedReturnVendorId.current = selectedVendorId;
+          if (body.business_date) {
+            setReturnForm((current) => ({ ...current, return_date: body.business_date }));
+          }
+          setReturnDeliveries(body.data || []);
+        }
+      })
+      .catch((fetchError) => {
+        if (active && fetchError.name !== "AbortError") {
+          if (isInitialVendorLoad) {
+            setReturnDeliveries([]);
+            setReturnDeliveriesError(fetchError.message || "Unable to load today's deliveries");
+          }
+        }
+      })
+      .finally(() => {
+        if (active) setReturnDeliveriesLoading(false);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [token, entryMode, returnForm.vendor_id, returnEligibilityVersion]);
+
+  useEffect(() => {
+    const selectedVendorId = Number(returnForm.vendor_id);
+    const selectedDeliveryId = Number(returnForm.delivery_id);
+    if (entryMode !== "return" || !selectedVendorId || !selectedDeliveryId) {
+      loadedReturnDeliveryKey.current = null;
       setReturnProducts([]);
       setReturnProductsLoading(false);
       setReturnProductsError(null);
@@ -277,14 +334,15 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
 
     let active = true;
     const controller = new AbortController();
-    const isInitialVendorLoad = loadedReturnVendorId.current !== selectedVendorId;
-    if (isInitialVendorLoad) {
+    const deliveryKey = `${selectedVendorId}-${selectedDeliveryId}`;
+    const isInitialDeliveryLoad = loadedReturnDeliveryKey.current !== deliveryKey;
+    if (isInitialDeliveryLoad) {
       setReturnProducts([]);
       setReturnProductsLoading(true);
     }
     setReturnProductsError(null);
 
-    fetch(apiUrl(`/api/vendor-returns/eligible-products?vendor_id=${encodeURIComponent(selectedVendorId)}`), {
+    fetch(apiUrl(`/api/vendor-returns/eligible-products?vendor_id=${encodeURIComponent(selectedVendorId)}&delivery_id=${encodeURIComponent(selectedDeliveryId)}`), {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
       signal: controller.signal,
@@ -292,24 +350,20 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       .then(async (response) => {
         const body = await response.json();
         if (!response.ok) throw new Error(body.error || "Unable to load delivered products");
-        if (active) {
-          const deliveredProducts = body.data || [];
-          const returnableByProduct = new Map(deliveredProducts.map((product) => [String(product.id), Number(product.returnable_quantity || 0)]));
-          loadedReturnVendorId.current = selectedVendorId;
-          if (body.business_date) {
-            setReturnForm((current) => ({ ...current, return_date: body.business_date }));
-          }
-          setReturnProducts(deliveredProducts);
-          setReturnQuantities((current) => Object.fromEntries(
-            Object.entries(current)
-              .filter(([productId]) => returnableByProduct.has(String(productId)))
-              .map(([productId, quantity]) => [productId, Math.min(Number(quantity || 0), returnableByProduct.get(String(productId)))])
-          ));
-        }
+        if (!active) return;
+        const deliveredProducts = body.data || [];
+        const returnableByProduct = new Map(deliveredProducts.map((product) => [String(product.id), Number(product.returnable_quantity || 0)]));
+        loadedReturnDeliveryKey.current = deliveryKey;
+        setReturnProducts(deliveredProducts);
+        setReturnQuantities((current) => Object.fromEntries(
+          Object.entries(current)
+            .filter(([productId]) => returnableByProduct.has(String(productId)))
+            .map(([productId, quantity]) => [productId, Math.min(Number(quantity || 0), returnableByProduct.get(String(productId)))])
+        ));
       })
       .catch((fetchError) => {
         if (active && fetchError.name !== "AbortError") {
-          if (isInitialVendorLoad) {
+          if (isInitialDeliveryLoad) {
             setReturnProducts([]);
             setReturnProductsError(fetchError.message || "Unable to load delivered products");
           }
@@ -323,7 +377,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       active = false;
       controller.abort();
     };
-  }, [token, entryMode, returnForm.vendor_id, returnEligibilityVersion]);
+  }, [token, entryMode, returnForm.vendor_id, returnForm.delivery_id, returnEligibilityVersion]);
 
   const getDisplayVendorId = (entry) => {
     if (entry?.vendor_code) return entry.vendor_code;
@@ -367,6 +421,10 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   const selectedReturnProduct = useMemo(
     () => products.find((product) => String(product.id) === String(returnForm.product_id)) || null,
     [products, returnForm.product_id]
+  );
+  const selectedReturnDelivery = useMemo(
+    () => returnDeliveries.find((delivery) => String(delivery.id) === String(returnForm.delivery_id)) || null,
+    [returnDeliveries, returnForm.delivery_id]
   );
 
   useEffect(() => {
@@ -452,29 +510,48 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       return_date: getManilaBusinessDate(),
       return_time: "",
       vendor_id: "",
+      delivery_id: "",
       product_id: "",
       quantity: "1",
       product_price: "",
       total_product_price_returned: "0.00",
     });
     setReturnQuantities({});
+    setReturnDeliveries([]);
+    setReturnDeliveriesError(null);
+    setReturnDeliveriesLoading(false);
     setReturnProducts([]);
     setReturnProductsError(null);
     setReturnProductsLoading(false);
     loadedReturnVendorId.current = null;
+    loadedReturnDeliveryKey.current = null;
   };
 
   const handleTransactionVendorChange = (event, isReturnEntry) => {
     const nextVendorId = event.target.value;
     if (isReturnEntry) {
-      setReturnForm((current) => ({ ...current, vendor_id: nextVendorId }));
+      setReturnForm((current) => ({ ...current, vendor_id: nextVendorId, delivery_id: "" }));
       setReturnQuantities({});
+      setReturnDeliveries([]);
+      setReturnDeliveriesError(null);
       setReturnProducts([]);
       setReturnProductsError(null);
+      loadedReturnDeliveryKey.current = null;
+      loadedReturnVendorId.current = null;
       setProductSearch("");
       return;
     }
     setPickupForm((current) => ({ ...current, vendor_id: nextVendorId }));
+  };
+
+  const handleReturnDeliveryChange = (event) => {
+    const nextDeliveryId = event.target.value;
+    setReturnForm((current) => ({ ...current, delivery_id: nextDeliveryId }));
+    setReturnQuantities({});
+    setReturnProducts([]);
+    setReturnProductsError(null);
+    loadedReturnDeliveryKey.current = null;
+    setProductSearch("");
   };
 
   const handleDeleteReturn = async (entry) => {
@@ -526,6 +603,15 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     }
   };
 
+  const togglePaymentProducts = (deliveryId) => {
+    setExpandedPaymentIds((current) => {
+      const next = new Set(current);
+      if (next.has(deliveryId)) next.delete(deliveryId);
+      else next.add(deliveryId);
+      return next;
+    });
+  };
+
   if (historyMode) {
     const isPickupHistory = historyMode === 'pickups';
     const isPaymentHistory = historyMode === 'payments';
@@ -572,19 +658,27 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
               pickupEntries.length === 0 ? <p className="transaction-empty">No vendor deliveries available for payment confirmation.</p> : (
                 <div className="management-table-wrap payment-status-table">
                   <table>
-                    <thead><tr><th>Delivery</th><th>Vendor</th><th>Product(s)</th><th>Date & Time</th><th>Amount</th><th>Status</th><th>Confirmation</th><th>Action</th></tr></thead>
+                    <thead><tr><th>Delivery #</th><th>Vendor</th><th>Original Amount</th><th>Return Deduction</th><th>Amount Due</th><th>Payment Status</th><th>Date & Time</th><th>Action</th></tr></thead>
                     <tbody>{pickupEntries.map((entry) => {
                       const isPaid = String(entry.payment_status || 'UNPAID').toUpperCase() === 'PAID';
-                      return <tr key={`payment-${entry.id}`}>
-                        <td data-label="Delivery">#{entry.id}</td>
-                        <td data-label="Vendor"><strong>{entry.vendor_name || entry.vendor_id}</strong><small>{getDisplayVendorId(entry)}</small></td>
-                        <td data-label="Product(s)">{entry.items || '-'}</td>
-                        <td data-label="Date & Time">{formatDeliveryDate(entry.delivery_date)}<small>{entry.delivery_time || '-'}</small></td>
-                        <td data-label="Amount"><strong>{formatCurrency(entry.total_amount)}</strong></td>
-                        <td data-label="Status"><PaymentStatusBadge status={entry.payment_status} /></td>
-                        <td data-label="Confirmation">{isPaid ? <>{entry.payment_confirmed_by_name || 'Authorized user'}<small>{formatConfirmationDateTime(entry.payment_confirmed_at)}</small></> : <span className="payment-awaiting">Awaiting confirmation</span>}</td>
-                        <td data-label="Action"><button type="button" className="small-button payment-confirm-button" disabled={isPaid || confirmingPaymentId === entry.id} onClick={() => handleConfirmPayment(entry)}>{confirmingPaymentId === entry.id ? 'Confirming…' : isPaid ? 'Confirmed' : 'Confirm Payment'}</button></td>
-                      </tr>;
+                      const isExpanded = expandedPaymentIds.has(entry.id);
+                      const amountDue = Number(entry.amount_due ?? entry.total_amount ?? 0);
+                      return <Fragment key={`payment-${entry.id}`}>
+                        <tr>
+                          <td data-label="Delivery #"><strong>#{entry.id}</strong></td>
+                          <td data-label="Vendor"><strong>{entry.vendor_name || entry.vendor_id}</strong><small>{getDisplayVendorId(entry)}</small></td>
+                          <td data-label="Original Amount">{formatCurrency(entry.original_amount ?? entry.total_amount)}</td>
+                          <td data-label="Return Deduction"><strong className={Number(entry.return_deduction || 0) > 0 ? 'payment-deduction' : ''}>-{formatCurrency(entry.return_deduction || 0)}</strong></td>
+                          <td data-label="Amount Due"><strong className="payment-amount-due">{formatCurrency(amountDue)}</strong></td>
+                          <td data-label="Payment Status"><PaymentStatusBadge status={entry.payment_status} /></td>
+                          <td data-label="Date & Time">{formatDeliveryDate(entry.delivery_date)}<small>{entry.delivery_time || '-'}</small></td>
+                          <td data-label="Action" className="payment-row-actions">
+                            <button type="button" className="payment-products-button" aria-expanded={isExpanded} onClick={() => togglePaymentProducts(entry.id)}>{isExpanded ? 'Hide Products' : 'Show Products'}</button>
+                            <button type="button" className="small-button payment-confirm-button" disabled={isPaid || amountDue <= 0 || confirmingPaymentId === entry.id} onClick={() => handleConfirmPayment(entry)}>{confirmingPaymentId === entry.id ? 'Confirming…' : isPaid ? 'Paid' : amountDue <= 0 ? 'No Amount Due' : 'Confirm Payment'}</button>
+                          </td>
+                        </tr>
+                        {isExpanded && <tr className="payment-products-row"><td colSpan="8"><div><span>Products in delivery #{entry.id}</span><strong>{entry.items || 'No product details available.'}</strong>{isPaid && <small>Confirmed by {entry.payment_confirmed_by_name || 'authorized user'} · {formatConfirmationDateTime(entry.payment_confirmed_at)}</small>}</div></td></tr>}
+                      </Fragment>;
                     })}</tbody>
                   </table>
                 </div>
@@ -611,9 +705,10 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
               returnEntries.length === 0 ? <p className="transaction-empty">No return history available.</p> : (
                 <div className="management-table-wrap">
                   <table>
-                    <thead><tr><th>Return ID</th><th>Vendor</th><th>Products</th><th>Date</th><th>Time</th><th>Qty</th><th>Returned Amount</th>{role !== 'VENDOR' && <th>Action</th>}</tr></thead>
+                    <thead><tr><th>Return ID</th><th>Delivery #</th><th>Vendor</th><th>Products</th><th>Date</th><th>Time</th><th>Qty</th><th>Returned Amount</th>{role !== 'VENDOR' && <th>Action</th>}</tr></thead>
                     <tbody>{returnEntries.map((entry) => <tr key={entry.id}>
                       <td data-label="Return ID">{getDisplayReturnId(entry)}</td>
+                      <td data-label="Delivery #">{entry.delivery_id ? `#${entry.delivery_id}` : 'Legacy'}</td>
                       <td data-label="Vendor">{entry.vendor_name || entry.vendor_id}</td>
                       <td data-label="Products">{entry.items || entry.product_name || entry.product_id}</td>
                       <td data-label="Date">{formatDeliveryDate(entry.return_date)}</td>
@@ -731,7 +826,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       });
       const newBody = await resync.json();
       if (resync.ok) {
-        const records = (newBody.data || []).slice().sort((a, b) => String(b.delivery_date).localeCompare(String(a.delivery_date)));
+        const records = (newBody.data || []).slice().sort((a, b) => `${b.delivery_date || ''} ${b.delivery_time || ''} ${b.id}`.localeCompare(`${a.delivery_date || ''} ${a.delivery_time || ''} ${a.id}`));
         setPickupEntries(records);
       }
     } catch (err) {
@@ -745,6 +840,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     setStatus(null);
 
     const vendorId = Number(returnForm.vendor_id);
+    const deliveryId = Number(returnForm.delivery_id);
 
     if (!returnForm.return_date || !returnForm.return_time) {
       setError("Return date and return time are required.");
@@ -752,6 +848,10 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     }
     if (!vendorId) {
       setError("Please select a vendor.");
+      return;
+    }
+    if (!deliveryId) {
+      setError("Please select one of this vendor's deliveries from today.");
       return;
     }
     if (!transactionItems.length) {
@@ -766,6 +866,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
         headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           vendor_id: vendorId,
+          delivery_id: deliveryId,
           return_date: returnForm.return_date,
           return_time: returnForm.return_time,
           items: transactionItems.map((item) => ({
@@ -791,6 +892,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
         return_code: body.data?.return_code || (primaryReturnId ? `RTN-${String(primaryReturnId).padStart(4, "0")}` : null),
         return_batch_id: body.data?.return_batch_id || null,
         vendor_id: vendorId,
+        delivery_id: deliveryId,
         vendor_name: selectedVendor?.name,
         return_date: returnForm.return_date,
         return_time: returnForm.return_time,
@@ -916,7 +1018,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                 <button type="button" className="transaction-back" onClick={closeTransactionEntry}>← Back to POS</button>
                 <span className="transaction-eyebrow">{isPickupEntry ? "Vendor fulfillment" : isReturnEntry ? "Vendor returns" : "Point-of-sale checkout"}</span>
                 <h2>{isPickupEntry ? (pickupMode === "edit" ? "Edit Vendor Pickup" : "Add Vendor Pickup") : isReturnEntry ? "Record Vendor Return" : "Record Sale"}</h2>
-                <p>{isPickupEntry ? "Choose the vendor, pickup schedule, and every product included in this delivery." : isReturnEntry ? "Choose a vendor and return products from today's unpaid deliveries." : "Add products and quantities to create one complete recorded sale."}</p>
+                <p>{isPickupEntry ? "Choose the vendor, pickup schedule, and every product included in this delivery." : isReturnEntry ? "Choose a vendor, select one of today's deliveries, then record its returned products." : "Add products and quantities to create one complete recorded sale."}</p>
               </div>
               <button type="button" className="small-button" onClick={closeTransactionEntry}>Cancel</button>
             </header>
@@ -924,7 +1026,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
             {error && <p className="error-message">{error}</p>}
 
             {(isPickupEntry || isReturnEntry) && (
-              <section className={`transaction-details ${isPickupEntry && pickupMode === "edit" ? "has-payment-status" : ""}`} aria-label={isReturnEntry ? "Return details" : "Pickup details"}>
+              <section className={`transaction-details ${isPickupEntry && pickupMode === "edit" ? "has-payment-status" : ""} ${isReturnEntry ? "is-return-details" : ""}`} aria-label={isReturnEntry ? "Return details" : "Pickup details"}>
                 <label>
                   {isReturnEntry ? "Return date" : "Pickup date"}
                   <input type="date" value={isReturnEntry ? returnForm.return_date : pickupForm.pickup_date} onChange={(event) => isReturnEntry ? setReturnForm({ ...returnForm, return_date: event.target.value }) : setPickupForm({ ...pickupForm, pickup_date: event.target.value })} readOnly={isReturnEntry} min={isReturnEntry ? returnForm.return_date : undefined} max={isReturnEntry ? returnForm.return_date : undefined} required />
@@ -945,6 +1047,25 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                   </select>
                   {selectedVendor && <small>{selectedVendor.username ? `@${selectedVendor.username} · ` : ""}{selectedVendor.vendor_code || `VND-${String(selectedVendor.id).padStart(4, "0")}`}</small>}
                 </label>
+                {isReturnEntry && (
+                  <label className="transaction-delivery-field">
+                    Delivery
+                    <select value={returnForm.delivery_id} onChange={handleReturnDeliveryChange} disabled={!returnForm.vendor_id || returnDeliveriesLoading} required>
+                      <option value="">{returnDeliveriesLoading ? "Loading today's deliveries…" : "Select delivery"}</option>
+                      {returnDeliveries.map((delivery) => {
+                        const paid = String(delivery.payment_status || "UNPAID").toUpperCase() === "PAID";
+                        return <option key={delivery.id} value={delivery.id} disabled={paid || !delivery.returnable}>
+                          #{delivery.id} · {delivery.delivery_time || "No time"} · {formatCurrency(delivery.amount_due)} · {paid ? "Paid (closed)" : "Unpaid"}
+                        </option>;
+                      })}
+                    </select>
+                    {returnDeliveriesError
+                      ? <small className="transaction-field-error">{returnDeliveriesError}</small>
+                      : selectedReturnDelivery
+                        ? <small>Original {formatCurrency(selectedReturnDelivery.original_amount)} · Previous returns -{formatCurrency(selectedReturnDelivery.return_deduction)} · Due {formatCurrency(selectedReturnDelivery.amount_due)}</small>
+                        : returnForm.vendor_id && !returnDeliveriesLoading && <small>{returnDeliveries.length ? "Paid deliveries are shown but closed for returns." : "No deliveries were recorded for this vendor today."}</small>}
+                  </label>
+                )}
                 {isPickupEntry && pickupMode === "edit" && (
                   <label className="transaction-payment-field">
                     Payment status
@@ -962,14 +1083,16 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
               <div className="transaction-catalog-heading">
                 <div>
                   <span className="transaction-eyebrow">Products</span>
-                  <h3>{isReturnEntry && !entryForm.vendor_id ? "Select a vendor first" : `Build this ${isPickupEntry ? "pickup" : isReturnEntry ? "return" : "sale"}`}</h3>
+                  <h3>{isReturnEntry && !entryForm.vendor_id ? "Select a vendor first" : isReturnEntry && !returnForm.delivery_id ? "Select a delivery" : `Build this ${isPickupEntry ? "pickup" : isReturnEntry ? "return" : "sale"}`}</h3>
                   <p>{isReturnEntry
-                    ? entryForm.vendor_id
-                      ? "Only products from today's unpaid deliveries are shown. Enter the quantity being returned."
-                      : "Choose a vendor above to load products from today's unpaid deliveries."
+                    ? !entryForm.vendor_id
+                      ? "Choose a vendor above to load all deliveries recorded today."
+                      : !returnForm.delivery_id
+                        ? "Choose an unpaid delivery above to load only the products included in it."
+                        : "Only products from the selected delivery are shown. Enter the quantity being returned."
                     : "Enter a quantity for each product you want to include."}</p>
                 </div>
-                {(!isReturnEntry || entryForm.vendor_id) && (
+                {(!isReturnEntry || returnForm.delivery_id) && (
                   <label className="transaction-search">
                     <span className="sr-only">Search products</span>
                     <input value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Search products or categories" />
@@ -980,14 +1103,19 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
               {isReturnEntry && !entryForm.vendor_id ? (
                 <div className="transaction-vendor-required">
                   <span aria-hidden="true">↖</span>
-                  <div><strong>Vendor selection required</strong><p>The product list will appear after you choose a vendor.</p></div>
+                  <div><strong>Vendor selection required</strong><p>Choose a vendor to load today's delivery records.</p></div>
+                </div>
+              ) : isReturnEntry && !returnForm.delivery_id ? (
+                <div className="transaction-vendor-required">
+                  <span aria-hidden="true">↓</span>
+                  <div><strong>Delivery selection required</strong><p>Choose an unpaid delivery to view its products and available return quantities.</p></div>
                 </div>
               ) : isReturnEntry && returnProductsLoading ? (
                 <p className="transaction-empty">Loading products delivered to this vendor...</p>
               ) : isReturnEntry && returnProductsError ? (
                 <p className="transaction-empty transaction-empty-error">{returnProductsError}</p>
               ) : filteredCatalogProducts.length === 0 ? (
-                <p className="transaction-empty">{isReturnEntry && !productSearch ? "This vendor has no products from today's unpaid deliveries remaining for return." : "No products match your search."}</p>
+                <p className="transaction-empty">{isReturnEntry && !productSearch ? "This delivery has no products remaining for return." : "No products match your search."}</p>
               ) : (
                 <div className="transaction-product-grid">
                   {filteredCatalogProducts.map((product) => {
@@ -1048,8 +1176,15 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                   </ul>
                 ) : <p>Choose product quantities to build this {isReturnEntry ? "return" : "record"}.</p>}
               </div>
+              {isReturnEntry && selectedReturnDelivery && (
+                <div className="return-delivery-calculation">
+                  <div><span>Current amount due</span><strong>{formatCurrency(selectedReturnDelivery.amount_due)}</strong></div>
+                  <div><span>This return deduction</span><strong>-{formatCurrency(transactionTotal)}</strong></div>
+                  <div className="is-result"><span>Updated amount due</span><strong>{formatCurrency(Math.max(Number(selectedReturnDelivery.amount_due || 0) - transactionTotal, 0))}</strong></div>
+                </div>
+              )}
               <div className="transaction-total">
-                <span>Total</span>
+                <span>{isReturnEntry ? "Return Total" : "Total"}</span>
                 <strong>{formatCurrency(transactionTotal)}</strong>
               </div>
               <button className="primary-button" type="submit" disabled={submitting || !transactionItems.length}>

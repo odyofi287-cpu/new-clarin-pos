@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { apiUrl } from "./api";
 
 function formatCurrency(value) {
@@ -198,6 +198,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
   const [showCreateProductWindow, setShowCreateProductWindow] = useState(false);
   const [showEditProductWindow, setShowEditProductWindow] = useState(false);
   const [showCreateAccountWindow, setShowCreateAccountWindow] = useState(false);
+  const [expandedVendorDeliveryIds, setExpandedVendorDeliveryIds] = useState(() => new Set());
   const [createProductForm, setCreateProductForm] = useState({ name: "", category: "", selling_price: "", current_stock: "", image_url: "" });
   const [createAccountForm, setCreateAccountForm] = useState({ name: "", role: "ADMIN", vendor_id: "", contact_person: "", contact_number: "" });
 
@@ -307,8 +308,16 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
     const unpaidDeliveryCount = Number(paymentSummary.unpaid_delivery_count || 0);
     const returnCount = Number(paymentSummary.return_count || 0);
     const dailyHistory = data.vendor_summary.daily_history || [];
-    const netPayableAmount = Number(paymentSummary.unpaid_delivery_amount || 0)
-      - Number(paymentSummary.return_adjustment_amount || 0);
+    const todayDeliveryAccounts = data.vendor_summary.today_delivery_accounts || [];
+    const netPayableAmount = Number(paymentSummary.net_payable_amount || 0);
+    const toggleVendorDeliveryProducts = (deliveryId) => {
+      setExpandedVendorDeliveryIds((current) => {
+        const next = new Set(current);
+        if (next.has(deliveryId)) next.delete(deliveryId);
+        else next.add(deliveryId);
+        return next;
+      });
+    };
 
     return (
       <div className="dashboard-shell vendor-dashboard">
@@ -373,7 +382,29 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
               <div className="vendor-payment-amount"><span>After returns</span><strong>{formatCurrency(netPayableAmount)}</strong></div>
             </article>
           </div>
-          <p className="vendor-payment-formula">Net payable total = unpaid deliveries − vendor returns.</p>
+          <div className="vendor-today-account-table management-table-wrap">
+            {todayDeliveryAccounts.length === 0 ? <p>No deliveries have been recorded for today.</p> : (
+              <table>
+                <thead><tr><th>Delivery #</th><th>Original Amount</th><th>Return Deduction</th><th>Amount Due</th><th>Payment Status</th><th>Time</th><th>Products</th></tr></thead>
+                <tbody>{todayDeliveryAccounts.map((delivery) => {
+                  const expanded = expandedVendorDeliveryIds.has(delivery.id);
+                  return <Fragment key={`vendor-account-${delivery.id}`}>
+                    <tr>
+                      <td data-label="Delivery #"><strong>#{delivery.id}</strong></td>
+                      <td data-label="Original Amount">{formatCurrency(delivery.original_amount)}</td>
+                      <td data-label="Return Deduction"><strong className="vendor-account-deduction">-{formatCurrency(delivery.return_deduction)}</strong></td>
+                      <td data-label="Amount Due"><strong>{formatCurrency(delivery.amount_due)}</strong></td>
+                      <td data-label="Payment Status"><span className={`vendor-delivery-payment ${String(delivery.payment_status).toUpperCase() === "PAID" ? "is-paid" : "is-unpaid"}`}>{String(delivery.payment_status).toUpperCase() === "PAID" ? "Paid" : "Unpaid"}</span></td>
+                      <td data-label="Time">{formatRecordTime(delivery.delivery_time)}</td>
+                      <td data-label="Products"><button type="button" className="vendor-products-toggle" aria-expanded={expanded} onClick={() => toggleVendorDeliveryProducts(delivery.id)}>{expanded ? "Hide Products" : "Show Products"}</button></td>
+                    </tr>
+                    {expanded && <tr className="vendor-products-detail"><td colSpan="7">{delivery.items || "No product details available."}</td></tr>}
+                  </Fragment>;
+                })}</tbody>
+              </table>
+            )}
+          </div>
+          <p className="vendor-payment-formula">Each delivery amount due is its original amount minus returns assigned to that delivery. Net payable includes unpaid deliveries only.</p>
         </section>
 
         <section className="dashboard-card vendor-daily-history">

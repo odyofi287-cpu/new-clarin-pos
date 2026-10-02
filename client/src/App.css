@@ -1859,6 +1859,31 @@ tbody tr:last-child td {
   gap: 1rem;
 }
 
+.vendor-today-account-table {
+  margin-top: 1rem;
+}
+
+.vendor-today-account-table table { min-width: 900px; }
+.vendor-account-deduction { color: #e06a1a; }
+.vendor-products-toggle {
+  background: #eef5ff;
+  border: 1px solid #c8dcf4;
+  border-radius: 8px;
+  color: #2465ad;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 0.48rem 0.65rem;
+}
+.vendor-products-toggle::before { display: none; }
+.vendor-products-toggle:hover { background: #dfedff; box-shadow: none; transform: none; }
+.vendor-products-detail td {
+  background: #f5f9fe;
+  color: #345d8c;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.75rem 1rem;
+}
+
 .vendor-daily-history td small {
   color: #7489a7;
   display: block;

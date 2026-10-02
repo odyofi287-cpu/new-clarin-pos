@@ -1,7 +1,7 @@
 import express from "express";
 import { requireRole } from "../middleware/auth.js";
 import { publishDataChange } from "../events.js";
-import { dbAll, dbGet, dbRun, withTransaction } from "./dbCompat.js";
+import { dbAll, dbGet, dbRun, isInMemoryDb, withTransaction } from "./dbCompat.js";
 import { getBusinessDate } from "../businessDate.js";
 
 const router = express.Router();
@@ -13,6 +13,46 @@ function normalizeDeliveryDate(value) {
 
   const parsed = new Date(text);
   return Number.isNaN(parsed.getTime()) ? getBusinessDate() : parsed.toISOString().slice(0, 10);
+}
+
+async function addDeliveryAccountAmounts(db, deliveries) {
+  const rows = Array.isArray(deliveries) ? deliveries : [deliveries];
+  if (!rows.length || !rows[0]) return Array.isArray(deliveries) ? [] : deliveries;
+
+  let returnRows;
+  if (isInMemoryDb(db)) {
+    returnRows = db.vendor_returns
+      .filter((entry) => entry.delivery_id != null)
+      .map((entry) => ({ delivery_id: entry.delivery_id, total_product_price_returned: entry.total_product_price_returned }));
+  } else {
+    returnRows = await dbAll(
+      db,
+      `SELECT delivery_id, SUM(total_product_price_returned) AS return_deduction
+       FROM vendor_returns WHERE delivery_id IS NOT NULL GROUP BY delivery_id`,
+      [],
+      `SELECT delivery_id, SUM(total_product_price_returned) AS return_deduction
+       FROM vendor_returns WHERE delivery_id IS NOT NULL GROUP BY delivery_id`
+    );
+  }
+
+  const deductions = new Map();
+  for (const entry of returnRows) {
+    const deliveryId = Number(entry.delivery_id);
+    const amount = Number(entry.return_deduction ?? entry.total_product_price_returned ?? 0);
+    deductions.set(deliveryId, (deductions.get(deliveryId) || 0) + amount);
+  }
+
+  const enriched = rows.map((delivery) => {
+    const originalAmount = Number(delivery.total_amount ?? delivery.original_amount ?? 0);
+    const returnDeduction = deductions.get(Number(delivery.id)) || 0;
+    return {
+      ...delivery,
+      original_amount: originalAmount,
+      return_deduction: returnDeduction,
+      amount_due: Math.max(originalAmount - returnDeduction, 0),
+    };
+  });
+  return Array.isArray(deliveries) ? enriched : enriched[0];
 }
 
 router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
@@ -51,7 +91,8 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (re
        LEFT JOIN delivery_items di ON di.delivery_id = d.id
        LEFT JOIN products p ON p.id = di.product_id
        ${pgWhereClause}
-       GROUP BY d.id, v.id, confirmer.id`,
+       GROUP BY d.id, v.id, confirmer.id
+       ORDER BY d.delivery_date DESC, d.delivery_time DESC NULLS LAST, d.id DESC`,
       params,
       `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.delivery_time, d.total_amount,
               COALESCE(d.payment_status, 'UNPAID') AS payment_status, d.payment_confirmed_at, d.payment_confirmed_by,
@@ -63,10 +104,11 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (re
        LEFT JOIN delivery_items di ON di.delivery_id = d.id
        LEFT JOIN products p ON p.id = di.product_id
        ${sqliteWhereClause}
-       GROUP BY d.id, v.id`
+       GROUP BY d.id, v.id
+       ORDER BY d.delivery_date DESC, d.delivery_time DESC, d.id DESC`
     );
 
-    res.json({ data: deliveries });
+    res.json({ data: await addDeliveryAccountAmounts(req.db, deliveries) });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to load deliveries" });
@@ -127,7 +169,7 @@ router.get("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async 
        WHERE di.delivery_id = ?`
     );
 
-    res.json({ data: { ...delivery, items } });
+    res.json({ data: await addDeliveryAccountAmounts(req.db, { ...delivery, items }) });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to load delivery" });
@@ -363,7 +405,7 @@ router.put("/:id", requireRole("SUPERADMIN"), async (req, res) => {
     );
 
     publishDataChange("delivery");
-    res.json({ data: { ...updatedDelivery, items: updatedItems } });
+    res.json({ data: await addDeliveryAccountAmounts(req.db, { ...updatedDelivery, items: updatedItems }) });
   } catch (error) {
     console.error(error);
     res.status(400).json({ error: error.message || "Failed to update vendor pickup" });
@@ -421,7 +463,7 @@ router.post("/:id/confirm-payment", requireRole("SUPERADMIN", "ADMIN", "STAFF"),
     );
 
     publishDataChange("delivery");
-    res.json({ data: updatedDelivery });
+    res.json({ data: await addDeliveryAccountAmounts(req.db, updatedDelivery) });
   } catch (error) {
     console.error(error);
     res.status(400).json({ error: error.message || "Failed to confirm delivery payment" });

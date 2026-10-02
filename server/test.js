@@ -5,7 +5,7 @@ process.env.NODE_ENV = "test";
 
 const { default: app } = await import("./app.js");
 const { getBusinessDate } = await import("./businessDate.js");
-const { buildCombinedSalesPeriods, buildSalesCalendar, buildVendorPaymentSummary, buildVendorDailyPaymentHistory } = await import("./routes/dashboard.js");
+const { buildCombinedSalesPeriods, buildSalesCalendar, buildVendorPaymentSummary, buildVendorDailyPaymentHistory, buildVendorDeliveryAccounts } = await import("./routes/dashboard.js");
 const srv = app.listen(0);
 const port = srv.address().port;
 const base = `http://127.0.0.1:${port}`;
@@ -96,6 +96,30 @@ test("Vendor payment summary excludes paid deliveries from net payable", () => {
   assert.strictEqual(summary.return_adjustment_amount, 0);
   assert.strictEqual(summary.net_payable_amount, 0);
   assert.strictEqual(summary.net_account_amount, 0);
+});
+
+test("Vendor delivery accounts apply return deductions only to their corresponding delivery", () => {
+  const deliveries = [
+    { id: 10, delivery_date: "2026-10-02", delivery_time: "09:00", payment_status: "UNPAID", total_amount: 500 },
+    { id: 11, delivery_date: "2026-10-02", delivery_time: "10:00", payment_status: "PAID", total_amount: 300 },
+  ];
+  const returns = [
+    { id: 1, delivery_id: 10, return_batch_id: "batch-a", total_product_price_returned: 125 },
+    { id: 2, delivery_id: 11, return_batch_id: "batch-b", total_product_price_returned: 50 },
+  ];
+
+  const accounts = buildVendorDeliveryAccounts(deliveries, returns);
+  const unpaid = accounts.find((delivery) => delivery.id === 10);
+  const paid = accounts.find((delivery) => delivery.id === 11);
+  assert.strictEqual(unpaid.original_amount, 500);
+  assert.strictEqual(unpaid.return_deduction, 125);
+  assert.strictEqual(unpaid.amount_due, 375);
+  assert.strictEqual(paid.amount_due, 250);
+
+  const summary = buildVendorPaymentSummary(deliveries, returns);
+  assert.strictEqual(summary.net_payable_amount, 375, "A return from a paid delivery must not reduce another unpaid delivery");
+  assert.strictEqual(summary.paid_delivery_amount, 250);
+  assert.strictEqual(summary.return_adjustment_amount, 175);
 });
 
 test("Vendor daily payment history separates account totals by business date", () => {
@@ -272,7 +296,14 @@ test("Staff can record and list vendor returns and exclude them from sales total
   assert(product, "Expected a product for return testing");
   assert(secondProduct, "Expected a second product for a multi-product return");
 
-  const eligibleBeforeRes = await fetch(`${base}/api/vendor-returns/eligible-products?vendor_id=1`, { headers: { Authorization: `Bearer ${token}` } });
+  const deliveriesRes = await fetch(`${base}/api/vendor-returns/eligible-deliveries?vendor_id=1`, { headers: { Authorization: `Bearer ${token}` } });
+  assert.strictEqual(deliveriesRes.status, 200);
+  const deliveryOptions = (await deliveriesRes.json()).data;
+  const selectedDelivery = deliveryOptions.find((delivery) => delivery.returnable && delivery.items.includes(product.name) && delivery.items.includes(secondProduct.name));
+  assert(selectedDelivery, "Expected today's multi-product delivery in the delivery selector");
+  assert(Object.hasOwn(selectedDelivery, "original_amount") && Object.hasOwn(selectedDelivery, "amount_due"), "Delivery options should include account amounts");
+
+  const eligibleBeforeRes = await fetch(`${base}/api/vendor-returns/eligible-products?vendor_id=1&delivery_id=${selectedDelivery.id}`, { headers: { Authorization: `Bearer ${token}` } });
   assert.strictEqual(eligibleBeforeRes.status, 200);
   const eligibleBeforeBody = await eligibleBeforeRes.json();
   assert.strictEqual(eligibleBeforeBody.business_date, today);
@@ -282,14 +313,15 @@ test("Staff can record and list vendor returns and exclude them from sales total
   const firstEligibleBefore = eligibleBefore.find((item) => item.id === product.id);
   const secondEligibleBefore = eligibleBefore.find((item) => item.id === secondProduct.id);
   assert(firstEligibleBefore && secondEligibleBefore, "Expected both delivered products in the vendor-scoped catalog");
-  assert.strictEqual(Number(firstEligibleBefore.delivered_quantity), 24, "Paid delivery units must not remain return-eligible");
-  assert.strictEqual(Number(secondEligibleBefore.delivered_quantity), 12, "Only today's unpaid delivery units should be return-eligible");
+  assert.strictEqual(Number(firstEligibleBefore.delivered_quantity), 4, "Only units in the selected delivery should be return-eligible");
+  assert.strictEqual(Number(secondEligibleBefore.delivered_quantity), 2, "The selected delivery should control available return units");
 
   const backdatedReturnRes = await fetch(`${base}/api/vendor-returns`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({
       vendor_id: 1,
+      delivery_id: selectedDelivery.id,
       return_date: '2026-01-01',
       return_time: '08:00',
       items: [{ product_id: product.id, quantity: 1 }],
@@ -305,6 +337,7 @@ test("Staff can record and list vendor returns and exclude them from sales total
       return_date: today,
       return_time: '09:45',
       vendor_id: 1,
+      delivery_id: selectedDelivery.id,
       items: [
         { product_id: product.id, quantity: 2, total_product_price_returned: 70 },
         { product_id: secondProduct.id, quantity: 1, total_product_price_returned: 20 },
@@ -318,9 +351,10 @@ test("Staff can record and list vendor returns and exclude them from sales total
   assert.strictEqual(created.data.return_id, Math.min(...created.data.items.map((item) => item.id)));
   assert.strictEqual(created.data.return_code, `RTN-${String(created.data.return_id).padStart(4, '0')}`);
   assert.strictEqual(created.data.items[0].vendor_id, 1);
+  assert.strictEqual(created.data.items[0].delivery_id, selectedDelivery.id);
   assert.strictEqual(created.data.items[0].quantity, 2);
 
-  const eligibleAfterCreateRes = await fetch(`${base}/api/vendor-returns/eligible-products?vendor_id=1`, { headers: { Authorization: `Bearer ${token}` } });
+  const eligibleAfterCreateRes = await fetch(`${base}/api/vendor-returns/eligible-products?vendor_id=1&delivery_id=${selectedDelivery.id}`, { headers: { Authorization: `Bearer ${token}` } });
   assert.strictEqual(eligibleAfterCreateRes.status, 200);
   const eligibleAfterCreate = (await eligibleAfterCreateRes.json()).data;
   assert.strictEqual(
@@ -333,6 +367,12 @@ test("Staff can record and list vendor returns and exclude them from sales total
     secondEligibleBefore.returnable_quantity - 1
   );
 
+  const deliveryAccountsRes = await fetch(`${base}/api/deliveries`, { headers: { Authorization: `Bearer ${token}` } });
+  const updatedDeliveryAccount = (await deliveryAccountsRes.json()).data.find((delivery) => delivery.id === selectedDelivery.id);
+  const expectedDeduction = (Number(firstEligibleBefore.selling_price) * 2) + Number(secondEligibleBefore.selling_price);
+  assert.strictEqual(updatedDeliveryAccount.return_deduction, expectedDeduction);
+  assert.strictEqual(updatedDeliveryAccount.amount_due, Math.max(Number(updatedDeliveryAccount.original_amount) - expectedDeduction, 0));
+
   const listRes = await fetch(`${base}/api/vendor-returns`, { headers: { Authorization: `Bearer ${token}` } });
   assert.strictEqual(listRes.status, 200);
   const list = await listRes.json();
@@ -341,6 +381,7 @@ test("Staff can record and list vendor returns and exclude them from sales total
   assert(returnBatch, 'Expected multi-product return to be grouped in history');
   assert.strictEqual(returnBatch.id, Math.min(...created.data.items.map((item) => item.id)), 'Expected grouped history to use a numeric return ID');
   assert.strictEqual(returnBatch.return_code, created.data.return_code, 'Expected a stable formatted return ID');
+  assert.strictEqual(returnBatch.delivery_id, selectedDelivery.id);
   assert.strictEqual(Number(returnBatch.quantity), 3);
   assert(returnBatch.items.some((item) => item.includes(product.name)) && returnBatch.items.some((item) => item.includes(secondProduct.name)), 'Expected grouped return products');
   assert.deepStrictEqual([...returnBatch.return_ids].sort((a, b) => a - b), created.data.items.map((item) => item.id).sort((a, b) => a - b));
@@ -364,7 +405,7 @@ test("Staff can record and list vendor returns and exclude them from sales total
   const afterDelete = await afterDeleteRes.json();
   assert(!afterDelete.data.some((entry) => entry.return_batch_id === created.data.return_batch_id), 'Expected every item in the return batch to be removed');
 
-  const eligibleAfterDeleteRes = await fetch(`${base}/api/vendor-returns/eligible-products?vendor_id=1`, { headers: { Authorization: `Bearer ${token}` } });
+  const eligibleAfterDeleteRes = await fetch(`${base}/api/vendor-returns/eligible-products?vendor_id=1&delivery_id=${selectedDelivery.id}`, { headers: { Authorization: `Bearer ${token}` } });
   const eligibleAfterDelete = (await eligibleAfterDeleteRes.json()).data;
   assert.strictEqual(eligibleAfterDelete.find((item) => item.id === product.id)?.returnable_quantity, firstEligibleBefore.returnable_quantity);
 
@@ -373,6 +414,7 @@ test("Staff can record and list vendor returns and exclude them from sales total
     headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({
       vendor_id: 1,
+      delivery_id: selectedDelivery.id,
       return_date: today,
       return_time: '10:00',
       items: [{ product_id: product.id, quantity: firstEligibleBefore.returnable_quantity + 1 }],
@@ -380,11 +422,15 @@ test("Staff can record and list vendor returns and exclude them from sales total
   });
   assert.strictEqual(excessiveReturnRes.status, 400, "Returns must not exceed the vendor's remaining delivered units");
 
+  const vendorTwoDeliveriesRes = await fetch(`${base}/api/vendor-returns/eligible-deliveries?vendor_id=2`, { headers: { Authorization: `Bearer ${token}` } });
+  const vendorTwoDelivery = (await vendorTwoDeliveriesRes.json()).data.find((delivery) => delivery.returnable);
+  assert(vendorTwoDelivery, "Expected a current-day delivery for the second vendor");
   const undeliveredProductRes = await fetch(`${base}/api/vendor-returns`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({
       vendor_id: 2,
+      delivery_id: vendorTwoDelivery.id,
       return_date: today,
       return_time: '10:15',
       items: [{ product_id: product.id, quantity: 1, total_product_price_returned: product.selling_price }],
@@ -398,10 +444,14 @@ test("Vendor can view returns but cannot create or delete them", async () => {
   const listRes = await fetch(`${base}/api/vendor-returns`, { headers: { Authorization: `Bearer ${token}` } });
   assert.strictEqual(listRes.status, 200);
 
-  const ownProductsRes = await fetch(`${base}/api/vendor-returns/eligible-products?vendor_id=1`, { headers: { Authorization: `Bearer ${token}` } });
+  const ownDeliveriesRes = await fetch(`${base}/api/vendor-returns/eligible-deliveries?vendor_id=1`, { headers: { Authorization: `Bearer ${token}` } });
+  assert.strictEqual(ownDeliveriesRes.status, 200);
+  const ownDelivery = (await ownDeliveriesRes.json()).data.find((delivery) => delivery.returnable);
+  assert(ownDelivery);
+  const ownProductsRes = await fetch(`${base}/api/vendor-returns/eligible-products?vendor_id=1&delivery_id=${ownDelivery.id}`, { headers: { Authorization: `Bearer ${token}` } });
   assert.strictEqual(ownProductsRes.status, 200);
-  const otherProductsRes = await fetch(`${base}/api/vendor-returns/eligible-products?vendor_id=2`, { headers: { Authorization: `Bearer ${token}` } });
-  assert.strictEqual(otherProductsRes.status, 403);
+  const otherDeliveriesRes = await fetch(`${base}/api/vendor-returns/eligible-deliveries?vendor_id=2`, { headers: { Authorization: `Bearer ${token}` } });
+  assert.strictEqual(otherDeliveriesRes.status, 403);
 
   const createRes = await fetch(`${base}/api/vendor-returns`, {
     method: 'POST',
@@ -896,6 +946,11 @@ test("Vendor dashboard returns vendor-only delivery summary", async () => {
   assert.strictEqual(body.data.vendor_summary.account_date, getBusinessDate());
   assert(typeof body.data.vendor_summary.today_delivery_count === 'number');
   assert(body.data.vendor_summary.payment_summary);
+  assert(Array.isArray(body.data.vendor_summary.today_delivery_accounts));
+  assert.strictEqual(body.data.vendor_summary.today_delivery_accounts.length, body.data.vendor_summary.today_delivery_count);
+  assert(body.data.vendor_summary.today_delivery_accounts.every((delivery) =>
+    ["original_amount", "return_deduction", "amount_due", "payment_status", "items"].every((field) => Object.hasOwn(delivery, field))
+  ));
   assert(Array.isArray(body.data.vendor_summary.daily_history));
   assert(body.data.vendor_summary.daily_history.length > 1, "Expected prior daily account summaries to remain in history");
   assert.strictEqual(body.data.vendor_summary.daily_history[0].account_date, getBusinessDate());

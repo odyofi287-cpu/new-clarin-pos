@@ -577,11 +577,12 @@ class InMemoryDB {
 
     if (normalized.startsWith("INSERT INTO VENDOR_RETURNS")) {
       return {
-        run: (vendor_id, product_id, quantity, total_product_price_returned, return_date, return_time, created_by, return_batch_id) => {
+        run: (vendor_id, delivery_id, product_id, quantity, total_product_price_returned, return_date, return_time, created_by, return_batch_id) => {
           const id = this.vendor_returns.length + 1;
           const row = {
             id,
             vendor_id,
+            delivery_id,
             product_id,
             quantity,
             total_product_price_returned,
@@ -670,7 +671,21 @@ class PostgresDB {
     await this.pool.query("UPDATE deliveries SET payment_status = 'UNPAID' WHERE payment_status IS NULL OR payment_status NOT IN ('UNPAID', 'PAID')");
     await this.pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_picture TEXT");
     await this.pool.query("ALTER TABLE vendor_returns ADD COLUMN IF NOT EXISTS return_batch_id TEXT");
+    await this.pool.query("ALTER TABLE vendor_returns ADD COLUMN IF NOT EXISTS delivery_id INTEGER");
+    await this.pool.query(`DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conname = 'vendor_returns_delivery_id_fkey'
+            AND conrelid = 'vendor_returns'::regclass
+        ) THEN
+          ALTER TABLE vendor_returns
+          ADD CONSTRAINT vendor_returns_delivery_id_fkey
+          FOREIGN KEY (delivery_id) REFERENCES deliveries(id) ON DELETE SET NULL;
+        END IF;
+      END $$`);
     await this.pool.query("CREATE INDEX IF NOT EXISTS idx_vendor_returns_batch_id ON vendor_returns(return_batch_id)");
+    await this.pool.query("CREATE INDEX IF NOT EXISTS idx_vendor_returns_delivery_id ON vendor_returns(delivery_id)");
     if (shouldSeedInitialData()) {
       await this.seed();
     }
@@ -831,7 +846,11 @@ function migrateSchema(db) {
   if (!returnColumns.some((column) => column.name === "return_batch_id")) {
     db.exec("ALTER TABLE vendor_returns ADD COLUMN return_batch_id TEXT");
   }
+  if (!returnColumns.some((column) => column.name === "delivery_id")) {
+    db.exec("ALTER TABLE vendor_returns ADD COLUMN delivery_id INTEGER REFERENCES deliveries(id) ON DELETE SET NULL");
+  }
   db.exec("CREATE INDEX IF NOT EXISTS idx_vendor_returns_batch_id ON vendor_returns(return_batch_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_vendor_returns_delivery_id ON vendor_returns(delivery_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_deliveries_delivery_date ON deliveries(delivery_date)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_delivery_items_delivery_id ON delivery_items(delivery_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_delivery_items_product_id ON delivery_items(product_id)");
@@ -961,6 +980,7 @@ function createSchema(db) {
     CREATE TABLE IF NOT EXISTS vendor_returns (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       vendor_id INTEGER NOT NULL,
+      delivery_id INTEGER,
       product_id INTEGER NOT NULL,
       quantity INTEGER NOT NULL,
       total_product_price_returned REAL NOT NULL DEFAULT 0,
@@ -970,6 +990,7 @@ function createSchema(db) {
       return_batch_id TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (vendor_id) REFERENCES vendors(id),
+      FOREIGN KEY (delivery_id) REFERENCES deliveries(id) ON DELETE SET NULL,
       FOREIGN KEY (product_id) REFERENCES products(id),
       FOREIGN KEY (created_by) REFERENCES users(id)
     );
