@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiUrl } from "./api";
 import "./history.css";
 import "./transaction-entry.css";
@@ -623,6 +623,9 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
         : 'Review grouped return records and every product included in each return.';
     const paidDeliveryCount = pickupEntries.filter((entry) => String(entry.payment_status || 'UNPAID').toUpperCase() === 'PAID').length;
     const unpaidDeliveryCount = pickupEntries.length - paidDeliveryCount;
+    const outstandingPaymentAmount = pickupEntries
+      .filter((entry) => String(entry.payment_status || 'UNPAID').toUpperCase() !== 'PAID')
+      .reduce((sum, entry) => sum + Number(entry.amount_due ?? entry.total_amount ?? 0), 0);
 
     return (
       <div className="dashboard-shell">
@@ -648,39 +651,59 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
               </div>
               {isPaymentHistory && (
                 <div className="payment-status-summary" aria-label="Payment status totals">
-                  <span className="is-paid">{paidDeliveryCount} paid</span>
-                  <span className="is-unpaid">{unpaidDeliveryCount} unpaid</span>
+                  <span className="is-paid"><b>{paidDeliveryCount}</b> Paid</span>
+                  <span className="is-unpaid"><b>{unpaidDeliveryCount}</b> Unpaid</span>
+                  <span className="is-due"><b>{formatCurrency(outstandingPaymentAmount)}</b> Outstanding</span>
                 </div>
               )}
             </div>
 
             {isPaymentHistory ? (
               pickupEntries.length === 0 ? <p className="transaction-empty">No vendor deliveries available for payment confirmation.</p> : (
-                <div className="management-table-wrap payment-status-table">
-                  <table>
-                    <thead><tr><th>Delivery #</th><th>Vendor</th><th>Original Amount</th><th>Return Deduction</th><th>Amount Due</th><th>Payment Status</th><th>Date & Time</th><th>Action</th></tr></thead>
-                    <tbody>{pickupEntries.map((entry) => {
-                      const isPaid = String(entry.payment_status || 'UNPAID').toUpperCase() === 'PAID';
-                      const isExpanded = expandedPaymentIds.has(entry.id);
-                      const amountDue = Number(entry.amount_due ?? entry.total_amount ?? 0);
-                      return <Fragment key={`payment-${entry.id}`}>
-                        <tr>
-                          <td data-label="Delivery #"><strong>#{entry.id}</strong></td>
-                          <td data-label="Vendor"><strong>{entry.vendor_name || entry.vendor_id}</strong><small>{getDisplayVendorId(entry)}</small></td>
-                          <td data-label="Original Amount">{formatCurrency(entry.original_amount ?? entry.total_amount)}</td>
-                          <td data-label="Return Deduction"><strong className={Number(entry.return_deduction || 0) > 0 ? 'payment-deduction' : ''}>-{formatCurrency(entry.return_deduction || 0)}</strong></td>
-                          <td data-label="Amount Due"><strong className="payment-amount-due">{formatCurrency(amountDue)}</strong></td>
-                          <td data-label="Payment Status"><PaymentStatusBadge status={entry.payment_status} /></td>
-                          <td data-label="Date & Time">{formatDeliveryDate(entry.delivery_date)}<small>{entry.delivery_time || '-'}</small></td>
-                          <td data-label="Action" className="payment-row-actions">
-                            <button type="button" className="payment-products-button" aria-expanded={isExpanded} onClick={() => togglePaymentProducts(entry.id)}>{isExpanded ? 'Hide Products' : 'Show Products'}</button>
-                            <button type="button" className="small-button payment-confirm-button" disabled={isPaid || amountDue <= 0 || confirmingPaymentId === entry.id} onClick={() => handleConfirmPayment(entry)}>{confirmingPaymentId === entry.id ? 'Confirming…' : isPaid ? 'Paid' : amountDue <= 0 ? 'No Amount Due' : 'Confirm Payment'}</button>
-                          </td>
-                        </tr>
-                        {isExpanded && <tr className="payment-products-row"><td colSpan="8"><div><span>Products in delivery #{entry.id}</span><strong>{entry.items || 'No product details available.'}</strong>{isPaid && <small>Confirmed by {entry.payment_confirmed_by_name || 'authorized user'} · {formatConfirmationDateTime(entry.payment_confirmed_at)}</small>}</div></td></tr>}
-                      </Fragment>;
-                    })}</tbody>
-                  </table>
+                <div className="payment-status-board">
+                  {pickupEntries.map((entry) => {
+                    const isPaid = String(entry.payment_status || 'UNPAID').toUpperCase() === 'PAID';
+                    const isExpanded = expandedPaymentIds.has(entry.id);
+                    const amountDue = Number(entry.amount_due ?? entry.total_amount ?? 0);
+                    const returnDeduction = Number(entry.return_deduction || 0);
+                    const productItems = String(entry.items || '').split(',').map((item) => item.trim()).filter(Boolean);
+                    return <article className={`payment-account-card ${isPaid ? 'is-paid' : 'is-unpaid'} ${isExpanded ? 'is-expanded' : ''}`} key={`payment-${entry.id}`}>
+                      <div className="payment-account-main">
+                        <div className="payment-account-identity">
+                          <span className="payment-delivery-number">#{entry.id}</span>
+                          <div>
+                            <span className="payment-card-label">Delivery account</span>
+                            <h4>{entry.vendor_name || entry.vendor_id}</h4>
+                            <small>{getDisplayVendorId(entry)}</small>
+                          </div>
+                        </div>
+
+                        <div className="payment-account-amounts" aria-label={`Amounts for delivery ${entry.id}`}>
+                          <div><span>Original</span><strong>{formatCurrency(entry.original_amount ?? entry.total_amount)}</strong></div>
+                          <div className={returnDeduction > 0 ? 'has-deduction' : ''}><span>Returns</span><strong>-{formatCurrency(returnDeduction)}</strong></div>
+                          <div className="is-due"><span>Amount due</span><strong>{formatCurrency(amountDue)}</strong></div>
+                        </div>
+
+                        <div className="payment-account-meta">
+                          <PaymentStatusBadge status={entry.payment_status} />
+                          <div className="payment-account-date"><span>Recorded</span><strong>{formatDeliveryDate(entry.delivery_date)}</strong><small>{entry.delivery_time || 'No time recorded'}</small></div>
+                          {isPaid && <small className="payment-confirmation-note">Confirmed by {entry.payment_confirmed_by_name || 'authorized user'}<br />{formatConfirmationDateTime(entry.payment_confirmed_at)}</small>}
+                        </div>
+
+                        <div className="payment-row-actions">
+                          <button type="button" className="payment-products-button" aria-expanded={isExpanded} onClick={() => togglePaymentProducts(entry.id)}>
+                            <span>{isExpanded ? 'Hide Products' : 'Show Products'}</span><b aria-hidden="true">{isExpanded ? '−' : '+'}</b>
+                          </button>
+                          <button type="button" className="payment-confirm-button" disabled={isPaid || amountDue <= 0 || confirmingPaymentId === entry.id} onClick={() => handleConfirmPayment(entry)}>{confirmingPaymentId === entry.id ? 'Confirming…' : isPaid ? 'Payment Confirmed' : amountDue <= 0 ? 'No Amount Due' : 'Confirm Payment'}</button>
+                        </div>
+                      </div>
+
+                      {isExpanded && <div className="payment-product-drawer">
+                        <div className="payment-product-drawer-heading"><div><span>Delivery contents</span><strong>Products in delivery #{entry.id}</strong></div><small>{productItems.length} product line{productItems.length === 1 ? '' : 's'}</small></div>
+                        {productItems.length ? <div className="payment-product-chips">{productItems.map((item, index) => <span key={`${entry.id}-${index}`}>{item}</span>)}</div> : <p>No product details available.</p>}
+                      </div>}
+                    </article>;
+                  })}
                 </div>
               )
             ) : isPickupHistory ? (
