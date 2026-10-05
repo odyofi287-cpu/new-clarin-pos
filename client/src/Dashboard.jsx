@@ -537,11 +537,11 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
               <span className="metric-label">Today's delivery value</span>
               <strong>{formatCurrency(data.todays_total_deliveries)}</strong>
             </div>
-            <div className="metric-card">
+            <div className="metric-card" title="Today's recorded sales, vendor pickups, and return batches. Each bulk transaction counts once.">
               <span className="metric-label">Transaction count</span>
               <strong>{data.todays_transaction_count}</strong>
             </div>
-            <div className="metric-card">
+            <div className="metric-card" title="Today's recorded sale units plus delivered units minus returned units.">
               <span className="metric-label">Items sold today</span>
               <strong>{data.items_sold_today}</strong>
             </div>

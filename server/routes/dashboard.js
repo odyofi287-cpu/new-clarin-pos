@@ -180,6 +180,45 @@ export function getCalendarDateKey(value) {
   return match ? match[1] : "";
 }
 
+export async function getDailyActivityCounts(db, todayKey = getTodayString()) {
+  if (isInMemoryDb(db)) {
+    const sales = db.sales.filter((sale) => getCalendarDateKey(sale.sale_date) === todayKey);
+    const deliveries = db.deliveries.filter((delivery) => getCalendarDateKey(delivery.delivery_date) === todayKey);
+    const returns = db.vendor_returns.filter((entry) => getCalendarDateKey(entry.return_date) === todayKey);
+    const saleIds = new Set(sales.map((sale) => Number(sale.id)));
+    const deliveryIds = new Set(deliveries.map((delivery) => Number(delivery.id)));
+    const sumQuantity = (rows) => rows.reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+
+    return {
+      todays_transaction_count: sales.length + deliveries.length +
+        new Set(returns.map((entry) => entry.return_batch_id || `legacy-${entry.id}`)).size,
+      items_sold_today: sumQuantity(db.sale_items.filter((item) => saleIds.has(Number(item.sale_id)))) +
+        sumQuantity(db.delivery_items.filter((item) => deliveryIds.has(Number(item.delivery_id)))) -
+        sumQuantity(returns),
+    };
+  }
+
+  // Aggregate each source separately: joining line items across sources would
+  // multiply quantities and count a multi-product transaction more than once.
+  const counts = await dbGet(db,
+    `SELECT
+       (SELECT COUNT(*) FROM sales WHERE sale_date = $1) +
+       (SELECT COUNT(*) FROM deliveries WHERE delivery_date = $2) +
+       (SELECT COUNT(DISTINCT COALESCE(NULLIF(return_batch_id, ''), 'legacy-' || CAST(id AS TEXT)))
+          FROM vendor_returns WHERE return_date = $3) AS transaction_count,
+       (SELECT COALESCE(SUM(si.quantity), 0) FROM sale_items si
+          JOIN sales s ON s.id = si.sale_id WHERE s.sale_date = $4) +
+       (SELECT COALESCE(SUM(di.quantity), 0) FROM delivery_items di
+          JOIN deliveries d ON d.id = di.delivery_id WHERE d.delivery_date = $5) -
+       (SELECT COALESCE(SUM(quantity), 0) FROM vendor_returns WHERE return_date = $6) AS items_sold`,
+    Array(6).fill(todayKey)
+  );
+  return {
+    todays_transaction_count: Number(counts.transaction_count || 0),
+    items_sold_today: Number(counts.items_sold || 0),
+  };
+}
+
 export function buildSalesCalendar(sales, deliveries, returns, todayKey = getTodayString()) {
   const today = new Date(`${todayKey}T00:00:00Z`);
   const daily = [];
@@ -470,10 +509,10 @@ router.get("/total-sales", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (r
 
 async function operationalDashboard(req, res) {
   const today = getTodayString();
+  const activityCounts = await getDailyActivityCounts(req.db, today);
 
   if (isInMemoryDb(req.db)) {
     const salesToday = req.db.sales.filter((sale) => sale.sale_date === today);
-    const transactionCount = salesToday.length;
     const totalSales = salesToday.reduce((sum, sale) => sum + sale.total_amount, 0);
     const deliveriesToday = req.db.deliveries.filter((delivery) => delivery.delivery_date === today);
     const totalDeliveries = deliveriesToday.reduce((sum, delivery) => sum + Number(delivery.total_amount || 0), 0);
@@ -481,9 +520,6 @@ async function operationalDashboard(req, res) {
     const totalReturns = returnsToday.reduce((sum, entry) => sum + Number(entry.total_product_price_returned || 0), 0);
     const calculatedSales = totalSales + totalDeliveries - totalReturns;
     const salesCalendar = buildSalesCalendar(req.db.sales, req.db.deliveries, req.db.vendor_returns);
-    const itemsSold = req.db.sale_items
-      .filter((item) => salesToday.some((sale) => sale.id === item.sale_id))
-      .reduce((sum, item) => sum + item.quantity, 0);
 
     const activeProducts = req.db.products.filter((p) => Number(p.active ?? 1) === 1);
     const totalCurrentInventory = activeProducts.reduce((sum, p) => sum + Number(p.current_stock || 0), 0);
@@ -528,8 +564,7 @@ async function operationalDashboard(req, res) {
         todays_total_deliveries: totalDeliveries,
         todays_total_vendor_returns: totalReturns,
         calculated_todays_sales: calculatedSales,
-        todays_transaction_count: transactionCount,
-        items_sold_today: itemsSold,
+        ...activityCounts,
         total_current_inventory: totalCurrentInventory,
         low_stock_count: lowStockProducts.length,
         out_of_stock_count: outOfStockCount,
@@ -556,13 +591,6 @@ async function operationalDashboard(req, res) {
     "SELECT COALESCE(SUM(total_amount), 0) AS total FROM sales WHERE sale_date = ?"
   )).total;
 
-  const todaysTransactionCount = (await dbGet(
-    req.db,
-    "SELECT COUNT(*) AS count FROM sales WHERE sale_date = $1",
-    [today],
-    "SELECT COUNT(*) AS count FROM sales WHERE sale_date = ?"
-  )).count;
-
   const todaysTotalDeliveries = (await dbGet(
     req.db,
     "SELECT COALESCE(SUM(total_amount), 0) AS total FROM deliveries WHERE delivery_date = $1",
@@ -578,19 +606,6 @@ async function operationalDashboard(req, res) {
   )).total;
 
   const calculatedTodaysSales = Number(todaysTotalSales) + Number(todaysTotalDeliveries) - Number(todaysTotalVendorReturns);
-
-  const itemsSoldToday = (await dbGet(
-    req.db,
-    `SELECT COALESCE(SUM(si.quantity), 0) AS count
-      FROM sale_items si
-      JOIN sales s ON si.sale_id = s.id
-      WHERE s.sale_date = $1`,
-    [today],
-    `SELECT COALESCE(SUM(si.quantity), 0) AS count
-      FROM sale_items si
-      JOIN sales s ON si.sale_id = s.id
-      WHERE s.sale_date = ?`
-  )).count;
 
   const totalCurrentInventory = (await dbGet(
     req.db,
@@ -648,8 +663,7 @@ async function operationalDashboard(req, res) {
       todays_total_deliveries: todaysTotalDeliveries,
       todays_total_vendor_returns: todaysTotalVendorReturns,
       calculated_todays_sales: calculatedTodaysSales,
-      todays_transaction_count: todaysTransactionCount,
-      items_sold_today: itemsSoldToday,
+      ...activityCounts,
       total_current_inventory: totalCurrentInventory,
       low_stock_count: lowStockCount,
       out_of_stock_count: outOfStockCount,

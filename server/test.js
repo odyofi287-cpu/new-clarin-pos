@@ -847,6 +847,27 @@ test("Admin dashboard returns operational metrics", async () => {
   assert(typeof body.data.todays_total_vendor_returns === 'number');
   assert.strictEqual(body.data.calculated_todays_sales, Number(body.data.todays_total_sales) + Number(body.data.todays_total_deliveries) - Number(body.data.todays_total_vendor_returns));
   assert(typeof body.data.todays_transaction_count === 'number');
+  assert(typeof body.data.items_sold_today === 'number');
+  const historyHeaders = { Authorization: `Bearer ${token}` };
+  const [salesHistory, deliveryHistory, returnHistory] = await Promise.all([
+    fetch(`${base}/api/sales`, { headers: historyHeaders }).then((response) => response.json()),
+    fetch(`${base}/api/deliveries`, { headers: historyHeaders }).then((response) => response.json()),
+    fetch(`${base}/api/vendor-returns`, { headers: historyHeaders }).then((response) => response.json()),
+  ]);
+  const today = getBusinessDate();
+  const todaysSales = salesHistory.data.filter((sale) => sale.sale_date === today);
+  const todaysDeliveries = deliveryHistory.data.filter((delivery) => delivery.delivery_date === today);
+  const todaysReturns = returnHistory.data.filter((entry) => entry.return_date === today);
+  const deliveryDetails = await Promise.all(todaysDeliveries.map((delivery) =>
+    fetch(`${base}/api/deliveries/${delivery.id}`, { headers: historyHeaders })
+      .then((response) => response.json())));
+  assert.strictEqual(body.data.todays_transaction_count,
+    todaysSales.length + todaysDeliveries.length + todaysReturns.length);
+  assert.strictEqual(body.data.items_sold_today,
+    todaysSales.reduce((sum, sale) => sum + Number(sale.item_count), 0) +
+    deliveryDetails.reduce((sum, delivery) => sum +
+      delivery.data.items.reduce((quantity, item) => quantity + Number(item.quantity), 0), 0) -
+    todaysReturns.reduce((sum, entry) => sum + Number(entry.quantity), 0));
   assert(Array.isArray(body.data.recent_sales));
   assert(Array.isArray(body.data.low_stock_products));
   assert.strictEqual(body.data.sales_calendar.daily.length, 31);
