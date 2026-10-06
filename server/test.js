@@ -726,6 +726,35 @@ test("Profile pictures are validated, retained, and removable", async () => {
   const created = await res.json();
   assert.strictEqual(created.data.profile_picture, TINY_PROFILE_PICTURE);
 
+  const accountInfo = { username, email: `${username}@clarin.local`, name: "Profile User", role: "STAFF" };
+  res = await fetch(`${base}/api/users/${created.data.id}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ ...accountInfo, name: "Updated Profile User" }),
+  });
+  assert.strictEqual(res.status, 200, "Expected account edits without a picture payload to succeed");
+  assert.strictEqual((await res.json()).data.profile_picture, TINY_PROFILE_PICTURE, "Unchanged pictures must be retained");
+
+  const replacement = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1ioAAAAASUVORK5CYII=";
+  res = await fetch(`${base}/api/users/${created.data.id}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ ...accountInfo, profile_picture: replacement }),
+  });
+  assert.strictEqual(res.status, 200, "Expected an existing profile picture to be replaceable");
+  assert.strictEqual((await res.json()).data.profile_picture, replacement);
+  res = await fetch(`${base}/api/users`, { headers: { Authorization: `Bearer ${token}` } });
+  assert.strictEqual((await res.json()).data.find((user) => user.id === created.data.id).profile_picture, replacement, "Reloaded account list must contain the replacement");
+  const profileToken = await login(`${username}@clarin.local`, "ProfileUser123!");
+  res = await fetch(`${base}/api/users/me`, { headers: { Authorization: `Bearer ${profileToken}` } });
+  assert.strictEqual((await res.json()).data.profile_picture, replacement, "Account owner's profile must reflect the replacement");
+  res = await fetch(`${base}/api/users/${created.data.id}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json", Authorization: `Bearer ${profileToken}` },
+    body: JSON.stringify({ ...accountInfo, profile_picture: TINY_PROFILE_PICTURE }),
+  });
+  assert.strictEqual(res.status, 403, "Profile editing must retain Superadmin-only account-management permissions");
+
   res = await fetch(`${base}/api/users/${created.data.id}`, {
     method: "PUT",
     headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },

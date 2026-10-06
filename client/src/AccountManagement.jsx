@@ -30,29 +30,33 @@ async function prepareProfilePicture(file) {
   if (!SUPPORTED_PROFILE_PICTURE_TYPES.has(file.type)) throw new Error("Choose a JPG, PNG, or WebP image.");
   if (file.size > PROFILE_PICTURE_MAX_INPUT_BYTES) throw new Error("Choose an image smaller than 5 MB.");
 
-  const objectUrl = URL.createObjectURL(file);
-  try {
-    const image = await new Promise((resolve, reject) => {
-      const candidate = new Image();
-      candidate.onload = () => resolve(candidate);
-      candidate.onerror = () => reject(new Error("The selected image could not be read."));
-      candidate.src = objectUrl;
-    });
-    const scale = Math.min(1, PROFILE_PICTURE_MAX_DIMENSION / Math.max(image.naturalWidth, image.naturalHeight));
-    const width = Math.max(1, Math.round(image.naturalWidth * scale));
-    const height = Math.max(1, Math.round(image.naturalHeight * scale));
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("This browser cannot prepare the selected image.");
-    context.drawImage(image, 0, 0, width, height);
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.86);
-    if (dataUrlByteLength(dataUrl) > PROFILE_PICTURE_MAX_STORED_BYTES) throw new Error("This image is still too detailed after resizing. Choose a different photo.");
-    return dataUrl;
-  } finally {
-    URL.revokeObjectURL(objectUrl);
-  }
+  // Read as a data URL: the application's img-src policy permits data: images,
+  // but deliberately blocks blob: URLs. Keep that policy intact for uploads.
+  const source = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("The selected image could not be read."));
+    reader.onabort = () => reject(new Error("Reading the selected image was cancelled."));
+    reader.readAsDataURL(file);
+  });
+  const image = await new Promise((resolve, reject) => {
+    const candidate = new Image();
+    candidate.onload = () => resolve(candidate);
+    candidate.onerror = () => reject(new Error("The selected image could not be read."));
+    candidate.src = source;
+  });
+  const scale = Math.min(1, PROFILE_PICTURE_MAX_DIMENSION / Math.max(image.naturalWidth, image.naturalHeight));
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("This browser cannot prepare the selected image.");
+  context.drawImage(image, 0, 0, width, height);
+  const dataUrl = canvas.toDataURL("image/jpeg", 0.86);
+  if (dataUrlByteLength(dataUrl) > PROFILE_PICTURE_MAX_STORED_BYTES) throw new Error("This image is still too detailed after resizing. Choose a different photo.");
+  return dataUrl;
 }
 
 function AccountFields({ form, isNew, onChange, onProfilePictureChange, onRemoveProfilePicture, processingProfilePicture, profilePictureError }) {
@@ -68,7 +72,7 @@ function AccountFields({ form, isNew, onChange, onProfilePictureChange, onRemove
           {form.profile_picture ? <img src={form.profile_picture} alt="Profile picture preview" /> : <span aria-hidden="true">{(form.name || form.username || "?").slice(0, 1).toUpperCase()}</span>}
           <div><strong>{form.profile_picture ? "Picture selected" : "No picture selected"}</strong><small>JPG, PNG, or WebP. It is resized to a compact profile image before saving.</small></div>
         </div>
-        <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => onProfilePictureChange(event.target.files?.[0])} disabled={processingProfilePicture} aria-describedby="profile-picture-help" />
+        <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; onProfilePictureChange(file); }} disabled={processingProfilePicture} aria-describedby="profile-picture-help" />
         <small id="profile-picture-help">Maximum source size: 5 MB. Stored profile images are limited to 512 KB.</small>
         {profilePictureError && <small className="account-profile-picture-error" role="alert">{profilePictureError}</small>}
         {form.profile_picture && <button className="account-remove-picture" type="button" onClick={onRemoveProfilePicture} disabled={processingProfilePicture}>Remove picture</button>}
@@ -170,7 +174,8 @@ export default function AccountManagement({ token }) {
   const saveAccount = async (event) => {
     event.preventDefault();
     const isNew = creating;
-    const { profile_picture_action, vendor_code, ...formValues } = form;
+    if (loading || processingProfilePicture) return;
+    const { profile_picture_action, profile_picture, vendor_code, ...formValues } = form;
     const payload = {
       ...formValues,
       vendor_id: form.role === "VENDOR" ? form.vendor_id : null,
