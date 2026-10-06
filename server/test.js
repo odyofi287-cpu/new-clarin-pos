@@ -951,7 +951,10 @@ test("Vendor delivery CSV exports ISO dates", async () => {
   assert.strictEqual(res.status, 200);
   const csv = await res.text();
   assert.match(csv, /Delivery Date/);
-  const dateRows = csv.split("\n").slice(1).filter(Boolean);
+  const lines = csv.split("\r\n");
+  const header = lines.findIndex((line) => line.startsWith("Delivery ID,Vendor,Delivery Date,"));
+  assert(header >= 0, "Expected labeled vendor delivery detail table");
+  const dateRows = lines.slice(header + 1).filter((line) => /^\d+,/.test(line));
   assert(dateRows.length > 0, "Expected at least one vendor delivery CSV row");
   assert(dateRows.every((row) => /,\d{4}-\d{2}-\d{2},/.test(row)), "Expected delivery dates in YYYY-MM-DD format");
 });

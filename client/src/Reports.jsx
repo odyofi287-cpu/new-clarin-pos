@@ -1,384 +1,117 @@
 import { useEffect, useState } from "react";
 import { apiUrl } from "./api";
-import { buildTotalSalesCsv, totalSalesCsvFilename } from "./totalSalesCsv";
+import { manilaToday, rangeError, formatReportValue, downloadReportBlob } from "./reportFormat";
+import ReportPrintPreview, { ReportTable } from "./ReportPrintPreview";
+import "./Reports.css";
 
-function getManilaToday() {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Manila",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date());
-  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
-  return `${values.year}-${values.month}-${values.day}`;
-}
+const REPORTS = {
+  "total-sales": { title: "Total Sales", description: "Recorded sales + deliveries − returns" },
+  sales: { title: "Recorded Sales", description: "Transactions and units sold" },
+  inventory: { title: "Inventory", description: "Stock movement and current levels" },
+  "vendor-deliveries": { title: "Vendor deliveries", description: "Grouped pickups and delivery value" },
+};
 
-const TODAY = getManilaToday();
-
-function formatCurrency(value) {
-  return value == null ? "0.00" : Number(value).toLocaleString("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 });
-}
-
-function formatReportDate(value) {
-  const text = String(value || "").slice(0, 10);
-  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return value || "-";
-  const [, year, month, day] = match;
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
-    .format(new Date(Date.UTC(Number(year), Number(month) - 1, Number(day))));
-}
-
-function Reports({ token, role, vendorId, initialMode }) {
-  const REFRESH_INTERVAL_MS = 6000;
-  const resolvedDefaultMode = initialMode || (role === "VENDOR" ? "vendor-deliveries" : "sales");
-  const [mode, setMode] = useState(resolvedDefaultMode);
-  const [data, setData] = useState([]);
-  const [range, setRange] = useState({ start_date: TODAY, end_date: TODAY });
-  const [error, setError] = useState(null);
+function Reports({ token, role, initialMode }) {
+  const defaultMode = initialMode || (role === "VENDOR" ? "vendor-deliveries" : "sales");
+  const allowedModes = role === "VENDOR" ? ["vendor-deliveries"] : ["total-sales", "sales", "inventory", "vendor-deliveries"];
+  const [mode, setMode] = useState(defaultMode);
+  const [dateMode, setDateMode] = useState("day");
+  const [range, setRange] = useState(() => { const today = manilaToday(); return { start_date: today, end_date: today }; });
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [exporting, setExporting] = useState(false);
-  const [totalSalesExporting, setTotalSalesExporting] = useState(false);
-  const [totalSalesExportError, setTotalSalesExportError] = useState(null);
-  const canExportTotalSales = role === "SUPERADMIN" || role === "STAFF";
+  const [exportError, setExportError] = useState("");
+  const [printPreview, setPrintPreview] = useState(null);
+  const allTime = dateMode === "all-time" && mode === "total-sales";
+  const validationError = allTime ? "" : rangeError(range);
+  const query = allTime ? "scope=all-time" : new URLSearchParams(range).toString();
+  const key = `${role}:${mode}:${query}:${token}`;
+  const report = result?.key === key ? result.report : null;
+  const selected = REPORTS[mode] || REPORTS.sales;
+
+  useEffect(() => { setMode(defaultMode); setPrintPreview(null); }, [defaultMode, role]);
 
   useEffect(() => {
-    setMode(resolvedDefaultMode);
-  }, [resolvedDefaultMode]);
-
-  useEffect(() => {
-    if (!token) return;
-    loadReport();
-  }, [mode, range, token]);
-
-  useEffect(() => {
-    if (!token) return;
-
-    const refreshData = () => {
-      loadReport();
-    };
-
-    const intervalId = window.setInterval(refreshData, REFRESH_INTERVAL_MS);
-    const eventStream = new EventSource(`${apiUrl('/api/events')}?token=${encodeURIComponent(token)}`);
-    eventStream.addEventListener('data-change', refreshData);
-    return () => {
-      window.clearInterval(intervalId);
-      eventStream.close();
-    };
-  }, [token, mode, range, role]);
-
-  // Allowed report modes depending on role
-  const allowedModes = role === "VENDOR" ? ["vendor-deliveries"] : ["sales", "inventory", "vendor-deliveries"];
-
-  const loadReport = async () => {
-    setError(null);
-    const query = new URLSearchParams(range).toString();
-    // Prevent vendors from calling admin-only endpoints
-    if (!allowedModes.includes(mode)) {
-      setError("You do not have permission to view this report.");
-      setData([]);
-      return;
-    }
-
-    const endpoint = apiUrl(`/api/reports/${mode}?${query}`);
-    try {
-      const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
-      const body = await res.json();
-      if (!res.ok) {
-        setError(body.error || "Unable to load report");
-        return;
+    setError(""); setExportError("");
+    if (!token || validationError) { setLoading(false); return undefined; }
+    if (role === "VENDOR" && mode !== "vendor-deliveries") { setError("You do not have permission to view this report."); setLoading(false); return undefined; }
+    const controller = new AbortController();
+    let active = true;
+    let inFlight = false;
+    setLoading(true);
+    const load = async () => {
+      if (inFlight || !active) return;
+      inFlight = true;
+      try {
+        const response = await fetch(apiUrl(`/api/reports/${mode}?${query}`), { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal });
+        const body = await response.json();
+        if (!response.ok || !body.report) throw new Error(body.error || "Unable to load report");
+        if (active) { setResult({ key, report: body.report }); setError(""); }
+      } catch (err) {
+        if (active && err.name !== "AbortError") setError(err.message || "Unable to load report");
+      } finally {
+        inFlight = false;
+        if (active) setLoading(false);
       }
-      setData(body.data || []);
-    } catch (err) {
-      setError("Unable to load report");
-    }
-  };
+    };
+    load();
+    const interval = window.setInterval(load, 6000);
+    const stream = new EventSource(`${apiUrl("/api/events")}?token=${encodeURIComponent(token)}`);
+    stream.addEventListener("data-change", load);
+    return () => { active = false; controller.abort(); window.clearInterval(interval); stream.close(); };
+  }, [key, validationError]);
 
-  const onExport = async () => {
-    const query = new URLSearchParams(range).toString();
-    if (!allowedModes.includes(mode)) {
-      setError("You do not have permission to export this report.");
-      return;
-    }
-
+  async function onExport() {
+    if (validationError || !allowedModes.includes(mode) || exporting) return;
     try {
-      setError(null);
-      setExporting(true);
-      const response = await fetch(apiUrl(`/api/reports/${mode}/csv?${query}`), {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      setExportError(""); setExporting(true);
+      const response = await fetch(apiUrl(`/api/reports/${mode}/csv?${query}`), { headers: { Authorization: `Bearer ${token}` } });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
         throw new Error(body.error || "Unable to export report");
       }
+      downloadReportBlob(await response.blob(), allTime ? `${mode}-report-all-time.csv` : `${mode}-report-${range.start_date}-to-${range.end_date}.csv`);
+    } catch (err) { setExportError(err.message || "Unable to export report"); }
+    finally { setExporting(false); }
+  }
 
-      const blob = await response.blob();
-      const downloadUrl = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = downloadUrl;
-      link.download = `${mode}-report-${range.start_date}-to-${range.end_date}.csv`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(downloadUrl);
-    } catch (err) {
-      setError(err.message || "Unable to export report");
-    } finally {
-      setExporting(false);
-    }
-  };
+  if (printPreview) return <ReportPrintPreview report={printPreview} onBack={() => setPrintPreview(null)} />;
 
-  const onExportTotalSales = async () => {
-    if (!canExportTotalSales || totalSalesExporting) return;
-    let downloadUrl;
-    let link;
-    try {
-      setTotalSalesExportError(null);
-      setTotalSalesExporting(true);
-      // Fetch a fresh snapshot rather than relying on the dashboard being opened.
-      const response = await fetch(apiUrl("/api/dashboard/total-sales"), {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const body = await response.json();
-      if (!response.ok || !body.data) throw new Error(body.error || "Unable to export total sales");
+  return <div className="reports-page">
+    <section className="reports-hero">
+      <div><span className="reports-kicker">Data center</span><h2>Reports & exports</h2><p>Choose a report and calendar dates. Export a CSV or print a professional report.</p></div>
+      <div className="reports-summary"><strong>{report?.sections[0]?.rows.length || 0}</strong><span>Records in preview</span></div>
+    </section>
 
-      const csv = buildTotalSalesCsv(body.data);
-      downloadUrl = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-      link = document.createElement("a");
-      link.href = downloadUrl;
-      link.download = totalSalesCsvFilename(body.data);
-      document.body.appendChild(link);
-      link.click();
-    } catch (err) {
-      setTotalSalesExportError(err.message || "Unable to export total sales. Please try again.");
-    } finally {
-      link?.remove();
-      if (downloadUrl) window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
-      setTotalSalesExporting(false);
-    }
-  };
-
-  const reportLabels = {
-    sales: { title: "Sales report", description: "Recorded transactions and revenue" },
-    inventory: { title: "Inventory report", description: "Stock movement and current levels" },
-    "vendor-deliveries": { title: "Vendor deliveries", description: "Pickup records and delivery value" },
-  };
-  const selectedReport = reportLabels[mode] || reportLabels.sales;
-
-  const renderTable = () => {
-    if (!Array.isArray(data)) return null;
-    if (mode === "sales") {
-      return (
-        <table>
-          <thead>
-            <tr>
-              <th>Transaction ID</th>
-              <th>Date</th>
-              <th>Staff</th>
-              <th>Items</th>
-              <th>Quantity</th>
-              <th>Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.map((row) => (
-              <tr key={row.transaction_id}>
-                <td data-label="Transaction ID">{row.transaction_id}</td>
-                <td data-label="Date">{formatReportDate(row.sale_date)}</td>
-                <td data-label="Staff">{row.staff}</td>
-                <td data-label="Items">{row.items}</td>
-                <td data-label="Quantity">{row.quantity}</td>
-                <td data-label="Total">{formatCurrency(row.total_amount)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      );
-    }
-
-    if (mode === "inventory") {
-      return (
-        <table>
-          <thead>
-            <tr>
-              <th>Product</th>
-              <th>Stock-in</th>
-              <th>Stock-out</th>
-              <th>Current stock</th>
-              <th>Minimum stock</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.map((row, idx) => (
-              <tr key={`${row.product}-${idx}`}>
-                <td data-label="Product">{row.product}</td>
-                <td data-label="Stock-in">{row.stock_in}</td>
-                <td data-label="Stock-out">{row.stock_out}</td>
-                <td data-label="Current stock">{row.current_stock}</td>
-                <td data-label="Minimum stock">{row.minimum_stock}</td>
-                <td data-label="Status">{row.stock_status}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      );
-    }
-
-    return (
-      <table>
-        <thead>
-          <tr>
-            <th>Vendor</th>
-            <th>Delivery date</th>
-            <th>Products</th>
-            <th>Quantity</th>
-            <th>Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.map((row, idx) => (
-            <tr key={`${row.vendor}-${idx}`}>
-              <td data-label="Vendor">{row.vendor}</td>
-              <td data-label="Delivery date">{formatReportDate(row.delivery_date)}</td>
-              <td data-label="Products">{row.products}</td>
-              <td data-label="Quantity">{row.quantity}</td>
-              <td data-label="Amount">{formatCurrency(row.amount)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    );
-  };
-
-  return (
-    <div className="reports-page">
-      <section className="reports-hero">
-        <div>
-          <span className="reports-kicker">Data center</span>
-          <h2>Reports & exports</h2>
-          <p>Choose a report and date range to review or download your records.</p>
+    <section className="reports-control-card">
+      <div className="reports-section-heading"><div><span className="reports-section-label">1. Report type</span><h3>{selected.title}</h3><p>{selected.description}</p></div><span className="reports-range-badge">{allTime ? "All time" : dateMode === "day" ? range.start_date : `${range.start_date} to ${range.end_date}`}</span></div>
+      <div className="reports-type-grid">{allowedModes.map((id) => <button type="button" key={id} aria-pressed={mode === id} className={`report-type-button ${mode === id ? "selected" : ""}`} onClick={() => { setMode(id); if (dateMode === "all-time" && id !== "total-sales") { setDateMode("day"); setRange({ start_date: range.start_date, end_date: range.start_date }); } }} disabled={exporting}><strong>{REPORTS[id].title}</strong><span>{REPORTS[id].description}</span></button>)}</div>
+      <div className="reports-divider" />
+      <div className="reports-date-heading"><span className="reports-section-label">2. Calendar dates</span><div className="reports-date-mode" role="group" aria-label="Reporting period"><button type="button" aria-pressed={dateMode === "day"} className={dateMode === "day" ? "selected" : ""} disabled={exporting} onClick={() => { setDateMode("day"); setRange({ start_date: range.start_date, end_date: range.start_date }); }}>Specific day</button><button type="button" aria-pressed={dateMode === "range"} className={dateMode === "range" ? "selected" : ""} disabled={exporting} onClick={() => setDateMode("range")}>Date range</button>{mode === "total-sales" && <button type="button" aria-pressed={allTime} className={allTime ? "selected" : ""} disabled={exporting} onClick={() => setDateMode("all-time")}>All time</button>}</div></div>
+      <div className="reports-export-row">
+        {allTime ? <p className="reports-export-note">All recorded activity, from the first transaction through the latest reporting date.</p> : <div className="reports-date-fields">
+          <label>{dateMode === "day" ? "Report date" : "From"}<input type="date" aria-label={dateMode === "day" ? "Report date" : "From date"} required value={range.start_date} disabled={exporting} onChange={(event) => setRange({ ...range, start_date: event.target.value, ...(dateMode === "day" ? { end_date: event.target.value } : {}) })} /></label>
+          {dateMode === "range" && <label>To<input type="date" aria-label="To date" required min={range.start_date} value={range.end_date} disabled={exporting} onChange={(event) => setRange({ ...range, end_date: event.target.value })} /></label>}
+        </div>}
+        <div className="reports-actions">
+          <button type="button" className="reports-print-button" disabled={loading || !report || Boolean(error || validationError) || exporting} onClick={() => setPrintPreview(report)}>Print preview</button>
+          <button type="button" className="reports-export-button" disabled={exporting || loading || !report || Boolean(error || validationError)} onClick={onExport}>{exporting ? "Preparing CSV..." : "Export CSV"}</button>
         </div>
-        <div className="reports-summary">
-          <strong>{data.length}</strong>
-          <span>Rows in preview</span>
-        </div>
-      </section>
+      </div>
+      <p className="reports-export-note">CSV includes report details, summary totals, and clearly separated tables. For formatted pages, use Print preview → Print / Save PDF.</p>
+      {(validationError || exportError) && <p className="error-message" role="alert">{validationError || exportError}</p>}
+    </section>
 
-      {canExportTotalSales && (
-        <section className="reports-control-card" aria-labelledby="reports-total-sales-title">
-          <div className="reports-total-sales-export">
-            <div>
-              <span className="reports-section-label">Complete sales overview</span>
-              <h3 id="reports-total-sales-title">Total Sales CSV</h3>
-              <p id="reports-total-sales-scope">All-time totals and product sales, plus daily (14 days), weekly (8 weeks), and monthly (12 months) breakdowns. Includes recorded sales, deliveries, and return deductions.</p>
-              <small>Uses the latest sales data; independent of the report date range below.</small>
-            </div>
-            <button type="button" className="reports-export-button" onClick={onExportTotalSales} disabled={totalSalesExporting} aria-describedby="reports-total-sales-scope">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5" />
-              </svg>
-              {totalSalesExporting ? "Preparing CSV..." : "Export Total Sales CSV"}
-            </button>
-          </div>
-          {totalSalesExportError && <p className="error-message" role="alert">{totalSalesExportError}</p>}
-        </section>
-      )}
-
-      <section className="reports-control-card">
-        <div className="reports-section-heading">
-          <div>
-            <span className="reports-section-label">1. Report type</span>
-            <h3>{selectedReport.title}</h3>
-            <p>{selectedReport.description}</p>
-          </div>
-          <span className="reports-range-badge">{range.start_date} to {range.end_date}</span>
-        </div>
-        <div className="reports-type-grid">
-          {allowedModes.includes("sales") && (
-            <button type="button" className={`report-type-button ${mode === "sales" ? "selected" : ""}`} onClick={() => setMode("sales")}>
-              <strong>Sales</strong><span>Transactions and totals</span>
-            </button>
-          )}
-          {allowedModes.includes("inventory") && (
-            <button type="button" className={`report-type-button ${mode === "inventory" ? "selected" : ""}`} onClick={() => setMode("inventory")}>
-              <strong>Inventory</strong><span>Stock movement and levels</span>
-            </button>
-          )}
-          {allowedModes.includes("vendor-deliveries") && (
-            <button type="button" className={`report-type-button ${mode === "vendor-deliveries" ? "selected" : ""}`} onClick={() => setMode("vendor-deliveries")}>
-              <strong>Vendor deliveries</strong><span>Pickups and delivery value</span>
-            </button>
-          )}
-        </div>
-
-        <div className="reports-divider" />
-
-        <div className="reports-export-row">
-          <div className="reports-date-fields">
-            <span className="reports-section-label">2. Date range</span>
-            <label>From<input type="date" value={range.start_date} onChange={(e) => setRange({ ...range, start_date: e.target.value })} /></label>
-            <label>To<input type="date" value={range.end_date} onChange={(e) => setRange({ ...range, end_date: e.target.value })} /></label>
-          </div>
-          <button type="button" className="reports-export-button" onClick={onExport} disabled={exporting || Boolean(error)}>
-            <span aria-hidden="true">↓</span>
-            {exporting ? "Preparing CSV..." : "Export CSV"}
-          </button>
-        </div>
-      </section>
-
-      <section className="reports-preview-card">
-        <div className="reports-preview-heading">
-          <div><span className="reports-section-label">Preview</span><h3>{selectedReport.title}</h3></div>
-          <span className="reports-row-count">{data.length} {data.length === 1 ? "record" : "records"}</span>
-        </div>
-        {error ? <p className="error-message">{error}</p> : data.length === 0 ? <div className="reports-empty"><strong>No records found</strong><span>Try a different date range.</span></div> : <div className="reports-table-scroll">{renderTable()}</div>}
-      </section>
-
-      <style>{`
-        .reports-page { color:#25345b; display:grid; gap:1rem; padding:1.75rem; }
-        .reports-hero { align-items:flex-end; background:linear-gradient(120deg,#f2f8ff,#ffffff 62%); border:1px solid #dce7f5; border-radius:10px; display:flex; justify-content:space-between; gap:1rem; padding:1.35rem 1.5rem; }
-        .reports-kicker,.reports-section-label { color:#3272bf; font-size:.72rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
-        .reports-hero h2,.reports-section-heading h3,.reports-preview-heading h3 { color:#1e3564; letter-spacing:0; margin:.25rem 0; }
-        .reports-hero p,.reports-section-heading p { color:#697a98; margin:.25rem 0 0; }
-        .reports-summary { border-left:1px solid #d6e2f1; min-width:110px; padding-left:1.25rem; text-align:right; }
-        .reports-summary strong { color:#2268bd; display:block; font-size:1.8rem; line-height:1; }
-        .reports-summary span,.reports-row-count { color:#71819d; font-size:.78rem; }
-        .reports-control-card,.reports-preview-card { background:#fff; border:1px solid #dde6f1; border-radius:10px; box-shadow:0 10px 24px rgba(38,75,122,.06); padding:1.35rem 1.5rem; }
-        .reports-total-sales-export { align-items:center; display:flex; gap:1.5rem; justify-content:space-between; }
-        .reports-total-sales-export > div { min-width:0; }
-        .reports-total-sales-export h3 { color:#1e3564; margin:.25rem 0; }
-        .reports-total-sales-export p { color:#697a98; line-height:1.5; margin:.25rem 0 .5rem; max-width:720px; }
-        .reports-total-sales-export small { color:#697a98; display:block; line-height:1.5; }
-        .reports-total-sales-export .reports-export-button { flex-shrink:0; }
-        .reports-total-sales-export .reports-export-button:focus-visible { outline:2px solid #2474c9; outline-offset:3px; }
-        @media (max-width:700px) { .reports-total-sales-export { align-items:stretch; flex-direction:column; gap:1rem; } }
-        .reports-section-heading,.reports-preview-heading { align-items:flex-start; display:flex; justify-content:space-between; gap:1rem; }
-        .reports-range-badge { background:#f1f6fc; border-radius:999px; color:#557092; font-size:.78rem; padding:.5rem .75rem; white-space:nowrap; }
-        .reports-type-grid { display:grid; gap:.7rem; grid-template-columns:repeat(3,minmax(0,1fr)); margin-top:1rem; }
-        .report-type-button { background:#f8fafc; border:1px solid #dbe5f0; border-radius:8px; color:#536883; cursor:pointer; min-height:68px; padding:.8rem 1rem; text-align:left; transition:border-color .2s,background .2s,transform .2s; }
-        .report-type-button:hover { border-color:#8eb6df; transform:translateY(-1px); }
-        .report-type-button.selected { background:#edf6ff; border-color:#327bd0; box-shadow:0 0 0 2px rgba(50,123,208,.12); color:#1e5eaa; }
-        .report-type-button strong,.report-type-button span { display:block; }
-        .report-type-button span { color:#71819d; font-size:.78rem; margin-top:.25rem; }
-        .reports-divider { border-top:1px solid #edf1f6; margin:1.25rem 0; }
-        .reports-export-row { align-items:flex-end; display:flex; justify-content:space-between; gap:1rem; }
-        .reports-date-fields { align-items:flex-end; display:flex; flex-wrap:wrap; gap:.7rem; }
-        .reports-date-fields > .reports-section-label { align-self:center; margin-right:.25rem; }
-        .reports-date-fields label { color:#61728f; display:grid; font-size:.78rem; font-weight:700; gap:.3rem; }
-        .reports-date-fields input { border:1px solid #cfdae8; border-radius:6px; color:#263b61; font:inherit; padding:.62rem .7rem; }
-        .reports-export-button { align-items:center; background:#2474c9; border:0; border-radius:7px; box-shadow:0 7px 14px rgba(36,116,201,.18); color:#fff; cursor:pointer; display:flex; font-weight:800; gap:.45rem; min-height:42px; padding:.7rem 1.05rem; white-space:nowrap; }
-        .reports-export-button:hover { background:#1d62ad; }
-        .reports-export-button:disabled { cursor:not-allowed; opacity:.6; }
-        .reports-table-scroll { overflow-x:auto; }
-        .reports-preview-card table { border-collapse:collapse; min-width:680px; width:100%; }
-        .reports-preview-card th { background:#f7f9fc; color:#647692; font-size:.72rem; letter-spacing:.06em; text-align:left; text-transform:uppercase; }
-        .reports-preview-card th,.reports-preview-card td { border-bottom:1px solid #edf1f6; padding:.8rem .75rem; }
-        .reports-preview-card td { color:#3e5170; font-size:.88rem; }
-        .reports-empty { align-items:center; color:#71819d; display:flex; flex-direction:column; gap:.25rem; padding:3rem 1rem; text-align:center; }
-        .reports-empty strong { color:#344b70; }
-        @media (max-width:700px) { .reports-page { padding:.75rem 0; } .reports-hero,.reports-export-row,.reports-section-heading,.reports-preview-heading { align-items:stretch; flex-direction:column; } .reports-summary { border-left:0; border-top:1px solid #d6e2f1; padding-left:0; padding-top:.8rem; text-align:left; } .reports-type-grid,.reports-date-fields { grid-template-columns:1fr; display:grid; } .reports-export-button { justify-content:center; width:100%; } .reports-table-scroll { overflow:visible; } .reports-preview-card table { display:block; min-width:0; width:100%; } .reports-preview-card thead { display:none; } .reports-preview-card tbody,.reports-preview-card tr,.reports-preview-card td { display:block; width:100%; } .reports-preview-card tr { background:#fff; border:1px solid #dce7f5; border-radius:8px; box-shadow:0 5px 14px rgba(38,75,122,.05); margin:0 0 .7rem; padding:.55rem; } .reports-preview-card td { border:0; display:grid; gap:.35rem; grid-template-columns:minmax(92px,34%) minmax(0,1fr); padding:.48rem .55rem; overflow-wrap:anywhere; } .reports-preview-card td::before { color:#6b7e9d; content:attr(data-label); font-size:.68rem; font-weight:800; letter-spacing:.05em; text-transform:uppercase; } }
-      `}</style>
-    </div>
-  );
+    <section className="reports-preview-card">
+      <div className="reports-preview-heading"><div><span className="reports-section-label">Preview</span><h3>{report?.title || selected.title}</h3></div><span className="reports-row-count">{loading ? "Loading..." : "Business dates: Asia/Manila"}</span></div>
+      {error ? <p className="error-message" role="alert">{error}</p> : validationError ? <p>Select valid calendar dates to preview this report.</p> : !report ? <p role="status">Loading report...</p> : <>
+        <div className="reports-metric-grid">{report.summary.map((item) => <div key={item.label} className={item.label === "Net sales" ? "reports-metric is-net" : "reports-metric"}><span>{item.label}</span><strong>{formatReportValue(item.value, item.type)}</strong></div>)}</div>
+        {report.sections.map((section) => <div className="reports-data-section" key={section.title}><h4>{section.title}</h4><div className="reports-table-scroll"><ReportTable section={section} /></div></div>)}
+        <p className="reports-scope-note">{report.note}</p>
+      </>}
+    </section>
+  </div>;
 }
 
 export default Reports;
