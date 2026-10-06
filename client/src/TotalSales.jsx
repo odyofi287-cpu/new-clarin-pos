@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiUrl } from "./api";
+import { buildTotalSalesCsv, totalSalesCsvFilename } from "./totalSalesCsv";
 
 const REFRESH_INTERVAL_MS = 6000;
 
@@ -73,6 +74,27 @@ function TotalSales({ token, onBack }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
+  const [exportError, setExportError] = useState(null);
+
+  function exportCsv() {
+    let url;
+    let link;
+    try {
+      setExportError(null);
+      const csv = buildTotalSalesCsv(data);
+      url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+      link = document.createElement("a");
+      link.href = url;
+      link.download = totalSalesCsvFilename(data);
+      document.body.appendChild(link);
+      link.click();
+    } catch {
+      setExportError("Unable to export sales. Please try again.");
+    } finally {
+      link?.remove();
+      if (url) window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+  }
 
   useEffect(() => {
     if (!token) return undefined;
@@ -135,10 +157,19 @@ function TotalSales({ token, onBack }) {
     <div className="dashboard-shell total-sales-page">
       <section className="total-sales-hero">
         <div>
-          <button type="button" className="total-sales-back" onClick={onBack}>Back to dashboard</button>
+          <div className="total-sales-actions">
+            <button type="button" className="total-sales-back" onClick={onBack}>Back to dashboard</button>
+            <button type="button" className="total-sales-export" onClick={exportCsv} aria-describedby="total-sales-export-scope">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5" />
+              </svg>
+              Export CSV
+            </button>
+          </div>
           <span className="management-kicker">Sales intelligence</span>
           <h2>Total Sales</h2>
           <p>Sales are calculated as recorded sales plus deliveries, less recorded returns.</p>
+          <small className="total-sales-export-scope" id="total-sales-export-scope">CSV includes all products, period totals, and chart data, regardless of search.</small>
         </div>
         <div className="total-sales-hero-total">
           <span>All-time sales</span>
@@ -146,6 +177,8 @@ function TotalSales({ token, onBack }) {
           <small>{formatCurrency(summary.all_time?.recorded_sales)} + {formatCurrency(summary.all_time?.delivery_total)} − {formatCurrency(summary.all_time?.return_total)}</small>
         </div>
       </section>
+
+      {exportError && <p className="error-message" role="alert">{exportError}</p>}
 
       <section className="total-sales-summary-grid" aria-label="Sales period totals">
         <article className="total-sales-summary-card is-daily">

@@ -3820,6 +3820,52 @@ button[disabled] {
   border-color: #2474c9;
 }
 
+.total-sales-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+}
+
+.total-sales-actions .total-sales-back {
+  margin-bottom: 0;
+}
+
+.total-sales-export {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #fff;
+  border-radius: 7px;
+  color: #153b71;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 800;
+  gap: 0.45rem;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0.52rem 0.85rem;
+}
+
+.total-sales-export:hover {
+  background: #eaf3ff;
+  border-color: #eaf3ff;
+}
+
+.total-sales-actions button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+
+.total-sales-export-scope {
+  color: rgba(255, 255, 255, 0.78);
+  display: block;
+  font-size: 0.72rem;
+  margin-top: 0.6rem;
+  max-width: 590px;
+}
+
 .total-sales-hero .management-kicker {
   margin-bottom: 0.35rem;
 }
