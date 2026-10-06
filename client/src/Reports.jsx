@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiUrl } from "./api";
+import { buildTotalSalesCsv, totalSalesCsvFilename } from "./totalSalesCsv";
 
 function getManilaToday() {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -35,6 +36,9 @@ function Reports({ token, role, vendorId, initialMode }) {
   const [range, setRange] = useState({ start_date: TODAY, end_date: TODAY });
   const [error, setError] = useState(null);
   const [exporting, setExporting] = useState(false);
+  const [totalSalesExporting, setTotalSalesExporting] = useState(false);
+  const [totalSalesExportError, setTotalSalesExportError] = useState(null);
+  const canExportTotalSales = role === "SUPERADMIN" || role === "STAFF";
 
   useEffect(() => {
     setMode(resolvedDefaultMode);
@@ -119,6 +123,36 @@ function Reports({ token, role, vendorId, initialMode }) {
       setError(err.message || "Unable to export report");
     } finally {
       setExporting(false);
+    }
+  };
+
+  const onExportTotalSales = async () => {
+    if (!canExportTotalSales || totalSalesExporting) return;
+    let downloadUrl;
+    let link;
+    try {
+      setTotalSalesExportError(null);
+      setTotalSalesExporting(true);
+      // Fetch a fresh snapshot rather than relying on the dashboard being opened.
+      const response = await fetch(apiUrl("/api/dashboard/total-sales"), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body = await response.json();
+      if (!response.ok || !body.data) throw new Error(body.error || "Unable to export total sales");
+
+      const csv = buildTotalSalesCsv(body.data);
+      downloadUrl = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+      link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = totalSalesCsvFilename(body.data);
+      document.body.appendChild(link);
+      link.click();
+    } catch (err) {
+      setTotalSalesExportError(err.message || "Unable to export total sales. Please try again.");
+    } finally {
+      link?.remove();
+      if (downloadUrl) window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+      setTotalSalesExporting(false);
     }
   };
 
@@ -229,6 +263,26 @@ function Reports({ token, role, vendorId, initialMode }) {
         </div>
       </section>
 
+      {canExportTotalSales && (
+        <section className="reports-control-card" aria-labelledby="reports-total-sales-title">
+          <div className="reports-total-sales-export">
+            <div>
+              <span className="reports-section-label">Complete sales overview</span>
+              <h3 id="reports-total-sales-title">Total Sales CSV</h3>
+              <p id="reports-total-sales-scope">All-time totals and sales per product, plus daily (14 days), weekly (8 weeks), and monthly (12 months) breakdowns. Includes recorded sales, deliveries, and return deductions.</p>
+              <small>Uses the latest sales data; independent of the report date range below.</small>
+            </div>
+            <button type="button" className="reports-export-button" onClick={onExportTotalSales} disabled={totalSalesExporting} aria-describedby="reports-total-sales-scope">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5" />
+              </svg>
+              {totalSalesExporting ? "Preparing CSV..." : "Export Total Sales CSV"}
+            </button>
+          </div>
+          {totalSalesExportError && <p className="error-message" role="alert">{totalSalesExportError}</p>}
+        </section>
+      )}
+
       <section className="reports-control-card">
         <div className="reports-section-heading">
           <div>
@@ -289,6 +343,14 @@ function Reports({ token, role, vendorId, initialMode }) {
         .reports-summary strong { color:#2268bd; display:block; font-size:1.8rem; line-height:1; }
         .reports-summary span,.reports-row-count { color:#71819d; font-size:.78rem; }
         .reports-control-card,.reports-preview-card { background:#fff; border:1px solid #dde6f1; border-radius:10px; box-shadow:0 10px 24px rgba(38,75,122,.06); padding:1.35rem 1.5rem; }
+        .reports-total-sales-export { align-items:center; display:flex; gap:1.5rem; justify-content:space-between; }
+        .reports-total-sales-export > div { min-width:0; }
+        .reports-total-sales-export h3 { color:#1e3564; margin:.25rem 0; }
+        .reports-total-sales-export p { color:#697a98; line-height:1.5; margin:.25rem 0 .5rem; max-width:720px; }
+        .reports-total-sales-export small { color:#697a98; display:block; line-height:1.5; }
+        .reports-total-sales-export .reports-export-button { flex-shrink:0; }
+        .reports-total-sales-export .reports-export-button:focus-visible { outline:2px solid #2474c9; outline-offset:3px; }
+        @media (max-width:700px) { .reports-total-sales-export { align-items:stretch; flex-direction:column; gap:1rem; } }
         .reports-section-heading,.reports-preview-heading { align-items:flex-start; display:flex; justify-content:space-between; gap:1rem; }
         .reports-range-badge { background:#f1f6fc; border-radius:999px; color:#557092; font-size:.78rem; padding:.5rem .75rem; white-space:nowrap; }
         .reports-type-grid { display:grid; gap:.7rem; grid-template-columns:repeat(3,minmax(0,1fr)); margin-top:1rem; }
