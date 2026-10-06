@@ -6,7 +6,7 @@ import { getBusinessDate } from "../businessDate.js";
 
 const router = express.Router();
 
-router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+router.get("/", requireRole("SUPERADMIN", "STAFF"), async (req, res) => {
   try {
     if (isInMemoryDb(req.db)) {
       const sales = req.db.sales
@@ -59,7 +59,7 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =>
   }
 });
 
-router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+router.post("/", requireRole("SUPERADMIN", "STAFF"), async (req, res) => {
   try {
     const items = Array.isArray(req.body.items) ? req.body.items : [];
     if (!items.length) {

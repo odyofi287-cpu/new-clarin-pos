@@ -38,7 +38,7 @@ function toCsv(rows, headers) {
   return lines.join("\n");
 }
 
-router.get("/sales", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+router.get("/sales", requireRole("SUPERADMIN", "STAFF"), async (req, res) => {
   try {
     const { start, end } = dateRange(req);
     if (isInMemoryDb(req.db)) {
@@ -103,7 +103,7 @@ router.get("/sales", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, re
   }
 });
 
-router.get("/sales/csv", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+router.get("/sales/csv", requireRole("SUPERADMIN", "STAFF"), async (req, res) => {
   try {
     const { start, end } = dateRange(req);
     let rows;
@@ -170,7 +170,7 @@ router.get("/sales/csv", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req
   }
 });
 
-router.get("/inventory", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+router.get("/inventory", requireRole("SUPERADMIN", "STAFF"), async (req, res) => {
   try {
     const { start, end } = dateRange(req);
     if (isInMemoryDb(req.db)) {
@@ -234,7 +234,7 @@ router.get("/inventory", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req
   }
 });
 
-router.get("/inventory/csv", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+router.get("/inventory/csv", requireRole("SUPERADMIN", "STAFF"), async (req, res) => {
   try {
     const { start, end } = dateRange(req);
     let rows;
@@ -307,7 +307,7 @@ router.get("/inventory/csv", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async 
   }
 });
 
-router.get("/vendor-deliveries", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
+router.get("/vendor-deliveries", requireRole("SUPERADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     const { start, end } = dateRange(req);
     if (isInMemoryDb(req.db)) {
@@ -370,7 +370,7 @@ router.get("/vendor-deliveries", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VE
   }
 });
 
-router.get("/vendor-deliveries/csv", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
+router.get("/vendor-deliveries/csv", requireRole("SUPERADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     const { start, end } = dateRange(req);
     let rows;

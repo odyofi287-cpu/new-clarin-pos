@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert";
+import jwt from "jsonwebtoken";
 
 process.env.NODE_ENV = "test";
 
@@ -162,8 +163,9 @@ test("Database repairs a missing superadmin seed", async () => {
   assert.ok(roles.length >= 1, "Expected the initial database seed to include the SUPERADMIN role");
 });
 
-test("Admin can login and access deliveries", async () => {
+test("Former Admin account logs in as Staff and accesses deliveries", async () => {
   const token = await login("admin@clarin.local", "Admin123!");
+  assert.strictEqual(jwt.decode(token).role, "STAFF");
   const res = await fetch(`${base}/api/deliveries`, { headers: { Authorization: `Bearer ${token}` } });
   assert.strictEqual(res.status, 200);
   const body = await res.json();
@@ -178,6 +180,30 @@ test("Staff can login and access deliveries", async () => {
   assert.strictEqual(res.status, 200);
   const body = await res.json();
   assert(Array.isArray(body.data));
+});
+
+test("Existing Admin sessions use Staff permissions and Admin cannot be assigned", async () => {
+  const legacyToken = jwt.sign({ user_id: 2, role: "ADMIN", vendor_id: null },
+    process.env.JWT_SECRET || "change-this-secret", { expiresIn: "1h" });
+  const legacyHeaders = { Authorization: `Bearer ${legacyToken}` };
+  const currentUser = await fetch(`${base}/api/users/me`, { headers: legacyHeaders });
+  assert.strictEqual(currentUser.status, 200);
+  assert.strictEqual((await currentUser.json()).data.role, "STAFF");
+  assert.strictEqual((await fetch(`${base}/api/dashboard`, { headers: legacyHeaders })).status, 200);
+  assert.strictEqual((await fetch(`${base}/api/users`, { headers: legacyHeaders })).status, 403);
+
+  const token = await login("superadmin@clarin.local", "Superadmin123!");
+  const headers = { "content-type": "application/json", Authorization: `Bearer ${token}` };
+  const create = await fetch(`${base}/api/users`, { method: "POST", headers,
+    body: JSON.stringify({ username: "retired-admin-role", password: "Test123!", name: "Role Test", role: "ADMIN" }) });
+  assert.strictEqual(create.status, 400);
+  const edit = await fetch(`${base}/api/users/2`, { method: "PUT", headers,
+    body: JSON.stringify({ name: "Arena Owner", role: "ADMIN" }) });
+  assert.strictEqual(edit.status, 400);
+  const list = await fetch(`${base}/api/users`, { headers });
+  const users = (await list.json()).data;
+  assert(users.every((user) => ["SUPERADMIN", "STAFF", "VENDOR"].includes(user.role)));
+  assert.strictEqual(users.find((user) => user.id === 2).role, "STAFF");
 });
 
 test("Vendor can login and list only own deliveries", async () => {
@@ -353,6 +379,11 @@ test("Staff can record and list vendor returns and exclude them from sales total
   assert.strictEqual(created.data.items[0].vendor_id, 1);
   assert.strictEqual(created.data.items[0].delivery_id, selectedDelivery.id);
   assert.strictEqual(created.data.items[0].quantity, 2);
+  const stocksAfterReturn = await Promise.all([product, secondProduct].map((item) =>
+    fetch(`${base}/api/products/${item.id}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((response) => response.json())));
+  assert.strictEqual(stocksAfterReturn[0].data.current_stock, product.current_stock + 2);
+  assert.strictEqual(stocksAfterReturn[1].data.current_stock, secondProduct.current_stock + 1);
 
   const eligibleAfterCreateRes = await fetch(`${base}/api/vendor-returns/eligible-products?vendor_id=1&delivery_id=${selectedDelivery.id}`, { headers: { Authorization: `Bearer ${token}` } });
   assert.strictEqual(eligibleAfterCreateRes.status, 200);
@@ -400,6 +431,11 @@ test("Staff can record and list vendor returns and exclude them from sales total
     headers: { Authorization: `Bearer ${token}` },
   });
   assert.strictEqual(deleteRes.status, 200, 'Expected a grouped return to be removed as one batch');
+  const stocksAfterRemoval = await Promise.all([product, secondProduct].map((item) =>
+    fetch(`${base}/api/products/${item.id}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((response) => response.json())));
+  assert.strictEqual(stocksAfterRemoval[0].data.current_stock, product.current_stock);
+  assert.strictEqual(stocksAfterRemoval[1].data.current_stock, secondProduct.current_stock);
 
   const afterDeleteRes = await fetch(`${base}/api/vendor-returns`, { headers: { Authorization: `Bearer ${token}` } });
   const afterDelete = await afterDeleteRes.json();
@@ -651,7 +687,7 @@ test("Superadmin can update managed account information", async () => {
       email: `${username}-renamed@example.com`,
       password: 'ChangedPassword123!',
       name: 'Updated Name',
-      role: 'ADMIN',
+      role: 'STAFF',
       contact_person: 'Updated Contact',
       contact_number: '09991112222',
       vendor_id: null
@@ -663,7 +699,7 @@ test("Superadmin can update managed account information", async () => {
   assert.strictEqual(updated.data.username, `${username}-renamed`);
   assert.strictEqual(updated.data.email, `${username}-renamed@example.com`);
   assert.strictEqual(updated.data.name, 'Updated Name');
-  assert.strictEqual(updated.data.role, 'ADMIN');
+  assert.strictEqual(updated.data.role, 'STAFF');
   assert.strictEqual(updated.data.contact_person, 'Updated Contact');
   assert.strictEqual(updated.data.contact_number, '09991112222');
 
@@ -838,7 +874,7 @@ test("Vendor cannot modify inventory via stock movement", async () => {
   assert.strictEqual(res.status, 403);
 });
 
-test("Admin dashboard returns operational metrics", async () => {
+test("Staff dashboard returns operational metrics", async () => {
   const token = await login("admin@clarin.local", "Admin123!");
   const res = await fetch(`${base}/api/dashboard`, { headers: { Authorization: `Bearer ${token}` } });
   assert.strictEqual(res.status, 200);
@@ -870,11 +906,13 @@ test("Admin dashboard returns operational metrics", async () => {
     todaysReturns.reduce((sum, entry) => sum + Number(entry.quantity), 0));
   assert(Array.isArray(body.data.recent_sales));
   assert(Array.isArray(body.data.low_stock_products));
+  assert(Array.isArray(body.data.out_of_stock_products));
+  assert.strictEqual(body.data.stock_alert_products.length, body.data.low_stock_count + body.data.out_of_stock_count);
   assert.strictEqual(body.data.sales_calendar.daily.length, 31);
   assert.strictEqual(body.data.sales_calendar.monthly.length, 12);
 });
 
-test("Admin total sales analytics retains product images and period summaries", async () => {
+test("Staff total sales analytics retains product images and period summaries", async () => {
   const token = await login("admin@clarin.local", "Admin123!");
   const res = await fetch(`${base}/api/dashboard/total-sales`, { headers: { Authorization: `Bearer ${token}` } });
   assert.strictEqual(res.status, 200);

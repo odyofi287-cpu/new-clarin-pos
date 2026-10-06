@@ -15,6 +15,16 @@ function normalizeDeliveryDate(value) {
   return Number.isNaN(parsed.getTime()) ? getBusinessDate() : parsed.toISOString().slice(0, 10);
 }
 
+async function getDeliveryReturns(db, deliveryId) {
+  if (isInMemoryDb(db)) {
+    return db.vendor_returns.filter((entry) => Number(entry.delivery_id) === deliveryId);
+  }
+  return await dbAll(db,
+    "SELECT product_id, quantity FROM vendor_returns WHERE delivery_id = $1",
+    [deliveryId]
+  );
+}
+
 async function addDeliveryAccountAmounts(db, deliveries) {
   const rows = Array.isArray(deliveries) ? deliveries : [deliveries];
   if (!rows.length || !rows[0]) return Array.isArray(deliveries) ? [] : deliveries;
@@ -55,7 +65,7 @@ async function addDeliveryAccountAmounts(db, deliveries) {
   return Array.isArray(deliveries) ? enriched : enriched[0];
 }
 
-router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
+router.get("/", requireRole("SUPERADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     const pgFilters = [];
     const sqliteFilters = [];
@@ -115,7 +125,7 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (re
   }
 });
 
-router.get("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
+router.get("/:id", requireRole("SUPERADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const params = [id];
@@ -176,7 +186,7 @@ router.get("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async 
   }
 });
 
-router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+router.post("/", requireRole("SUPERADMIN", "STAFF"), async (req, res) => {
   try {
     const { vendor_id, pickup_datetime, delivery_date, delivery_time, items } = req.body;
     const vendorId = Number(vendor_id);
@@ -281,8 +291,6 @@ router.put("/:id", requireRole("SUPERADMIN"), async (req, res) => {
       return res.status(404).json({ error: "Pickup not found" });
     }
 
-    const previousItems = await dbAll(req.db, "SELECT product_id, quantity FROM delivery_items WHERE delivery_id = $1", [id], "SELECT product_id, quantity FROM delivery_items WHERE delivery_id = ?");
-
     const { vendor_id, pickup_datetime, delivery_date, delivery_time, items, payment_status } = req.body;
     const safeVendorId = Number(vendor_id ?? existing.vendor_id);
     const safePaymentStatus = String(payment_status ?? existing.payment_status ?? "UNPAID").trim().toUpperCase();
@@ -321,6 +329,28 @@ router.put("/:id", requireRole("SUPERADMIN"), async (req, res) => {
 
     const totalAmount = itemPayloads.reduce((sum, item) => sum + item.quantity * item.unitCost, 0);
     await withTransaction(req.db, async () => {
+      const lockedDelivery = await dbGet(req.db,
+        "SELECT id, vendor_id FROM deliveries WHERE id = $1 FOR UPDATE", [id],
+        "SELECT id, vendor_id FROM deliveries WHERE id = ?");
+      if (!lockedDelivery) throw new Error("Pickup not found");
+      const deliveryReturns = await getDeliveryReturns(req.db, id);
+      if (deliveryReturns.length && safeVendorId !== Number(lockedDelivery.vendor_id)) {
+        throw new Error("Remove this pickup's returns before changing its vendor");
+      }
+      const returnedQuantities = new Map();
+      for (const entry of deliveryReturns) {
+        const productId = Number(entry.product_id);
+        returnedQuantities.set(productId, (returnedQuantities.get(productId) || 0) + Number(entry.quantity));
+      }
+      for (const [productId, quantity] of returnedQuantities) {
+        const deliveredQuantity = itemPayloads.filter((item) => item.productId === productId)
+          .reduce((sum, item) => sum + item.quantity, 0);
+        if (deliveredQuantity < quantity) {
+          throw new Error(`Product ${productId} already has ${quantity} returned units; remove those returns before reducing its delivered quantity`);
+        }
+      }
+      const previousItems = await dbAll(req.db,
+        "SELECT product_id, quantity FROM delivery_items WHERE delivery_id = $1", [id]);
       for (const item of previousItems) {
         await dbRun(req.db, "UPDATE products SET current_stock = current_stock + $1 WHERE id = $2 RETURNING id", [item.quantity, item.product_id], "UPDATE products SET current_stock = current_stock + ? WHERE id = ?");
         await dbRun(
@@ -412,7 +442,7 @@ router.put("/:id", requireRole("SUPERADMIN"), async (req, res) => {
   }
 });
 
-router.post("/:id/confirm-payment", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+router.post("/:id/confirm-payment", requireRole("SUPERADMIN", "STAFF"), async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) {
@@ -470,7 +500,7 @@ router.post("/:id/confirm-payment", requireRole("SUPERADMIN", "ADMIN", "STAFF"),
   }
 });
 
-router.delete("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+router.delete("/:id", requireRole("SUPERADMIN", "STAFF"), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const delivery = await dbGet(req.db, "SELECT id, vendor_id, total_amount FROM deliveries WHERE id = $1", [id], "SELECT id, vendor_id, total_amount FROM deliveries WHERE id = ?");
@@ -478,9 +508,16 @@ router.delete("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, r
       return res.status(404).json({ error: "Pickup not found" });
     }
 
-    const items = await dbAll(req.db, "SELECT product_id, quantity FROM delivery_items WHERE delivery_id = $1", [id], "SELECT product_id, quantity FROM delivery_items WHERE delivery_id = ?");
-
     await withTransaction(req.db, async () => {
+      const lockedDelivery = await dbGet(req.db,
+        "SELECT id FROM deliveries WHERE id = $1 FOR UPDATE", [id],
+        "SELECT id FROM deliveries WHERE id = ?");
+      if (!lockedDelivery) throw new Error("Pickup not found");
+      if ((await getDeliveryReturns(req.db, id)).length) {
+        throw new Error("Remove this pickup's returns before deleting the pickup to avoid restocking returned units twice");
+      }
+      const items = await dbAll(req.db,
+        "SELECT product_id, quantity FROM delivery_items WHERE delivery_id = $1", [id]);
       for (const item of items) {
         await dbRun(req.db, "UPDATE products SET current_stock = current_stock + $1 WHERE id = $2 RETURNING id", [item.quantity, item.product_id], "UPDATE products SET current_stock = current_stock + ? WHERE id = ?");
         await dbRun(

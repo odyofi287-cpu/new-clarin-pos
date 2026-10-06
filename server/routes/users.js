@@ -2,6 +2,7 @@ import express from "express";
 import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
 import { requireRole, requireSuperadmin } from "../middleware/auth.js";
+import { SUPPORTED_ROLES } from "../roleMigration.js";
 import { dbAll, dbGet, dbRun, isInMemoryDb, isPostgresDb, withTransaction } from "./dbCompat.js";
 import { publishDataChange } from "../events.js";
 
@@ -83,12 +84,12 @@ async function resolveVendorId(db, role, vendorId, name, contact, forceCreate = 
   return requestedVendorId;
 }
 
-router.get("/me", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
+router.get("/me", requireRole("SUPERADMIN", "STAFF", "VENDOR"), async (req, res) => {
   const user = await dbGet(req.db, "SELECT id, username, email, name, profile_picture FROM users WHERE id = $1", [req.user.user_id], "SELECT id, username, email, name, profile_picture FROM users WHERE id = ?");
   res.json({ data: { user_id: user?.id ?? req.user.user_id, username: user?.username, email: user?.email ?? req.user.email, name: user?.name ?? req.user.name, profile_picture: user?.profile_picture || null, role: req.user.role, vendor_id: req.user.vendor_id } });
 });
 
-router.get("/vendors", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
+router.get("/vendors", requireRole("SUPERADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     const params = [];
     let whereClause;
@@ -208,7 +209,7 @@ router.post("/", requireSuperadmin, async (req, res) => {
   const finalEmail = String(email || (normalizedUsername.includes("@") ? normalizedUsername : `${normalizedUsername}@clarin.local`)).trim().toLowerCase();
 
   const roleRecord = await dbGet(req.db, "SELECT id, name FROM roles WHERE name = $1", [role.toUpperCase()], "SELECT id, name FROM roles WHERE name = ?");
-  if (!roleRecord) {
+  if (!roleRecord || !SUPPORTED_ROLES.includes(roleRecord.name)) {
     return res.status(400).json({ error: "Unsupported role" });
   }
 
@@ -269,7 +270,7 @@ router.put("/:id", requireSuperadmin, async (req, res) => {
   }
 
   const roleRecord = await dbGet(req.db, "SELECT id, name FROM roles WHERE name = $1", [role.toUpperCase()], "SELECT id, name FROM roles WHERE name = ?");
-  if (!roleRecord) {
+  if (!roleRecord || !SUPPORTED_ROLES.includes(roleRecord.name)) {
     return res.status(400).json({ error: "Unsupported role" });
   }
 

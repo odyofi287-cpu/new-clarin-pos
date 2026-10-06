@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
+import { normalizeSessionRole } from "../roleMigration.js";
 
 dotenv.config();
 
@@ -18,7 +19,7 @@ export function authMiddleware(req, res, next) {
 
   try {
     const payload = jwt.verify(token, JWT_SECRET || "change-this-secret");
-    req.user = payload;
+    req.user = { ...payload, role: normalizeSessionRole(payload.role) };
     next();
   } catch (error) {
     return res.status(401).json({ error: "Invalid or expired token" });

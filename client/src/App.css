@@ -2158,11 +2158,6 @@ tbody tr:last-child td {
   color: #4a4fa2;
 }
 
-.role-admin {
-  background: #e4f2ff;
-  color: #22659d;
-}
-
 .role-staff {
   background: #e7f7ef;
   color: #287356;
@@ -2717,6 +2712,11 @@ button[disabled] {
   color: #b46d22;
   font-size: 0.72rem;
   font-weight: 800;
+}
+
+.low-stock-status.out-of-stock {
+  background: #fde8ea;
+  color: #b42336;
 }
 
 .low-stock-empty {

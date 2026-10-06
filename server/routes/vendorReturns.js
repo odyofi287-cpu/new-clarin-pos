@@ -4,6 +4,7 @@ import { requireRole } from "../middleware/auth.js";
 import { publishDataChange } from "../events.js";
 import { dbAll, dbGet, dbRun, isInMemoryDb, withTransaction } from "./dbCompat.js";
 import { getBusinessDate } from "../businessDate.js";
+import { restockVendorReturn, reverseVendorReturnStock } from "./returnInventory.js";
 
 const router = express.Router();
 
@@ -232,7 +233,7 @@ async function getVendorReturnableProducts(db, vendorId, deliveryId, businessDat
     .filter((product) => product.returnable_quantity > 0);
 }
 
-router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
+router.get("/", requireRole("SUPERADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     let sql = `
       SELECT vr.id, vr.return_batch_id, vr.delivery_id, vr.vendor_id, v.name AS vendor_name, vr.product_id, p.name AS product_name,
@@ -265,7 +266,7 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (re
   }
 });
 
-router.get("/eligible-deliveries", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
+router.get("/eligible-deliveries", requireRole("SUPERADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     const vendorId = Number(req.query.vendor_id);
     if (!Number.isInteger(vendorId) || vendorId <= 0) {
@@ -287,7 +288,7 @@ router.get("/eligible-deliveries", requireRole("SUPERADMIN", "ADMIN", "STAFF", "
   }
 });
 
-router.get("/eligible-products", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
+router.get("/eligible-products", requireRole("SUPERADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     const vendorId = Number(req.query.vendor_id);
     const deliveryId = Number(req.query.delivery_id);
@@ -328,7 +329,7 @@ router.get("/eligible-products", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VE
   }
 });
 
-router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+router.post("/", requireRole("SUPERADMIN", "STAFF"), async (req, res) => {
   try {
     const {
       vendor_id,
@@ -436,7 +437,7 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
       }
 
       const rows = [];
-      for (const item of returnItems) {
+      for (const item of [...returnItems].sort((a, b) => a.productId - b.productId)) {
         const result = await dbRun(
           req.db,
           `INSERT INTO vendor_returns (vendor_id, delivery_id, product_id, quantity, total_product_price_returned, return_date, return_time, created_by, return_batch_id)
@@ -445,6 +446,11 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
           `INSERT INTO vendor_returns (vendor_id, delivery_id, product_id, quantity, total_product_price_returned, return_date, return_time, created_by, return_batch_id)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
         );
+        await restockVendorReturn(req.db, {
+          id: result.lastInsertRowid,
+          product_id: item.productId,
+          quantity: item.qty,
+        }, req.user.user_id || req.user.id);
         rows.push({
           id: result.lastInsertRowid,
           vendor_id: vendorId,
@@ -482,55 +488,59 @@ router.post("/", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) =
   }
 });
 
-router.delete("/batch/:batchId", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+async function removeReturns(db, field, value, userId) {
+  return await withTransaction(db, async () => {
+    // Lock the return rows so concurrent removal requests cannot reverse the
+    // same stock-in twice. The caller selects only fixed, internal field names.
+    const entries = isInMemoryDb(db)
+      ? db.vendor_returns.filter((entry) => entry[field] === value)
+      : await dbAll(db,
+          `SELECT id, product_id, quantity FROM vendor_returns WHERE ${field} = $1 ORDER BY id FOR UPDATE`,
+          [value],
+          `SELECT id, product_id, quantity FROM vendor_returns WHERE ${field} = ? ORDER BY id`
+        );
+    if (!entries.length) {
+      const error = new Error("Vendor return not found");
+      error.status = 404;
+      throw error;
+    }
+    for (const entry of [...entries].sort((a, b) => Number(a.product_id) - Number(b.product_id) || Number(a.id) - Number(b.id))) {
+      await reverseVendorReturnStock(db, entry, userId);
+    }
+    return await dbRun(db,
+      `DELETE FROM vendor_returns WHERE ${field} = $1 RETURNING id`,
+      [value],
+      `DELETE FROM vendor_returns WHERE ${field} = ?`
+    );
+  });
+}
+
+router.delete("/batch/:batchId", requireRole("SUPERADMIN", "STAFF"), async (req, res) => {
   try {
     const batchId = String(req.params.batchId || "").trim();
     if (!batchId) {
       return res.status(400).json({ error: "Return batch ID is required" });
     }
 
-    const existing = await dbGet(
-      req.db,
-      "SELECT id FROM vendor_returns WHERE return_batch_id = $1 LIMIT 1",
-      [batchId],
-      "SELECT id FROM vendor_returns WHERE return_batch_id = ? LIMIT 1"
-    );
-    if (!existing) {
-      return res.status(404).json({ error: "Vendor return batch not found" });
-    }
-
-    const result = await dbRun(
-      req.db,
-      "DELETE FROM vendor_returns WHERE return_batch_id = $1 RETURNING id",
-      [batchId],
-      "DELETE FROM vendor_returns WHERE return_batch_id = ?"
-    );
+    const result = await removeReturns(req.db, "return_batch_id", batchId, req.user.user_id || req.user.id);
     publishDataChange("vendor-return");
     res.json({ data: { deleted: true, return_batch_id: batchId, count: result.changes } });
   } catch (error) {
     console.error(error);
-    res.status(400).json({ error: error.message || "Failed to remove vendor return batch" });
+    res.status(error.status || 400).json({ error: error.message || "Failed to remove vendor return batch" });
   }
 });
 
-router.delete("/:id", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+router.delete("/:id", requireRole("SUPERADMIN", "STAFF"), async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const existing = await dbGet(req.db, "SELECT id, vendor_id FROM vendor_returns WHERE id = $1", [id], "SELECT id, vendor_id FROM vendor_returns WHERE id = ?");
-    if (!existing) {
-      return res.status(404).json({ error: "Vendor return not found" });
-    }
-    if (req.user.role === "VENDOR" && Number(req.user.vendor_id) !== Number(existing.vendor_id)) {
-      return res.status(403).json({ error: "You can only remove your own vendor returns" });
-    }
-
-    await dbRun(req.db, "DELETE FROM vendor_returns WHERE id = $1 RETURNING id", [id], "DELETE FROM vendor_returns WHERE id = ?");
+    await removeReturns(req.db, "id", id, req.user.user_id || req.user.id);
 
     publishDataChange("vendor-return");
     res.json({ data: { deleted: true, id } });
   } catch (error) {
     console.error(error);
-    res.status(400).json({ error: error.message || "Failed to remove vendor return" });
+    res.status(error.status || 400).json({ error: error.message || "Failed to remove vendor return" });
   }
 });
 

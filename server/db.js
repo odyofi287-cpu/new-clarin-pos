@@ -5,6 +5,7 @@ import { createRequire } from 'module';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import pg from 'pg';
 import { getBusinessDate } from './businessDate.js';
+import { SUPPORTED_ROLES, migrateAdminRoleInMemory, migrateAdminRoleSqlite, migrateAdminRolePostgres } from './roleMigration.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = path.join(__dirname, "data");
@@ -46,10 +47,10 @@ class InMemoryDB {
   }
 
   transaction(fn) {
-    return () => {
+    return async () => {
       const snapshot = JSON.stringify(this);
       try {
-        return fn();
+        return await fn();
       } catch (error) {
         Object.assign(this, JSON.parse(snapshot));
         throw error;
@@ -579,7 +580,8 @@ class InMemoryDB {
     if (normalized.startsWith("INSERT INTO VENDOR_RETURNS")) {
       return {
         run: (vendor_id, delivery_id, product_id, quantity, total_product_price_returned, return_date, return_time, created_by, return_batch_id) => {
-          const id = this.vendor_returns.length + 1;
+          const id = Math.max(this.vendorReturnSequence || 0, ...this.vendor_returns.map((row) => row.id), 0) + 1;
+          this.vendorReturnSequence = id;
           const row = {
             id,
             vendor_id,
@@ -687,6 +689,12 @@ class PostgresDB {
       END $$`);
     await this.pool.query("CREATE INDEX IF NOT EXISTS idx_vendor_returns_batch_id ON vendor_returns(return_batch_id)");
     await this.pool.query("CREATE INDEX IF NOT EXISTS idx_vendor_returns_delivery_id ON vendor_returns(delivery_id)");
+    const roleMigrationClient = await this.pool.connect();
+    try {
+      await migrateAdminRolePostgres(roleMigrationClient);
+    } finally {
+      roleMigrationClient.release();
+    }
     if (shouldSeedInitialData()) {
       await this.seed();
     }
@@ -756,7 +764,7 @@ class PostgresDB {
   async seed() {
     const require = createRequire(import.meta.url);
     const bcrypt = require("bcrypt");
-    const roleNames = ["SUPERADMIN", "ADMIN", "STAFF", "VENDOR"];
+    const roleNames = SUPPORTED_ROLES;
     for (const role of roleNames) {
       await this.pool.query("INSERT INTO roles (name) VALUES ($1) ON CONFLICT (name) DO NOTHING", [role]);
     }
@@ -771,7 +779,7 @@ class PostgresDB {
         product
       );
     }
-    const users = [["superadmin", "superadmin@clarin.local", bcrypt.hashSync("Superadmin123!", 10), "System Owner", "SUPERADMIN", null], ["admin", "admin@clarin.local", bcrypt.hashSync("Admin123!", 10), "Arena Owner", "ADMIN", null], ["staff", "staff@clarin.local", bcrypt.hashSync("Staff123!", 10), "POS Staff", "STAFF", null], ["vendor", "vendor@clarin.local", bcrypt.hashSync("Vendor123!", 10), "Vendor User", "VENDOR", vendorId1], ["vendor2", "vendor2@clarin.local", bcrypt.hashSync("Vendor123!", 10), "Vendor Two", "VENDOR", vendorId2]];
+    const users = [["superadmin", "superadmin@clarin.local", bcrypt.hashSync("Superadmin123!", 10), "System Owner", "SUPERADMIN", null], ["admin", "admin@clarin.local", bcrypt.hashSync("Admin123!", 10), "Arena Owner", "STAFF", null], ["staff", "staff@clarin.local", bcrypt.hashSync("Staff123!", 10), "POS Staff", "STAFF", null], ["vendor", "vendor@clarin.local", bcrypt.hashSync("Vendor123!", 10), "Vendor User", "VENDOR", vendorId1], ["vendor2", "vendor2@clarin.local", bcrypt.hashSync("Vendor123!", 10), "Vendor Two", "VENDOR", vendorId2]];
     for (const [username, email, password, name, role, vendorId] of users) {
       await this.pool.query("INSERT INTO users (username, email, password, name, role_id, vendor_id, active) SELECT $1, $2, $3, $4, id, $6, 1 FROM roles WHERE name = $5 ON CONFLICT (email) DO NOTHING", [username, email, password, name, role, vendorId]);
     }
@@ -1003,7 +1011,6 @@ function seedInitialData(db) {
     // Seed in-memory structures
     if (db.roles.length === 0) {
       db.roles.push({ id: 1, name: "SUPERADMIN" });
-      db.roles.push({ id: 2, name: "ADMIN" });
       db.roles.push({ id: 3, name: "STAFF" });
       db.roles.push({ id: 4, name: "VENDOR" });
     }
@@ -1021,7 +1028,7 @@ function seedInitialData(db) {
     if (db.users.length === 0) {
       // Store plain passwords only in test mode to avoid bcrypt native dependency
       db.users.push({ id: 1, username: "superadmin", email: "superadmin@clarin.local", password: "Superadmin123!", name: "System Owner", role_id: 1, vendor_id: null, active: 1, created_at: new Date().toISOString() });
-      db.users.push({ id: 2, username: "admin", email: "admin@clarin.local", password: "Admin123!", name: "Arena Owner", role_id: 2, vendor_id: null, active: 1, created_at: new Date().toISOString() });
+      db.users.push({ id: 2, username: "admin", email: "admin@clarin.local", password: "Admin123!", name: "Arena Owner", role_id: 3, vendor_id: null, active: 1, created_at: new Date().toISOString() });
       db.users.push({ id: 3, username: "staff", email: "staff@clarin.local", password: "Staff123!", name: "POS Staff", role_id: 3, vendor_id: null, active: 1, created_at: new Date().toISOString() });
       db.users.push({ id: 4, username: "vendor", email: "vendor@clarin.local", password: "Vendor123!", name: "Vendor User", role_id: 4, vendor_id: 1, active: 1, created_at: new Date().toISOString() });
       db.users.push({ id: 5, username: "vendor2", email: "vendor2@clarin.local", password: "Vendor123!", name: "Vendor Two", role_id: 4, vendor_id: 2, active: 1, created_at: new Date().toISOString() });
@@ -1053,7 +1060,7 @@ function seedInitialData(db) {
     return db.prepare("INSERT INTO roles (name) VALUES (?)").run(name).lastInsertRowid;
   };
 
-  const requiredRoles = ["SUPERADMIN", "ADMIN", "STAFF", "VENDOR"];
+  const requiredRoles = SUPPORTED_ROLES;
   requiredRoles.forEach((roleName) => ensureRole(roleName));
 
   const existingVendors = db.prepare("SELECT COUNT(*) AS count FROM vendors").get().count;
@@ -1119,7 +1126,7 @@ function seedInitialData(db) {
       email: "admin@clarin.local",
       password: bcrypt ? bcrypt.hashSync("Admin123!", 10) : "Admin123!",
       name: "Arena Owner",
-      roleName: "ADMIN",
+      roleName: "STAFF",
       vendorId: null,
     },
     {
@@ -1193,6 +1200,7 @@ export function initDb() {
     if (shouldSeedInitialData()) {
       seedInitialData(mem);
     }
+    migrateAdminRoleInMemory(mem);
     return mem;
   }
   if (process.env.POSTGRES_ENABLED === "true" && !process.env.DATABASE_URL) {
@@ -1212,6 +1220,7 @@ export function initDb() {
   const db = new Database(dbFile);
   createSchema(db);
   migrateSchema(db);
+  migrateAdminRoleSqlite(db);
   if (shouldSeedInitialData()) {
     // seedInitialData may perform async bcrypt import; call and ignore promise
     seedInitialData(db);

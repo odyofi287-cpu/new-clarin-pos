@@ -352,7 +352,7 @@ export function buildVendorDailyPaymentHistory(deliveries = [], returns = []) {
     }));
 }
 
-router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (req, res) => {
+router.get("/", requireRole("SUPERADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     if (req.user.role === "VENDOR") {
       return await vendorDashboard(req, res);
@@ -364,7 +364,7 @@ router.get("/", requireRole("SUPERADMIN", "ADMIN", "STAFF", "VENDOR"), async (re
   }
 });
 
-router.get("/total-sales", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (req, res) => {
+router.get("/total-sales", requireRole("SUPERADMIN", "STAFF"), async (req, res) => {
   try {
     const today = getTodayString();
     let sales;
@@ -507,9 +507,39 @@ router.get("/total-sales", requireRole("SUPERADMIN", "ADMIN", "STAFF"), async (r
   }
 });
 
+export async function getStockAlerts(db) {
+  const products = isInMemoryDb(db)
+    ? db.products.filter((product) => Number(product.active ?? 1) === 1 && Number(product.current_stock || 0) <= 10)
+    : await dbAll(db,
+        `SELECT id, name, category, image_url, current_stock, minimum_stock, unit
+         FROM products WHERE active = 1 AND current_stock <= 10
+         ORDER BY current_stock ASC, name ASC, id ASC`
+      );
+  const alerts = products.map((product) => ({
+    id: product.id,
+    name: product.name,
+    category: product.category,
+    image_url: product.image_url || null,
+    current_stock: Number(product.current_stock || 0),
+    minimum_stock: Number(product.minimum_stock || 0),
+    unit: product.unit,
+    status: Number(product.current_stock || 0) <= 0 ? "OUT_OF_STOCK" : "LOW_STOCK",
+  })).sort((a, b) => a.current_stock - b.current_stock || a.name.localeCompare(b.name) || Number(a.id) - Number(b.id));
+  const lowStockProducts = alerts.filter((product) => product.status === "LOW_STOCK");
+  const outOfStockProducts = alerts.filter((product) => product.status === "OUT_OF_STOCK");
+  return {
+    stock_alert_products: alerts,
+    low_stock_products: lowStockProducts,
+    out_of_stock_products: outOfStockProducts,
+    low_stock_count: lowStockProducts.length,
+    out_of_stock_count: outOfStockProducts.length,
+  };
+}
+
 async function operationalDashboard(req, res) {
   const today = getTodayString();
   const activityCounts = await getDailyActivityCounts(req.db, today);
+  const stockAlerts = await getStockAlerts(req.db);
 
   if (isInMemoryDb(req.db)) {
     const salesToday = req.db.sales.filter((sale) => sale.sale_date === today);
@@ -523,11 +553,6 @@ async function operationalDashboard(req, res) {
 
     const activeProducts = req.db.products.filter((p) => Number(p.active ?? 1) === 1);
     const totalCurrentInventory = activeProducts.reduce((sum, p) => sum + Number(p.current_stock || 0), 0);
-    const lowStockProducts = activeProducts
-      .filter((p) => Number(p.current_stock || 0) > 0 && Number(p.current_stock || 0) <= 10)
-      .sort((a, b) => a.current_stock - b.current_stock);
-    const outOfStockCount = activeProducts.filter((p) => Number(p.current_stock || 0) <= 0).length;
-
     const recentSales = req.db.sales
       .slice()
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
@@ -566,19 +591,9 @@ async function operationalDashboard(req, res) {
         calculated_todays_sales: calculatedSales,
         ...activityCounts,
         total_current_inventory: totalCurrentInventory,
-        low_stock_count: lowStockProducts.length,
-        out_of_stock_count: outOfStockCount,
+        ...stockAlerts,
         recent_sales: recentSales,
         recent_deliveries: recentDeliveries,
-        low_stock_products: lowStockProducts.map((p) => ({
-          id: p.id,
-          name: p.name,
-          category: p.category,
-          image_url: p.image_url || null,
-          current_stock: p.current_stock,
-          minimum_stock: p.minimum_stock,
-          unit: p.unit,
-        })),
         sales_calendar: salesCalendar,
       },
     });
@@ -612,23 +627,10 @@ async function operationalDashboard(req, res) {
     "SELECT COALESCE(SUM(current_stock), 0) AS total FROM products WHERE active = 1"
   )).total;
 
-  const lowStockProducts = await dbAll(
-    req.db,
-    `SELECT id, name, category, image_url, current_stock, minimum_stock, unit
-      FROM products WHERE active = 1 AND current_stock > 0 AND current_stock <= 10
-      ORDER BY current_stock ASC LIMIT 10`
-  );
-
-  const lowStockCount = lowStockProducts.length;
   const calendarSales = await dbAll(req.db, "SELECT sale_date, total_amount FROM sales", [], "SELECT sale_date, total_amount FROM sales");
   const calendarDeliveries = await dbAll(req.db, "SELECT delivery_date, total_amount FROM deliveries", [], "SELECT delivery_date, total_amount FROM deliveries");
   const calendarReturns = await dbAll(req.db, "SELECT return_date, total_product_price_returned FROM vendor_returns", [], "SELECT return_date, total_product_price_returned FROM vendor_returns");
   const salesCalendar = buildSalesCalendar(calendarSales, calendarDeliveries, calendarReturns);
-  const outOfStockCount = (await dbGet(
-    req.db,
-    "SELECT COUNT(*) AS count FROM products WHERE active = 1 AND current_stock <= 0"
-  )).count;
-
   const recentSales = await dbAll(
     req.db,
     `SELECT s.id, s.sale_date, s.total_amount, u.name AS sold_by, COALESCE(SUM(si.quantity), 0) AS item_count
@@ -665,11 +667,9 @@ async function operationalDashboard(req, res) {
       calculated_todays_sales: calculatedTodaysSales,
       ...activityCounts,
       total_current_inventory: totalCurrentInventory,
-      low_stock_count: lowStockCount,
-      out_of_stock_count: outOfStockCount,
+      ...stockAlerts,
       recent_sales: recentSales,
       recent_deliveries: recentDeliveries,
-      low_stock_products: lowStockProducts,
       sales_calendar: salesCalendar,
     },
   });

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
-import { getDailyActivityCounts } from "./routes/dashboard.js";
+import { getDailyActivityCounts, getStockAlerts } from "./routes/dashboard.js";
 
 const TODAY = "2026-10-05";
 const YESTERDAY = "2026-10-04";
@@ -43,6 +43,8 @@ function sqliteFixture(rows) {
     CREATE TABLE deliveries (id INTEGER, delivery_date TEXT, payment_status TEXT);
     CREATE TABLE delivery_items (delivery_id INTEGER, quantity REAL);
     CREATE TABLE vendor_returns (id INTEGER, return_date TEXT, return_batch_id TEXT, quantity REAL);
+    CREATE TABLE products (id INTEGER, name TEXT, category TEXT, image_url TEXT,
+      current_stock INTEGER, minimum_stock INTEGER, unit TEXT, active INTEGER);
   `);
   for (const [table, entries] of Object.entries(rows)) {
     for (const entry of entries) {
@@ -112,3 +114,36 @@ test("PostgreSQL counter results are returned as numbers", async () => {
     items_sold_today: 22,
   });
 });
+
+for (const backend of ["in-memory", "SQLite"]) {
+  test(`${backend}: stock alerts include zero stock, retain images and count all low-stock products`, async () => {
+    const product = (id, name, current_stock, active = 1) => ({
+      id, name, current_stock, active, category: "Drinks", image_url: `/products/${id}.png`,
+      minimum_stock: 10, unit: "bottles",
+    });
+    const rows = {
+      sales: [], sale_items: [],
+      products: [
+        product(1, "Sold out", 0), product(2, "Negative balance", -1),
+        product(3, "Low boundary", 10), product(4, "Healthy stock", 11),
+        product(5, "Archived product", 0, 0), product(6, "Low stock", 3),
+        ...Array.from({ length: 11 }, (_, index) => product(index + 7, `Low product ${index}`, 5)),
+      ],
+    };
+    const db = backend === "SQLite" ? sqliteFixture(rows) : rows;
+    try {
+      const summary = await getStockAlerts(db);
+      assert.equal(summary.out_of_stock_count, 2);
+      assert.equal(summary.low_stock_count, 13, "Counts and alerts must not stop at ten products");
+      assert.equal(summary.stock_alert_products.length, 15);
+      assert.deepEqual(summary.stock_alert_products.slice(0, 2).map((row) => row.id), [2, 1]);
+      assert(summary.out_of_stock_products.every((row) => row.status === "OUT_OF_STOCK"));
+      assert(summary.low_stock_products.every((row) => row.status === "LOW_STOCK"));
+      assert(!summary.stock_alert_products.some((row) => row.id === 4 || row.id === 5));
+      assert.equal(summary.out_of_stock_products.find((row) => row.id === 1).image_url, "/products/1.png");
+      if (backend === "SQLite") db.prepare("UPDATE products SET current_stock = 12 WHERE id = 1").run();
+      else rows.products[0].current_stock = 12;
+      assert.equal((await getStockAlerts(db)).out_of_stock_count, 1);
+    } finally { if (backend === "SQLite") db.close(); }
+  });
+}

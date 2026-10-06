@@ -10,6 +10,7 @@ try {
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
 import { dbGet } from "./dbCompat.js";
+import { normalizeSessionRole } from "../roleMigration.js";
 
 dotenv.config();
 
@@ -52,14 +53,14 @@ router.post("/login", async (req, res) => {
       user_id: user.id,
       email: user.email,
       name: user.name,
-      role: user.role,
+      role: normalizeSessionRole(user.role),
       vendor_id: user.vendor_id || null,
     },
     JWT_SECRET || "change-this-secret",
     { expiresIn: JWT_EXPIRATION }
   );
 
-  res.json({ data: { token, role: user.role, vendor_id: user.vendor_id } });
+  res.json({ data: { token, role: normalizeSessionRole(user.role), vendor_id: user.vendor_id } });
 });
 
 export default router;

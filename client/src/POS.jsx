@@ -67,7 +67,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   const isDeliveriesView = viewMode === "deliveries";
   const isSalesHistoryView = viewMode === "sales-history";
   const canManagePickupEntries = role === "SUPERADMIN" && isDeliveriesView;
-  const canManagePaymentStatus = ["SUPERADMIN", "ADMIN", "STAFF"].includes(role) && isDeliveriesView;
+  const canManagePaymentStatus = ["SUPERADMIN", "STAFF"].includes(role) && isDeliveriesView;
   const [products, setProducts] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [pickupOpen, setPickupOpen] = useState(false);
@@ -556,6 +556,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   };
 
   const handleDeleteReturn = async (entry) => {
+    if (!window.confirm("Remove this return? Any automatically restocked units will be deducted from current inventory.")) return;
     setError(null);
     setStatus(null);
     const legacyId = Array.isArray(entry.return_ids) ? entry.return_ids[0] : String(entry.return_ids || entry.id).split(',')[0];
@@ -573,6 +574,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
         ? row.return_batch_id !== entry.return_batch_id
         : String(row.id) !== String(entry.id)));
       setStatus(entry.return_batch_id ? 'Vendor return batch removed successfully.' : 'Vendor return removed successfully.');
+      window.dispatchEvent(new Event('productsUpdated'));
     } catch (err) {
       setError(err.message || 'Unable to remove vendor return.');
     }

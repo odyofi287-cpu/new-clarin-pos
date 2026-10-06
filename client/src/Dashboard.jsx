@@ -200,7 +200,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
   const [showCreateAccountWindow, setShowCreateAccountWindow] = useState(false);
   const [expandedVendorDeliveryIds, setExpandedVendorDeliveryIds] = useState(() => new Set());
   const [createProductForm, setCreateProductForm] = useState({ name: "", category: "", selling_price: "", current_stock: "", image_url: "" });
-  const [createAccountForm, setCreateAccountForm] = useState({ name: "", role: "ADMIN", vendor_id: "", contact_person: "", contact_number: "" });
+  const [createAccountForm, setCreateAccountForm] = useState({ name: "", role: "STAFF", vendor_id: "", contact_person: "", contact_number: "" });
 
   useEffect(() => {
     if (!token) {
@@ -294,13 +294,15 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
     return <div className="dashboard-shell"><p>Loading dashboard...</p></div>;
   }
 
-  if (viewMode === "products" && !(role === "SUPERADMIN" || role === "ADMIN" || role === "STAFF")) {
+  if (viewMode === "products" && !(role === "SUPERADMIN" || role === "STAFF")) {
     return <div className="dashboard-shell"><p className="error-message">You do not have access to inventory management.</p></div>;
   }
 
   if (viewMode === "users" && role !== "SUPERADMIN") {
     return <div className="dashboard-shell"><p className="error-message">You do not have access to Account Management.</p></div>;
   }
+
+  const stockAlerts = data.stock_alert_products || data.low_stock_products || [];
 
   if (data.vendor_summary && viewMode === "dashboard") {
     const paymentSummary = data.vendor_summary.payment_summary || {};
@@ -636,13 +638,13 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
             <div className="low-stock-alert-header">
               <div>
                 <span className="chart-kicker">Inventory attention</span>
-                <h3>Low Stock Alert</h3>
-                <p>Products that need replenishment soon.</p>
+                <h3>Low-stock and Out of Stock Alert</h3>
+                <p>Products running low or unavailable. Out-of-stock items appear first.</p>
               </div>
-              <span className="low-stock-alert-count">{data.low_stock_products.length} alerts</span>
+              <span className="low-stock-alert-count">{stockAlerts.length} {stockAlerts.length === 1 ? "alert" : "alerts"}</span>
             </div>
-            {data.low_stock_products.length === 0 ? (
-              <div className="low-stock-empty"><span className="low-stock-empty-icon">✓</span><span>All products are above their reorder levels.</span></div>
+            {stockAlerts.length === 0 ? (
+              <div className="low-stock-empty"><span className="low-stock-empty-icon">✓</span><span>No active products are low on stock or out of stock.</span></div>
             ) : (
               <table className="low-stock-table">
                 <thead>
@@ -656,14 +658,14 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.low_stock_products.map((product) => (
+                  {stockAlerts.map((product) => (
                     <tr key={product.id}>
                       <td data-label="">{product.image_url ? <img className="low-stock-product-image" src={product.image_url} alt="" /> : <span className="low-stock-product-icon">{product.name.slice(0, 1).toUpperCase()}</span>}</td>
                       <td data-label="Product"><strong className="low-stock-product-name">{product.name}</strong></td>
                       <td data-label="Category">{product.category || "General"}</td>
                       <td data-label="Current Stock"><strong className="stock-number">{product.current_stock} {product.unit || "units"}</strong></td>
                       <td data-label="Reorder Level">{product.minimum_stock} {product.unit || "units"}</td>
-                      <td data-label="Status"><span className="low-stock-status">Low Stock</span></td>
+                      <td data-label="Status"><span className={`low-stock-status${Number(product.current_stock) <= 0 ? " out-of-stock" : ""}`}>{Number(product.current_stock) <= 0 ? "Out of Stock" : "Low Stock"}</span></td>
                     </tr>
                   ))}
                 </tbody>
@@ -802,7 +804,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
               <button className="primary-button" onClick={() => {
                 setManageError(null);
                 setManageSuccess(null);
-                setCreateAccountForm({ name: '', role: 'ADMIN', vendor_id: '', contact_person: '', contact_number: '' });
+                setCreateAccountForm({ name: '', role: 'STAFF', vendor_id: '', contact_person: '', contact_number: '' });
                 setShowCreateAccountWindow(true);
               }}>Add New Account</button>
             </div>
@@ -922,7 +924,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
                 if (!res.ok) throw new Error(body.error || `Create account failed (${res.status})`);
                 if (window.__loadUsersDashboard) window.__loadUsersDashboard();
                 setManageSuccess(`Account created successfully for ${createAccountForm.name.trim()}.`);
-                setCreateAccountForm({ name: '', role: 'ADMIN', vendor_id: '', contact_person: '', contact_number: '' });
+                setCreateAccountForm({ name: '', role: 'STAFF', vendor_id: '', contact_person: '', contact_number: '' });
                 setShowCreateAccountWindow(false);
               } catch (err) {
                 setManageError(err.message || 'Unable to create account');
@@ -935,7 +937,6 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
               <label>
                 Account type
                 <select value={createAccountForm.role} onChange={(e) => setCreateAccountForm({ ...createAccountForm, role: e.target.value })}>
-                  <option value="ADMIN">Admin</option>
                   <option value="STAFF">Staff</option>
                   <option value="VENDOR">Vendor</option>
                 </select>
