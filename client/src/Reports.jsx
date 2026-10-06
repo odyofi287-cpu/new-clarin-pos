@@ -269,7 +269,7 @@ function Reports({ token, role, vendorId, initialMode }) {
             <div>
               <span className="reports-section-label">Complete sales overview</span>
               <h3 id="reports-total-sales-title">Total Sales CSV</h3>
-              <p id="reports-total-sales-scope">All-time totals and sales per product, plus daily (14 days), weekly (8 weeks), and monthly (12 months) breakdowns. Includes recorded sales, deliveries, and return deductions.</p>
+              <p id="reports-total-sales-scope">All-time totals and product sales, plus daily (14 days), weekly (8 weeks), and monthly (12 months) breakdowns. Includes recorded sales, deliveries, and return deductions.</p>
               <small>Uses the latest sales data; independent of the report date range below.</small>
             </div>
             <button type="button" className="reports-export-button" onClick={onExportTotalSales} disabled={totalSalesExporting} aria-describedby="reports-total-sales-scope">

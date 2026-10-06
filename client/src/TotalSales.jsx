@@ -195,7 +195,7 @@ function TotalSales({ token, onBack }) {
         <div className="total-sales-products-heading">
           <div>
             <span className="chart-kicker">Product performance</span>
-            <h3>Sales per Product</h3>
+            <h3>Product Sales</h3>
             <p>Product totals use recorded sales + deliveries − recorded returns.</p>
           </div>
           <label className="total-sales-search">
