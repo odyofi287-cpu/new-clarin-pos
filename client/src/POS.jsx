@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiUrl } from "./api";
+import HistoryCalendar from "./HistoryCalendar.jsx";
+import { filterHistory, countHistoryDates } from "./historyCalendar.js";
 import "./history.css";
 import "./transaction-entry.css";
 
@@ -93,6 +95,12 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   const [editingPickupId, setEditingPickupId] = useState(null);
   const [editingPickupOriginalQuantities, setEditingPickupOriginalQuantities] = useState({});
   const [historyMode, setHistoryMode] = useState(null);
+  const [historySelections, setHistorySelections] = useState(() => Object.fromEntries(
+    ['pickups', 'returns', 'payments', 'sales'].map((key) => [key, { mode: 'daily', date: getManilaBusinessDate() }])
+  ));
+  const activeHistoryKey = historyMode || 'sales';
+  const historySelection = historySelections[activeHistoryKey];
+  const updateHistorySelection = (selection) => setHistorySelections((current) => ({ ...current, [activeHistoryKey]: selection }));
   const [paymentVendorFilter, setPaymentVendorFilter] = useState("");
   const [returnsOpen, setReturnsOpen] = useState(false);
   const [returnEntries, setReturnEntries] = useState([]);
@@ -615,6 +623,12 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     });
   };
 
+  const visiblePickupEntries = filterHistory(pickupEntries, 'delivery_date', historySelection);
+  const visibleReturnEntries = filterHistory(returnEntries, 'return_date', historySelection);
+  const visibleSalesHistory = filterHistory(salesHistory, 'sale_date', historySelection);
+  const historyEmptySuffix = historySelection.mode === 'daily'
+    ? ` for ${formatDeliveryDate(historySelection.date)}` : '';
+
   if (historyMode) {
     const isPickupHistory = historyMode === 'pickups';
     const isPaymentHistory = historyMode === 'payments';
@@ -629,9 +643,10 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       name: entry.vendor_name || `Vendor ${entry.vendor_id}`,
       vendor_code: getDisplayVendorId(entry),
     }])).values()].sort((a, b) => String(a.name).localeCompare(String(b.name)));
-    const filteredPaymentEntries = paymentVendorFilter
+    const vendorPaymentEntries = paymentVendorFilter
       ? pickupEntries.filter((entry) => String(entry.vendor_id) === String(paymentVendorFilter))
       : pickupEntries;
+    const filteredPaymentEntries = filterHistory(vendorPaymentEntries, 'delivery_date', historySelection);
     const paidDeliveryCount = filteredPaymentEntries.filter((entry) => String(entry.payment_status || 'UNPAID').toUpperCase() === 'PAID').length;
     const unpaidDeliveryCount = filteredPaymentEntries.length - paidDeliveryCount;
     const outstandingPaymentAmount = filteredPaymentEntries
@@ -654,11 +669,15 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
           {error && <p className="error-message">{error}</p>}
           {status && <p className="success-message">{status}</p>}
 
+          <HistoryCalendar selection={historySelection} onChange={updateHistorySelection}
+            dateCounts={countHistoryDates(isPaymentHistory ? vendorPaymentEntries : isPickupHistory ? pickupEntries : returnEntries, isPickupHistory || isPaymentHistory ? 'delivery_date' : 'return_date')}
+            recordCount={isPaymentHistory ? filteredPaymentEntries.length : isPickupHistory ? visiblePickupEntries.length : visibleReturnEntries.length} />
+
           <section className="transaction-history-list">
             <div className="transaction-history-heading">
               <div>
                 <span className="transaction-eyebrow">{isPaymentHistory ? 'Payment status' : isPickupHistory ? 'Pickup history' : 'Return history'}</span>
-                <h3>{isPaymentHistory ? `${filteredPaymentEntries.length} delivery account${filteredPaymentEntries.length === 1 ? '' : 's'}` : isPickupHistory ? `${pickupEntries.length} delivery record${pickupEntries.length === 1 ? '' : 's'}` : `${returnEntries.length} return record${returnEntries.length === 1 ? '' : 's'}`}</h3>
+                <h3>{isPaymentHistory ? `${filteredPaymentEntries.length} delivery account${filteredPaymentEntries.length === 1 ? '' : 's'}` : isPickupHistory ? `${visiblePickupEntries.length} delivery record${visiblePickupEntries.length === 1 ? '' : 's'}` : `${visibleReturnEntries.length} return record${visibleReturnEntries.length === 1 ? '' : 's'}`}</h3>
               </div>
               {isPaymentHistory && (
                 <div className="payment-history-controls">
@@ -679,7 +698,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
             </div>
 
             {isPaymentHistory ? (
-              filteredPaymentEntries.length === 0 ? <p className="transaction-empty">{paymentVendorFilter ? 'No delivery accounts are available for the selected vendor.' : 'No vendor deliveries are available for payment confirmation.'}</p> : (
+              filteredPaymentEntries.length === 0 ? <p className="transaction-empty">No delivery accounts{paymentVendorFilter ? ' for the selected vendor' : ''}{historyEmptySuffix}.</p> : (
                 <div className="payment-status-board">
                   {filteredPaymentEntries.map((entry) => {
                     const isPaid = String(entry.payment_status || 'UNPAID').toUpperCase() === 'PAID';
@@ -727,11 +746,11 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                 </div>
               )
             ) : isPickupHistory ? (
-              pickupEntries.length === 0 ? <p className="transaction-empty">No vendor pickups available.</p> : (
+              visiblePickupEntries.length === 0 ? <p className="transaction-empty">No vendor pickups{historyEmptySuffix}.</p> : (
                 <div className="management-table-wrap">
                   <table>
                     <thead><tr><th>Vendor ID</th><th>Vendor</th><th>Product(s)</th><th>Date</th><th>Pickup Time</th><th>Total</th><th>Payment</th>{canManagePickupEntries && <th>Action</th>}</tr></thead>
-                    <tbody>{pickupEntries.map((entry) => <tr key={entry.id}>
+                    <tbody>{visiblePickupEntries.map((entry) => <tr key={entry.id}>
                       <td data-label="Vendor ID">{getDisplayVendorId(entry)}</td>
                       <td data-label="Vendor">{entry.vendor_name || entry.vendor_id}</td>
                       <td data-label="Product(s)">{entry.items || '-'}</td>
@@ -745,11 +764,11 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                 </div>
               )
             ) : (
-              returnEntries.length === 0 ? <p className="transaction-empty">No return history available.</p> : (
+              visibleReturnEntries.length === 0 ? <p className="transaction-empty">No return records{historyEmptySuffix}.</p> : (
                 <div className="management-table-wrap">
                   <table>
                     <thead><tr><th>Return ID</th><th>Delivery #</th><th>Vendor</th><th>Products</th><th>Date</th><th>Time</th><th>Qty</th><th>Returned Amount</th>{role !== 'VENDOR' && <th>Action</th>}</tr></thead>
-                    <tbody>{returnEntries.map((entry) => <tr key={entry.id}>
+                    <tbody>{visibleReturnEntries.map((entry) => <tr key={entry.id}>
                       <td data-label="Return ID">{getDisplayReturnId(entry)}</td>
                       <td data-label="Delivery #">{entry.delivery_id ? `#${entry.delivery_id}` : 'Legacy'}</td>
                       <td data-label="Vendor">{entry.vendor_name || entry.vendor_id}</td>
@@ -1293,14 +1312,17 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
 
         {isSalesHistoryView && (
           <div className="history-sections">
+            <HistoryCalendar selection={historySelection} onChange={updateHistorySelection}
+              dateCounts={countHistoryDates([...salesHistory.map((entry) => ({ date: entry.sale_date })), ...pickupEntries.map((entry) => ({ date: entry.delivery_date }))], 'date')}
+              recordCount={visibleSalesHistory.length + visiblePickupEntries.length} />
             <section className="history-section history-section-sales">
               <header className="history-section-header">
                 <div><span className="history-section-kicker">Classification</span><h3>Recorded Sales</h3><p>Completed POS transactions.</p></div>
-                <span className="history-section-count">{salesHistory.length} records</span>
+                <span className="history-section-count">{visibleSalesHistory.length} records</span>
               </header>
               <div className="history-table-wrap">
-                {salesHistory.length === 0 ? (
-                  <p className="history-empty">No recorded sales available.</p>
+                {visibleSalesHistory.length === 0 ? (
+                  <p className="history-empty">No recorded sales{historyEmptySuffix}.</p>
                 ) : (
                   <table>
                     <thead>
@@ -1314,7 +1336,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {salesHistory.map((entry) => (
+                      {visibleSalesHistory.map((entry) => (
                         <tr key={`sales-history-${entry.id}`}>
                           <td data-label="Sale ID">{entry.id}</td>
                           <td data-label="Date">{formatDeliveryDate(entry.sale_date)}</td>
@@ -1333,11 +1355,11 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
             <section className="history-section history-section-pickups">
               <header className="history-section-header">
                 <div><span className="history-section-kicker">Classification</span><h3>Vendor Pickups</h3><p>Products picked up by vendors.</p></div>
-                <span className="history-section-count">{pickupEntries.length} records</span>
+                <span className="history-section-count">{visiblePickupEntries.length} records</span>
               </header>
               <div className="history-table-wrap">
-                {pickupEntries.length === 0 ? (
-                  <p className="history-empty">No vendor pickups available.</p>
+                {visiblePickupEntries.length === 0 ? (
+                  <p className="history-empty">No vendor pickups{historyEmptySuffix}.</p>
                 ) : (
                   <table>
                     <thead>
@@ -1353,7 +1375,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {pickupEntries.map((entry) => (
+                      {visiblePickupEntries.map((entry) => (
                         <tr key={`pickup-history-${entry.id}`}>
                           <td data-label="Pickup ID">{entry.id}</td>
                           <td data-label="Vendor ID">{getDisplayVendorId(entry)}</td>

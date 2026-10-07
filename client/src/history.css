@@ -65,6 +65,55 @@
   padding: 1.1rem;
 }
 
+.history-calendar { background: #f6faff; border: 1px solid #dce7f5; border-radius: 14px; min-width: 0; padding: 1rem; }
+.history-calendar-toolbar { align-items: center; display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: space-between; }
+.history-calendar button { background: #fff; border: 1px solid #cbdceb; border-radius: 8px; box-shadow: none; color: #315c88; font-size: 0.78rem; font-weight: 750; min-height: 42px; padding: 0.5rem 0.75rem; transform: none; }
+.history-calendar button::before { display: none; }
+.history-calendar button:hover:not(:disabled) { background: #e8f2ff; border-color: #82add8; box-shadow: none; transform: none; }
+.history-calendar button:focus-visible, .history-date-label input:focus-visible { outline: 3px solid #82add8; outline-offset: 2px; }
+.history-calendar button:disabled { cursor: default; opacity: 0.4; }
+.history-view-toggle { background: #e8eff8; border-radius: 10px; display: flex; gap: 0.25rem; padding: 0.25rem; }
+.history-view-toggle button { background: transparent; border-color: transparent; }
+.history-view-toggle button[aria-pressed="true"] { background: #fff; border-color: #cbdceb; color: #185fa4; }
+.history-date-controls { align-items: center; display: flex; gap: 0.4rem; min-width: 0; }
+.history-date-label { color: #67819e; display: grid; font-size: 0.65rem; font-weight: 800; gap: 0.2rem; min-width: 0; }
+.history-date-label input { background: #fff; border: 1px solid #cbdceb; border-radius: 8px; box-sizing: border-box; color: #294f79; font: inherit; font-size: 0.8rem; min-height: 42px; min-width: 0; padding: 0.4rem 0.6rem; width: 100%; }
+.history-calendar .history-calendar-arrow { font-size: 1.25rem; min-width: 42px; padding: 0.25rem; }
+.history-calendar-caption { color: #365c83; font-size: 0.8rem; font-weight: 700; margin: 0.75rem 0 0; }
+.history-calendar-caption span { color: #7389a1; display: inline-block; font-size: 0.7rem; font-weight: 500; margin-left: 0.5rem; }
+.history-calendar-month { border-top: 1px solid #dce7f5; margin-top: 0.85rem; max-width: 560px; padding-top: 0.85rem; }
+.history-calendar-month header { align-items: center; color: #294f79; display: flex; justify-content: space-between; margin-bottom: 0.65rem; }
+.history-calendar-month header strong { font-size: 1rem; text-align: center; }
+.history-calendar-grid { display: grid; gap: 0.3rem; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.history-calendar-weekday { color: #7890a9; font-size: 0.7rem; font-weight: 750; padding: 0.35rem 0; text-align: center; }
+.history-calendar .history-calendar-day { display: grid; gap: 0.25rem; min-height: 56px; padding: 0.4rem 0.15rem; }
+.history-calendar-day small { color: #6381a1; font-size: 0.6rem; font-weight: 500; }
+.history-calendar .history-calendar-day.is-today { border-color: #397dbe; }
+.history-calendar .history-calendar-day[aria-pressed="true"] { background: #236ab2; border-color: #236ab2; color: #fff; }
+.history-calendar .history-calendar-day[aria-pressed="true"]:hover { background: #185b9d; border-color: #185b9d; color: #fff; }
+.history-calendar-day[aria-pressed="true"] small { color: #fff; }
+.history-calendar-month > p { color: #7890a9; font-size: 0.72rem; margin: 0.65rem 0 0; }
+
+@media (max-width: 760px) {
+  .history-calendar { padding: 0.75rem; }
+  .history-calendar-toolbar { align-items: stretch; flex-direction: column; }
+  .history-view-toggle button { flex: 1; }
+  .history-date-controls { display: grid; grid-template-columns: 42px minmax(0, 1fr) 42px auto; }
+  .history-calendar-caption span { display: block; margin: 0.25rem 0 0; }
+  .history-calendar-grid { gap: 0.2rem; }
+  .history-calendar-day small { font-size: 0.52rem; }
+}
+
+@media (max-width: 480px) {
+  .history-date-controls { grid-template-columns: 42px minmax(0, 1fr) 42px; }
+  .history-date-label { grid-column: 1 / -1; grid-row: 1; }
+  .history-date-controls > button:nth-child(1) { grid-column: 1; grid-row: 2; }
+  .history-date-controls > button:nth-child(3) { grid-column: 3; grid-row: 2; }
+  .history-date-controls > button:nth-child(4) { grid-column: 2; grid-row: 2; }
+  .history-day-count-label { display: none; }
+  .history-calendar-day small { font-size: 0.65rem; }
+}
+
 @media (max-width: 760px) {
   .history-section-header {
     align-items: flex-start;
