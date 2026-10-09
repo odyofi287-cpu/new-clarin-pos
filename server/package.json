@@ -10,6 +10,8 @@
     "test": "node --test",
     "migrate:sqlite": "node migrate-sqlite-to-postgres.js",
     "restore:superadmin": "node restore-superadmin.js",
+    "restore:admin": "node restore-superadmin.js",
+    "migrate:roles": "node migrate-superadmin-to-admin.js",
     "reset:postgres-transactions": "node reset-postgres-transactions.js"
   },
   "dependencies": {

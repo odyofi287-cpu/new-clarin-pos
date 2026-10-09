@@ -27,7 +27,7 @@ async function fixture(t) {
   app.use(express.json());
   app.use((req, res, next) => {
     req.db = db;
-    req.user = { role: "SUPERADMIN", user_id: 3 };
+    req.user = { role: "ADMIN", user_id: 3 };
     next();
   });
   app.use("/returns", returnRoutes);

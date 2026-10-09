@@ -4,7 +4,7 @@ export default function useAuth() {
   const [token, setToken] = useState(() => window.localStorage.getItem("clarin_token") || "");
   const [role, setRole] = useState(() => {
     const storedRole = window.localStorage.getItem("clarin_role") || "";
-    return storedRole === "ADMIN" ? "STAFF" : storedRole;
+    return storedRole === "SUPERADMIN" ? "ADMIN" : storedRole;
   });
   const [vendorId, setVendorId] = useState(() => {
     const v = window.localStorage.getItem("clarin_vendor_id");

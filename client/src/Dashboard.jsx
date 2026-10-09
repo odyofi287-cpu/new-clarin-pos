@@ -239,7 +239,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
     loadProducts();
 
     const loadUsers = () => {
-      if (role !== "SUPERADMIN") {
+      if (role !== "ADMIN") {
         setUsersList([]);
         return;
       }
@@ -256,7 +256,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
     const refreshData = () => {
       loadDashboard();
       loadProducts();
-      if (role === "SUPERADMIN") {
+      if (role === "ADMIN") {
         loadUsers();
       }
     };
@@ -266,7 +266,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
     const handleProductsUpdated = () => {
       loadDashboard();
       loadProducts();
-      if (role === "SUPERADMIN") {
+      if (role === "ADMIN") {
         loadUsers();
       }
     };
@@ -294,11 +294,11 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
     return <div className="dashboard-shell"><p>Loading dashboard...</p></div>;
   }
 
-  if (viewMode === "products" && !(role === "SUPERADMIN" || role === "STAFF")) {
+  if (viewMode === "products" && !(role === "ADMIN" || role === "STAFF")) {
     return <div className="dashboard-shell"><p className="error-message">You do not have access to inventory management.</p></div>;
   }
 
-  if (viewMode === "users" && role !== "SUPERADMIN") {
+  if (viewMode === "users" && role !== "ADMIN") {
     return <div className="dashboard-shell"><p className="error-message">You do not have access to Account Management.</p></div>;
   }
 
@@ -881,20 +881,20 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
                   throw new Error('Name, contact person, and contact number are required');
                 }
 
-                const superadminPassword = window.prompt('Enter the Superadmin password to confirm this account creation:');
-                if (superadminPassword === null || !superadminPassword.trim()) {
-                  throw new Error('Superadmin verification password is required');
+                const adminPassword = window.prompt('Enter the Admin password to confirm this account creation:');
+                if (adminPassword === null || !adminPassword.trim()) {
+                  throw new Error('Admin verification password is required');
                 }
 
-                const verifyRes = await fetch(apiUrl('/api/users/verify-superadmin'), {
+                const verifyRes = await fetch(apiUrl('/api/users/verify-admin'), {
                   method: 'POST',
                   headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
-                  body: JSON.stringify({ password: superadminPassword })
+                  body: JSON.stringify({ password: adminPassword })
                 });
                 const verifyText = await verifyRes.text();
                 let verifyBody = {};
                 try { verifyBody = verifyText ? JSON.parse(verifyText) : {}; } catch { verifyBody = { error: verifyText.slice(0,200) }; }
-                if (!verifyRes.ok) throw new Error(verifyBody.error || 'Superadmin verification failed');
+                if (!verifyRes.ok) throw new Error(verifyBody.error || 'Admin verification failed');
 
                 const username = window.prompt('Enter the new account username:');
                 if (username === null || !username.trim()) {

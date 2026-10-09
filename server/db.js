@@ -779,7 +779,7 @@ class PostgresDB {
         product
       );
     }
-    const users = [["superadmin", "superadmin@clarin.local", bcrypt.hashSync("Superadmin123!", 10), "System Owner", "SUPERADMIN", null], ["admin", "admin@clarin.local", bcrypt.hashSync("Admin123!", 10), "Arena Owner", "STAFF", null], ["staff", "staff@clarin.local", bcrypt.hashSync("Staff123!", 10), "POS Staff", "STAFF", null], ["vendor", "vendor@clarin.local", bcrypt.hashSync("Vendor123!", 10), "Vendor User", "VENDOR", vendorId1], ["vendor2", "vendor2@clarin.local", bcrypt.hashSync("Vendor123!", 10), "Vendor Two", "VENDOR", vendorId2]];
+    const users = [["superadmin", "superadmin@clarin.local", bcrypt.hashSync("Superadmin123!", 10), "System Owner", "ADMIN", null], ["admin", "admin@clarin.local", bcrypt.hashSync("Admin123!", 10), "Arena Owner", "STAFF", null], ["staff", "staff@clarin.local", bcrypt.hashSync("Staff123!", 10), "POS Staff", "STAFF", null], ["vendor", "vendor@clarin.local", bcrypt.hashSync("Vendor123!", 10), "Vendor User", "VENDOR", vendorId1], ["vendor2", "vendor2@clarin.local", bcrypt.hashSync("Vendor123!", 10), "Vendor Two", "VENDOR", vendorId2]];
     for (const [username, email, password, name, role, vendorId] of users) {
       await this.pool.query("INSERT INTO users (username, email, password, name, role_id, vendor_id, active) SELECT $1, $2, $3, $4, id, $6, 1 FROM roles WHERE name = $5 ON CONFLICT (email) DO NOTHING", [username, email, password, name, role, vendorId]);
     }
@@ -1010,7 +1010,7 @@ function seedInitialData(db) {
   if (process.env.NODE_ENV === "test") {
     // Seed in-memory structures
     if (db.roles.length === 0) {
-      db.roles.push({ id: 1, name: "SUPERADMIN" });
+      db.roles.push({ id: 1, name: "ADMIN" });
       db.roles.push({ id: 3, name: "STAFF" });
       db.roles.push({ id: 4, name: "VENDOR" });
     }
@@ -1119,7 +1119,7 @@ function seedInitialData(db) {
       email: "superadmin@clarin.local",
       password: bcrypt ? bcrypt.hashSync("Superadmin123!", 10) : "Superadmin123!",
       name: "System Owner",
-      roleName: "SUPERADMIN",
+      roleName: "ADMIN",
       vendorId: null,
     },
     {

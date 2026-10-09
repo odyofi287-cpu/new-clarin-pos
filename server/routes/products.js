@@ -24,7 +24,7 @@ function computeStatus(product) {
   return 'OK';
 }
 
-router.get("/", requireRole("SUPERADMIN", "STAFF", "VENDOR"), async (req, res) => {
+router.get("/", requireRole("ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     const q = (req.query.q || "").toLowerCase();
     const activeParam = (req.query.active || '').toString().toLowerCase();
@@ -51,7 +51,7 @@ router.get("/", requireRole("SUPERADMIN", "STAFF", "VENDOR"), async (req, res) =
 });
 
 // Create beverage
-router.post("/", requireRole("SUPERADMIN", "STAFF"), async (req, res) => {
+router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
     const { name, category, selling_price, unit = 'unit', minimum_stock = 0, initial_stock = 0, image_url = null } = req.body;
     const normalizedImageUrl = normalizeImageUrl(image_url);
@@ -84,7 +84,7 @@ router.post("/", requireRole("SUPERADMIN", "STAFF"), async (req, res) => {
 });
 
 // Edit beverage metadata
-router.put('/:id', requireRole('SUPERADMIN','STAFF'), async (req,res) => {
+router.put('/:id', requireRole('ADMIN','STAFF'), async (req,res) => {
   try {
     const id = Number(req.params.id);
     const { name, category, selling_price, unit, minimum_stock, current_stock, image_url = null } = req.body;
@@ -115,7 +115,7 @@ router.put('/:id', requireRole('SUPERADMIN','STAFF'), async (req,res) => {
 });
 
 // Activate / deactivate
-router.patch('/:id/activate', requireRole('SUPERADMIN','STAFF'), async (req,res)=>{
+router.patch('/:id/activate', requireRole('ADMIN','STAFF'), async (req,res)=>{
   try {
     const id = Number(req.params.id);
     const { active } = req.body;
@@ -127,7 +127,7 @@ router.patch('/:id/activate', requireRole('SUPERADMIN','STAFF'), async (req,res)
 });
 
 // Get product details
-router.get('/:id', requireRole('SUPERADMIN','STAFF','VENDOR'), async (req,res)=>{
+router.get('/:id', requireRole('ADMIN','STAFF','VENDOR'), async (req,res)=>{
   try {
     const id = Number(req.params.id);
     const prod = await dbGet(req.db, 'SELECT id, name, category, selling_price, current_stock, minimum_stock, unit, image_url, active FROM products WHERE id = $1', [id], 'SELECT id, name, category, selling_price, current_stock, minimum_stock, unit, image_url, active FROM products WHERE id = ?');
@@ -138,7 +138,7 @@ router.get('/:id', requireRole('SUPERADMIN','STAFF','VENDOR'), async (req,res)=>
 
 // Create stock movement (STOCK_IN, STOCK_OUT, ADJUSTMENT)
 // Vendor portal is read-only and cannot modify inventory.
-router.post('/:id/stock-movements', requireRole('SUPERADMIN','STAFF'), async (req,res) => {
+router.post('/:id/stock-movements', requireRole('ADMIN','STAFF'), async (req,res) => {
   try {
     const id = Number(req.params.id);
     const { type, quantity, reference_type = null, reference_id = null, note = null, delta } = req.body;
@@ -175,7 +175,7 @@ router.post('/:id/stock-movements', requireRole('SUPERADMIN','STAFF'), async (re
 });
 
 // Movement history
-router.get('/:id/movements', requireRole('SUPERADMIN','STAFF','VENDOR'), async (req,res)=>{
+router.get('/:id/movements', requireRole('ADMIN','STAFF','VENDOR'), async (req,res)=>{
   try {
     const id = Number(req.params.id);
     const limit = Number(req.query.limit || 50);
@@ -187,7 +187,7 @@ router.get('/:id/movements', requireRole('SUPERADMIN','STAFF','VENDOR'), async (
 });
 
 // Soft-delete product (mark inactive)
-router.delete('/:id', requireRole('SUPERADMIN','STAFF'), async (req, res) => {
+router.delete('/:id', requireRole('ADMIN','STAFF'), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const prod = await dbGet(req.db, 'SELECT id FROM products WHERE id = $1', [id], 'SELECT id FROM products WHERE id = ?');

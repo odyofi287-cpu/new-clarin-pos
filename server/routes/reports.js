@@ -8,7 +8,7 @@ const router = express.Router();
 const loaders = { sales: salesReport, inventory: inventoryReport, "vendor-deliveries": deliveryReport, "total-sales": totalSalesReport };
 
 for (const [mode, load] of Object.entries(loaders)) {
-  const roles = mode === "vendor-deliveries" ? ["SUPERADMIN", "STAFF", "VENDOR"] : ["SUPERADMIN", "STAFF"];
+  const roles = mode === "vendor-deliveries" ? ["ADMIN", "STAFF", "VENDOR"] : ["ADMIN", "STAFF"];
   for (const csv of [false, true]) {
     router.get(`/${mode}${csv ? "/csv" : ""}`, requireRole(...roles), async (req, res) => {
       let range;

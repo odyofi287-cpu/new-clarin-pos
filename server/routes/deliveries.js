@@ -65,7 +65,7 @@ async function addDeliveryAccountAmounts(db, deliveries) {
   return Array.isArray(deliveries) ? enriched : enriched[0];
 }
 
-router.get("/", requireRole("SUPERADMIN", "STAFF", "VENDOR"), async (req, res) => {
+router.get("/", requireRole("ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     const pgFilters = [];
     const sqliteFilters = [];
@@ -125,7 +125,7 @@ router.get("/", requireRole("SUPERADMIN", "STAFF", "VENDOR"), async (req, res) =
   }
 });
 
-router.get("/:id", requireRole("SUPERADMIN", "STAFF", "VENDOR"), async (req, res) => {
+router.get("/:id", requireRole("ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const params = [id];
@@ -186,7 +186,7 @@ router.get("/:id", requireRole("SUPERADMIN", "STAFF", "VENDOR"), async (req, res
   }
 });
 
-router.post("/", requireRole("SUPERADMIN", "STAFF"), async (req, res) => {
+router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
     const { vendor_id, pickup_datetime, delivery_date, delivery_time, items } = req.body;
     const vendorId = Number(vendor_id);
@@ -283,7 +283,7 @@ router.post("/", requireRole("SUPERADMIN", "STAFF"), async (req, res) => {
   }
 });
 
-router.put("/:id", requireRole("SUPERADMIN"), async (req, res) => {
+router.put("/:id", requireRole("ADMIN"), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const existing = await dbGet(req.db, "SELECT id, vendor_id, delivery_date, delivery_time, total_amount, payment_status FROM deliveries WHERE id = $1", [id], "SELECT id, vendor_id, delivery_date, delivery_time, total_amount, payment_status FROM deliveries WHERE id = ?");
@@ -442,7 +442,7 @@ router.put("/:id", requireRole("SUPERADMIN"), async (req, res) => {
   }
 });
 
-router.post("/:id/confirm-payment", requireRole("SUPERADMIN", "STAFF"), async (req, res) => {
+router.post("/:id/confirm-payment", requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) {
@@ -500,7 +500,7 @@ router.post("/:id/confirm-payment", requireRole("SUPERADMIN", "STAFF"), async (r
   }
 });
 
-router.delete("/:id", requireRole("SUPERADMIN", "STAFF"), async (req, res) => {
+router.delete("/:id", requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const delivery = await dbGet(req.db, "SELECT id, vendor_id, total_amount FROM deliveries WHERE id = $1", [id], "SELECT id, vendor_id, total_amount FROM deliveries WHERE id = ?");

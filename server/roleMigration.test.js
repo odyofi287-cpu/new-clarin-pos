@@ -25,12 +25,12 @@ test("SQLite conversion preserves active/inactive accounts, profiles and sales a
   try {
     const before = db.prepare("SELECT * FROM users ORDER BY id").all();
     const salesBefore = db.prepare("SELECT * FROM sales ORDER BY id").all();
-    assert.deepEqual(migrateAdminRoleSqlite(db), { converted_accounts: 2, removed_roles: 1 });
+    assert.deepEqual(migrateAdminRoleSqlite(db), { converted_accounts: 2, removed_roles: 1, renamed_roles: 1 });
     assert.deepEqual(db.prepare("SELECT * FROM users ORDER BY id").all(),
       before.map((user) => ({ ...user, role_id: user.role_id === 2 ? 3 : user.role_id })));
     assert.deepEqual(db.prepare("SELECT * FROM sales ORDER BY id").all(), salesBefore);
     assert.deepEqual(db.prepare("SELECT name FROM roles ORDER BY id").all().map((role) => role.name), SUPPORTED_ROLES);
-    assert.deepEqual(migrateAdminRoleSqlite(db), { converted_accounts: 0, removed_roles: 0 });
+    assert.deepEqual(migrateAdminRoleSqlite(db), { converted_accounts: 0, removed_roles: 0, renamed_roles: 0 });
   } finally { db.close(); }
 });
 
@@ -49,12 +49,13 @@ test("Postgres migration locks roles and accounts and executes the conversion at
     return { rowCount: result.changes };
   } };
   try {
-    assert.deepEqual(await migrateAdminRolePostgres(client), { converted_accounts: 2, removed_roles: 1 });
+    assert.deepEqual(await migrateAdminRolePostgres(client), { converted_accounts: 2, removed_roles: 1, renamed_roles: 1 });
     assert.equal(calls[0], "BEGIN");
     assert.match(calls[1], /LOCK TABLE roles, users/);
     assert.equal(calls.at(-1), "COMMIT");
     assert.equal(db.prepare("SELECT COUNT(*) AS count FROM users WHERE role_id = 3").get().count, 3);
-    assert.deepEqual(await migrateAdminRolePostgres(client), { converted_accounts: 0, removed_roles: 0 });
+    assert.equal(db.prepare("SELECT name FROM roles WHERE id = 1").get().name, "ADMIN");
+    assert.deepEqual(await migrateAdminRolePostgres(client), { converted_accounts: 0, removed_roles: 0, renamed_roles: 0 });
   } finally { db.close(); }
 });
 
@@ -75,14 +76,42 @@ test("A migration failure rolls back the account conversion and role removal", a
   } finally { db.close(); }
 });
 
-test("Conversion creates Staff when missing and removes Admin from in-memory roles", () => {
+test("Conversion retains former Admins as Staff and renames the owner role in memory", () => {
   const db = {
     roles: [{ id: 1, name: "SUPERADMIN" }, { id: 7, name: "ADMIN" }],
     users: [{ id: 2, role_id: 7, username: "old-admin", active: 0 }],
   };
-  assert.deepEqual(migrateAdminRoleInMemory(db), { converted_accounts: 1, removed_roles: 1 });
+  assert.deepEqual(migrateAdminRoleInMemory(db), { converted_accounts: 1, removed_roles: 1, renamed_roles: 1 });
   const staffRole = db.roles.find((role) => role.name === "STAFF");
   assert.equal(db.users[0].role_id, staffRole.id);
   assert.equal(db.users[0].active, 0);
-  assert.deepEqual(migrateAdminRoleInMemory(db), { converted_accounts: 0, removed_roles: 0 });
+  assert.deepEqual(db.roles.find((role) => role.id === 1), { id: 1, name: "ADMIN" });
+  assert.deepEqual(migrateAdminRoleInMemory(db), { converted_accounts: 0, removed_roles: 0, renamed_roles: 0 });
+});
+
+test("Already-renamed Admin accounts are never downgraded on SQLite or memory startup", () => {
+  const db = fixture();
+  try {
+    migrateAdminRoleSqlite(db);
+    const before = db.prepare("SELECT * FROM users ORDER BY id").all();
+    assert.deepEqual(migrateAdminRoleSqlite(db), { converted_accounts: 0, removed_roles: 0, renamed_roles: 0 });
+    assert.deepEqual(db.prepare("SELECT * FROM users ORDER BY id").all(), before);
+    assert.equal(db.prepare("SELECT name FROM roles WHERE id = 1").get().name, "ADMIN");
+    const memory = { roles: [{ id: 1, name: "ADMIN" }, { id: 3, name: "STAFF" }], users: [{ id: 1, role_id: 1 }] };
+    migrateAdminRoleInMemory(memory);
+    assert.equal(memory.users[0].role_id, 1);
+    assert.equal(memory.roles[0].name, "ADMIN");
+  } finally { db.close(); }
+});
+
+test("Owner role rename keeps its ID, credentials, profiles and sales foreign keys", () => {
+  const db = fixture();
+  try {
+    db.prepare("INSERT INTO sales VALUES (3, 1, 250)").run();
+    const owner = db.prepare("SELECT * FROM users WHERE id = 1").get();
+    migrateAdminRoleSqlite(db);
+    assert.deepEqual(db.prepare("SELECT * FROM users WHERE id = 1").get(), owner);
+    assert.deepEqual(db.prepare("SELECT * FROM sales WHERE id = 3").get(), { id: 3, user_id: 1, total_amount: 250 });
+    assert.equal(db.prepare("SELECT name FROM roles WHERE id = ?").get(owner.role_id).name, "ADMIN");
+  } finally { db.close(); }
 });

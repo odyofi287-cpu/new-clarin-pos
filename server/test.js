@@ -159,8 +159,8 @@ test("Database repairs a missing superadmin seed", async () => {
   const db = initDb();
   const records = db.prepare("SELECT email, name, role_id FROM users WHERE email = ?").all("superadmin@clarin.local");
   assert.ok(records.length >= 1, "Expected the initial database seed to include the superadmin account");
-  const roles = db.prepare("SELECT name FROM roles WHERE name = ?").all("SUPERADMIN");
-  assert.ok(roles.length >= 1, "Expected the initial database seed to include the SUPERADMIN role");
+  const roles = db.prepare("SELECT name FROM roles WHERE name = ?").all("ADMIN");
+  assert.ok(roles.length >= 1, "Expected the initial database seed to include the ADMIN role");
 });
 
 test("Former Admin account logs in as Staff and accesses deliveries", async () => {
@@ -182,7 +182,7 @@ test("Staff can login and access deliveries", async () => {
   assert(Array.isArray(body.data));
 });
 
-test("Existing Admin sessions use Staff permissions and Admin cannot be assigned", async () => {
+test("Legacy lower-privilege Admin sessions remain Staff and Superadmin cannot be assigned", async () => {
   const legacyToken = jwt.sign({ user_id: 2, role: "ADMIN", vendor_id: null },
     process.env.JWT_SECRET || "change-this-secret", { expiresIn: "1h" });
   const legacyHeaders = { Authorization: `Bearer ${legacyToken}` };
@@ -195,14 +195,14 @@ test("Existing Admin sessions use Staff permissions and Admin cannot be assigned
   const token = await login("superadmin@clarin.local", "Superadmin123!");
   const headers = { "content-type": "application/json", Authorization: `Bearer ${token}` };
   const create = await fetch(`${base}/api/users`, { method: "POST", headers,
-    body: JSON.stringify({ username: "retired-admin-role", password: "Test123!", name: "Role Test", role: "ADMIN" }) });
+    body: JSON.stringify({ username: "retired-admin-role", password: "Test123!", name: "Role Test", role: "SUPERADMIN" }) });
   assert.strictEqual(create.status, 400);
   const edit = await fetch(`${base}/api/users/2`, { method: "PUT", headers,
-    body: JSON.stringify({ name: "Arena Owner", role: "ADMIN" }) });
+    body: JSON.stringify({ name: "Arena Owner", role: "SUPERADMIN" }) });
   assert.strictEqual(edit.status, 400);
   const list = await fetch(`${base}/api/users`, { headers });
   const users = (await list.json()).data;
-  assert(users.every((user) => ["SUPERADMIN", "STAFF", "VENDOR"].includes(user.role)));
+  assert(users.every((user) => ["ADMIN", "STAFF", "VENDOR"].includes(user.role)));
   assert.strictEqual(users.find((user) => user.id === 2).role, "STAFF");
 });
 
@@ -259,6 +259,59 @@ test("Staff can record a vendor pickup", async () => {
   const listRes = await fetch(`${base}/api/deliveries`, { headers: { Authorization: `Bearer ${token}` } });
   const pickupRecord = (await listRes.json()).data.find((entry) => entry.id === body.data.id);
   assert(pickupRecord?.items.includes(product.name) && pickupRecord?.items.includes(secondProduct.name), 'Expected grouped pickup history products');
+});
+
+test("Renamed Admin login and legacy Superadmin session keep owner permissions", async () => {
+  const response = await fetch(`${base}/api/auth/login`, { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "superadmin@clarin.local", password: "Superadmin123!" }) });
+  const data = (await response.json()).data;
+  assert.strictEqual(data.role, "ADMIN");
+  assert.strictEqual(jwt.decode(data.token).role, "ADMIN");
+  const legacyToken = jwt.sign({ user_id: 1, role: "SUPERADMIN", vendor_id: null },
+    process.env.JWT_SECRET || "change-this-secret", { expiresIn: "1h" });
+  const legacyHeaders = { Authorization: `Bearer ${legacyToken}`, "content-type": "application/json" };
+  const me = await fetch(`${base}/api/users/me`, { headers: legacyHeaders });
+  assert.strictEqual((await me.json()).data.role, "ADMIN");
+  assert.strictEqual((await fetch(`${base}/api/users`, { headers: legacyHeaders })).status, 200);
+  for (const route of ["verify-admin", "verify-superadmin"]) {
+    const verified = await fetch(`${base}/api/users/${route}`, { method: "POST", headers: legacyHeaders,
+      body: JSON.stringify({ password: "Superadmin123!" }) });
+    assert.strictEqual(verified.status, 200);
+  }
+});
+
+test("Admin can assign the renamed Admin role without promoting existing Staff", async () => {
+  const token = await login("superadmin@clarin.local", "Superadmin123!");
+  const headers = { Authorization: `Bearer ${token}`, "content-type": "application/json" };
+  const created = await fetch(`${base}/api/users`, { method: "POST", headers,
+    body: JSON.stringify({ username: "new-admin-role", name: "New Admin", password: "RoleTest123!", role: "ADMIN" }) });
+  assert.strictEqual(created.status, 201);
+  const account = (await created.json()).data;
+  const adminToken = await login("new-admin-role", "RoleTest123!");
+  assert.strictEqual(jwt.decode(adminToken).role, "ADMIN");
+  assert.strictEqual((await fetch(`${base}/api/users`, { headers: { Authorization: `Bearer ${adminToken}` } })).status, 200);
+  const updated = await fetch(`${base}/api/users/${account.id}`, { method: "PUT", headers,
+    body: JSON.stringify({ username: "new-admin-role", name: "Updated Admin", role: "ADMIN" }) });
+  assert.strictEqual(updated.status, 200);
+  const list = (await (await fetch(`${base}/api/users`, { headers })).json()).data;
+  assert.strictEqual(list.find((user) => user.id === 2).role, "STAFF");
+  assert.strictEqual((await fetch(`${base}/api/users/${account.id}`, { method: "DELETE", headers })).status, 200);
+  assert.strictEqual((await fetch(`${base}/api/users`, { headers: { Authorization: `Bearer ${adminToken}` } })).status, 401);
+});
+
+test("Legacy Admin claims cannot grant owner access to Staff, vendors or missing users", async () => {
+  for (const [user_id, expectedRole] of [[2, "STAFF"], [4, "VENDOR"], [99999, null]]) {
+    const token = jwt.sign({ user_id, role: "ADMIN", vendor_id: null }, process.env.JWT_SECRET || "change-this-secret", { expiresIn: "1h" });
+    const headers = { Authorization: `Bearer ${token}` };
+    const me = await fetch(`${base}/api/users/me`, { headers });
+    assert.strictEqual(me.status, expectedRole ? 200 : 401);
+    if (expectedRole) assert.strictEqual((await me.json()).data.role, expectedRole);
+    assert.strictEqual((await fetch(`${base}/api/users`, { headers })).status, expectedRole ? 403 : 401);
+    if (expectedRole === "VENDOR") {
+      const deliveries = (await (await fetch(`${base}/api/deliveries`, { headers })).json()).data;
+      assert(deliveries.every((delivery) => delivery.vendor_id === 1));
+    }
+  }
 });
 
 test("Authorized staff can confirm delivery payment while vendors remain read-only", async () => {
@@ -503,9 +556,9 @@ test("Vendor can view returns but cannot create or delete them", async () => {
   assert.strictEqual(deleteRes.status, 403);
 });
 
-test("Superadmin can update pickup details and payment status after password verification", async () => {
+test("Admin can update pickup details and payment status after password verification", async () => {
   const token = await login("superadmin@clarin.local", "Superadmin123!");
-  const verify = await fetch(`${base}/api/users/verify-superadmin`, {
+  const verify = await fetch(`${base}/api/users/verify-admin`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ password: 'Superadmin123!' })
@@ -554,7 +607,7 @@ test("Superadmin can update pickup details and payment status after password ver
   assert.strictEqual(unpaid.data.payment_confirmed_at, null);
 });
 
-test("Superadmin can delete a pickup after creation", async () => {
+test("Admin can delete a pickup after creation", async () => {
   const token = await login("superadmin@clarin.local", "Superadmin123!");
   const productsRes = await fetch(`${base}/api/products?active=1`, { headers: { Authorization: `Bearer ${token}` } });
   const product = (await productsRes.json()).data[0];
@@ -614,7 +667,7 @@ test("Vendor cannot modify a delivery record", async () => {
   assert.strictEqual(res.status, 403);
 });
 
-test("Superadmin can login and manage users", async () => {
+test("Admin can login and manage users", async () => {
   const token = await login("superadmin@clarin.local", "Superadmin123!");
 
   let res = await fetch(`${base}/api/users`, {
@@ -627,7 +680,7 @@ test("Superadmin can login and manage users", async () => {
   const username = `newstaff${Date.now()}`;
   const email = `${username}@clarin.local`;
 
-  res = await fetch(`${base}/api/users/verify-superadmin`, {
+  res = await fetch(`${base}/api/users/verify-admin`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ password: 'Superadmin123!' })
@@ -659,7 +712,7 @@ test("Superadmin can login and manage users", async () => {
   assert.strictEqual(res.status, 200, 'Expected superadmin to delete a user');
 });
 
-test("Superadmin can update managed account information", async () => {
+test("Admin can update managed account information", async () => {
   const token = await login("superadmin@clarin.local", "Superadmin123!");
   const username = `edituser${Date.now()}`;
   const email = `${username}@clarin.local`;
@@ -753,7 +806,7 @@ test("Profile pictures are validated, retained, and removable", async () => {
     headers: { "content-type": "application/json", Authorization: `Bearer ${profileToken}` },
     body: JSON.stringify({ ...accountInfo, profile_picture: TINY_PROFILE_PICTURE }),
   });
-  assert.strictEqual(res.status, 403, "Profile editing must retain Superadmin-only account-management permissions");
+  assert.strictEqual(res.status, 403, "Profile editing must retain Admin-only account-management permissions");
 
   res = await fetch(`${base}/api/users/${created.data.id}`, {
     method: "PUT",

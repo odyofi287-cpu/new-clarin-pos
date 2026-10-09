@@ -68,8 +68,8 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   const isPosEntryView = viewMode === "pos";
   const isDeliveriesView = viewMode === "deliveries";
   const isSalesHistoryView = viewMode === "sales-history";
-  const canManagePickupEntries = role === "SUPERADMIN" && isDeliveriesView;
-  const canManagePaymentStatus = ["SUPERADMIN", "STAFF"].includes(role) && isDeliveriesView;
+  const canManagePickupEntries = role === "ADMIN" && isDeliveriesView;
+  const canManagePaymentStatus = ["ADMIN", "STAFF"].includes(role) && isDeliveriesView;
   const [products, setProducts] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [pickupOpen, setPickupOpen] = useState(false);
@@ -999,19 +999,19 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     setSubmitting(true);
     try {
       if (pickupMode === "edit" && editingPickupId) {
-        const superadminPassword = window.prompt('Enter the Superadmin password to confirm this pickup update:');
-        if (!superadminPassword || !superadminPassword.trim()) {
-          throw new Error('Superadmin verification password is required');
+        const adminPassword = window.prompt('Enter the Admin password to confirm this pickup update:');
+        if (!adminPassword || !adminPassword.trim()) {
+          throw new Error('Admin verification password is required');
         }
 
-        const verifyRes = await fetch(apiUrl('/api/users/verify-superadmin'), {
+        const verifyRes = await fetch(apiUrl('/api/users/verify-admin'), {
           method: 'POST',
           headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ password: superadminPassword }),
+          body: JSON.stringify({ password: adminPassword }),
         });
         const verifyBody = await verifyRes.json().catch(() => ({}));
         if (!verifyRes.ok) {
-          throw new Error(verifyBody.error || 'Superadmin verification failed');
+          throw new Error(verifyBody.error || 'Admin verification failed');
         }
 
         const res = await fetch(apiUrl(`/api/deliveries/${editingPickupId}`), {

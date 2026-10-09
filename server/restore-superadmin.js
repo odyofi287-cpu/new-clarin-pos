@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 import bcrypt from "bcrypt";
 import pg from "pg";
+import { migrateAdminRolePostgres } from "./roleMigration.js";
 
 dotenv.config();
 
@@ -18,8 +19,10 @@ const pool = new pg.Pool({
 
 try {
   await pool.query(fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8"));
+  const client = await pool.connect();
+  try { await migrateAdminRolePostgres(client); } finally { client.release(); }
   const role = await pool.query(
-    "INSERT INTO roles (name) VALUES ('SUPERADMIN') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id"
+    "INSERT INTO roles (name) VALUES ('ADMIN') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id"
   );
   const passwordHash = await bcrypt.hash("Superadmin123!", 10);
   const result = await pool.query(
@@ -31,9 +34,9 @@ try {
   );
 
   if (result.rowCount === 0) {
-    console.log("Superadmin already exists; no account was changed.");
+    console.log("Admin owner account already exists; credentials were not changed.");
   } else {
-    console.log("Superadmin restored: superadmin@clarin.local");
+    console.log("Admin owner account restored with its existing login identity.");
   }
 } finally {
   await pool.end();

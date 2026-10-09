@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiUrl } from "./api";
 
-const ROLES = ["SUPERADMIN", "STAFF", "VENDOR"];
+const ROLES = ["ADMIN", "STAFF", "VENDOR"];
 const emptyAccount = () => ({
   username: "",
   email: "",

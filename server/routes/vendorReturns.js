@@ -233,7 +233,7 @@ async function getVendorReturnableProducts(db, vendorId, deliveryId, businessDat
     .filter((product) => product.returnable_quantity > 0);
 }
 
-router.get("/", requireRole("SUPERADMIN", "STAFF", "VENDOR"), async (req, res) => {
+router.get("/", requireRole("ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     let sql = `
       SELECT vr.id, vr.return_batch_id, vr.delivery_id, vr.vendor_id, v.name AS vendor_name, vr.product_id, p.name AS product_name,
@@ -266,7 +266,7 @@ router.get("/", requireRole("SUPERADMIN", "STAFF", "VENDOR"), async (req, res) =
   }
 });
 
-router.get("/eligible-deliveries", requireRole("SUPERADMIN", "STAFF", "VENDOR"), async (req, res) => {
+router.get("/eligible-deliveries", requireRole("ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     const vendorId = Number(req.query.vendor_id);
     if (!Number.isInteger(vendorId) || vendorId <= 0) {
@@ -288,7 +288,7 @@ router.get("/eligible-deliveries", requireRole("SUPERADMIN", "STAFF", "VENDOR"),
   }
 });
 
-router.get("/eligible-products", requireRole("SUPERADMIN", "STAFF", "VENDOR"), async (req, res) => {
+router.get("/eligible-products", requireRole("ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     const vendorId = Number(req.query.vendor_id);
     const deliveryId = Number(req.query.delivery_id);
@@ -329,7 +329,7 @@ router.get("/eligible-products", requireRole("SUPERADMIN", "STAFF", "VENDOR"), a
   }
 });
 
-router.post("/", requireRole("SUPERADMIN", "STAFF"), async (req, res) => {
+router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
     const {
       vendor_id,
@@ -515,7 +515,7 @@ async function removeReturns(db, field, value, userId) {
   });
 }
 
-router.delete("/batch/:batchId", requireRole("SUPERADMIN", "STAFF"), async (req, res) => {
+router.delete("/batch/:batchId", requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
     const batchId = String(req.params.batchId || "").trim();
     if (!batchId) {
@@ -531,7 +531,7 @@ router.delete("/batch/:batchId", requireRole("SUPERADMIN", "STAFF"), async (req,
   }
 });
 
-router.delete("/:id", requireRole("SUPERADMIN", "STAFF"), async (req, res) => {
+router.delete("/:id", requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
     const id = Number(req.params.id);
     await removeReturns(req.db, "id", id, req.user.user_id || req.user.id);

@@ -159,7 +159,7 @@ function App() {
         if (body?.data) {
           setUsername(body.data.username || body.data.email || "");
           setProfilePicture(body.data.profile_picture || "");
-          if (body.data.role) setRole(body.data.role === "ADMIN" ? "STAFF" : body.data.role);
+          if (body.data.role) setRole(body.data.role === "SUPERADMIN" ? "ADMIN" : body.data.role);
         }
       })
       .catch(() => {});
@@ -185,7 +185,7 @@ function App() {
       const authToken = body.data.token;
       // save token and role/vendor info via useAuth setters
       setToken(authToken);
-      setRole(body.data.role === "ADMIN" ? "STAFF" : body.data.role || "");
+      setRole(body.data.role === "SUPERADMIN" ? "ADMIN" : body.data.role || "");
       setVendorId(body.data.vendor_id || null);
       setUsername(body.data.username || body.data.email || "");
       setProfilePicture(body.data.profile_picture || "");
@@ -212,9 +212,9 @@ function App() {
       "deliveries",
       ...(role !== "VENDOR" ? ["sales-history"] : []),
       "inventory",
-      ...((role === "SUPERADMIN" || role === "STAFF") ? ["products"] : []),
+      ...((role === "ADMIN" || role === "STAFF") ? ["products"] : []),
       "reports",
-      ...(role === "SUPERADMIN" ? ["users"] : []),
+      ...(role === "ADMIN" ? ["users"] : []),
     ];
 
     const currentIndex = orderedViews.indexOf(view);
@@ -236,9 +236,9 @@ function App() {
     { id: "deliveries", label: "Vendor Deliveries", description: "Pickup list and vendor returns", icon: "deliveries", view: "deliveries" },
     ...(role !== "VENDOR" ? [{ id: "sales-history", label: "Sales & Pickup History", description: "Recorded sales and vendor pickups", icon: "sales", view: "sales-history" }] : []),
     { id: "inventory", label: "Inventory", description: role === "VENDOR" ? "Current product stock" : "Stock movement", icon: "inventory", view: "inventory" },
-    ...((role === "SUPERADMIN" || role === "STAFF") ? [{ id: "products", label: "Products", description: "Product catalog", icon: "products", view: "products" }] : []),
+    ...((role === "ADMIN" || role === "STAFF") ? [{ id: "products", label: "Products", description: "Product catalog", icon: "products", view: "products" }] : []),
     { id: "reports", label: "Reports", description: "Sales and inventory reports", icon: "reports", view: "reports" },
-    ...(role === "SUPERADMIN" ? [{ id: "users", label: "Users", description: "Account management", icon: "users", view: "users" }] : []),
+    ...(role === "ADMIN" ? [{ id: "users", label: "Users", description: "Account management", icon: "users", view: "users" }] : []),
   ];
 
   const accountName = username || "Account";

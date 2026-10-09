@@ -1,7 +1,7 @@
 import express from "express";
 import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
-import { requireRole, requireSuperadmin } from "../middleware/auth.js";
+import { requireRole, requireAdmin } from "../middleware/auth.js";
 import { SUPPORTED_ROLES } from "../roleMigration.js";
 import { dbAll, dbGet, dbRun, isInMemoryDb, isPostgresDb, withTransaction } from "./dbCompat.js";
 import { publishDataChange } from "../events.js";
@@ -84,12 +84,12 @@ async function resolveVendorId(db, role, vendorId, name, contact, forceCreate = 
   return requestedVendorId;
 }
 
-router.get("/me", requireRole("SUPERADMIN", "STAFF", "VENDOR"), async (req, res) => {
+router.get("/me", requireRole("ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   const user = await dbGet(req.db, "SELECT id, username, email, name, profile_picture FROM users WHERE id = $1", [req.user.user_id], "SELECT id, username, email, name, profile_picture FROM users WHERE id = ?");
   res.json({ data: { user_id: user?.id ?? req.user.user_id, username: user?.username, email: user?.email ?? req.user.email, name: user?.name ?? req.user.name, profile_picture: user?.profile_picture || null, role: req.user.role, vendor_id: req.user.vendor_id } });
 });
 
-router.get("/vendors", requireRole("SUPERADMIN", "STAFF", "VENDOR"), async (req, res) => {
+router.get("/vendors", requireRole("ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     const params = [];
     let whereClause;
@@ -144,7 +144,7 @@ router.get("/vendors", requireRole("SUPERADMIN", "STAFF", "VENDOR"), async (req,
   }
 });
 
-router.get("/", requireSuperadmin, async (req, res) => {
+router.get("/", requireAdmin, async (req, res) => {
   const users = await dbAll(
     req.db,
     "SELECT u.id, u.username, u.email, u.name, u.role_id, r.name AS role, u.vendor_id, v.vendor_code, u.contact_person, u.contact_number, u.profile_picture, u.active, u.created_at FROM users u JOIN roles r ON u.role_id = r.id LEFT JOIN vendors v ON u.vendor_id = v.id ORDER BY u.id"
@@ -164,16 +164,16 @@ router.get("/", requireSuperadmin, async (req, res) => {
   res.json({ data });
 });
 
-router.post("/verify-superadmin", requireSuperadmin, async (req, res) => {
+router.post(["/verify-admin", "/verify-superadmin"], requireAdmin, async (req, res) => {
   const { password } = req.body;
   if (!password) {
-    return res.status(400).json({ error: "Superadmin password is required" });
+    return res.status(400).json({ error: "Admin password is required" });
   }
 
   const user = await dbGet(req.db, "SELECT u.id, u.password, r.name AS role FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = $1 AND u.active = 1", [req.user.user_id], "SELECT u.id, u.password, r.name AS role FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = ? AND u.active = 1");
 
-  if (!user || user.role !== "SUPERADMIN") {
-    return res.status(403).json({ error: "Superadmin access required" });
+  if (!user || user.role !== "ADMIN") {
+    return res.status(403).json({ error: "Admin access required" });
   }
 
   let valid = false;
@@ -185,13 +185,13 @@ router.post("/verify-superadmin", requireSuperadmin, async (req, res) => {
   }
 
   if (!valid) {
-    return res.status(401).json({ error: "Invalid superadmin password" });
+    return res.status(401).json({ error: "Invalid admin password" });
   }
 
   res.json({ data: { verified: true } });
 });
 
-router.post("/", requireSuperadmin, async (req, res) => {
+router.post("/", requireAdmin, async (req, res) => {
   const { username, email, password, name, role, vendor_id, contact_person, contact_number } = req.body;
   let profilePicture;
   try {
@@ -243,7 +243,7 @@ router.post("/", requireSuperadmin, async (req, res) => {
   res.status(201).json({ data: { ...safeUser, vendor_code: safeUser.vendor_code || createdVendor?.vendor_code || null, vendor_id: safeUser.vendor_id ?? null, contact_person: safeUser.contact_person ?? null, contact_number: safeUser.contact_number ?? null } });
 });
 
-router.put("/:id", requireSuperadmin, async (req, res) => {
+router.put("/:id", requireAdmin, async (req, res) => {
   const id = Number(req.params.id);
   const user = await dbGet(req.db, "SELECT id FROM users WHERE id = $1", [id], "SELECT id FROM users WHERE id = ?");
   if (!user) {
@@ -328,7 +328,7 @@ router.put("/:id", requireSuperadmin, async (req, res) => {
   res.json({ data: { ...updated, vendor_id: updated.vendor_id ?? null, contact_person: updated.contact_person ?? null, contact_number: updated.contact_number ?? null } });
 });
 
-router.delete("/:id", requireSuperadmin, async (req, res) => {
+router.delete("/:id", requireAdmin, async (req, res) => {
   const id = Number(req.params.id);
   const user = await dbGet(req.db, "SELECT id FROM users WHERE id = $1", [id], "SELECT id FROM users WHERE id = ?");
   if (!user) {

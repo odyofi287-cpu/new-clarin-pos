@@ -352,7 +352,7 @@ export function buildVendorDailyPaymentHistory(deliveries = [], returns = []) {
     }));
 }
 
-router.get("/", requireRole("SUPERADMIN", "STAFF", "VENDOR"), async (req, res) => {
+router.get("/", requireRole("ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
     if (req.user.role === "VENDOR") {
       return await vendorDashboard(req, res);
@@ -364,7 +364,7 @@ router.get("/", requireRole("SUPERADMIN", "STAFF", "VENDOR"), async (req, res) =
   }
 });
 
-router.get("/total-sales", requireRole("SUPERADMIN", "STAFF"), async (req, res) => {
+router.get("/total-sales", requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
     const today = getTodayString();
     let sales;
