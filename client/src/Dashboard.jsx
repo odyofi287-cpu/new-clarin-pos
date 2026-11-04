@@ -1,5 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { apiUrl } from "./api";
+import StockNotification, { StockIcon } from "./StockNotification";
+import { activeInventoryProducts, normalizeStockFilter, productStockStatus, stockAlertKey } from "./stockAlerts";
 
 function formatCurrency(value) {
   return value == null ? "0.00" : Number(value).toLocaleString("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 });
@@ -98,11 +100,11 @@ function dataValue(value) {
   return Number(value) || 0;
 }
 
-function InventoryStatusChart({ products }) {
-  const activeProducts = (products || []).filter((product) => product.active === 1 || product.active === true);
+function InventoryStatusChart({ products, onOpenStockFilter }) {
+  const activeProducts = activeInventoryProducts(products);
   const total = activeProducts.length;
-  const outOfStock = activeProducts.filter((product) => Number(product.current_stock) <= 0).length;
-  const lowStock = activeProducts.filter((product) => Number(product.current_stock) > 0 && Number(product.current_stock) <= 10).length;
+  const outOfStock = activeProducts.filter((product) => productStockStatus(product) === "out-of-stock").length;
+  const lowStock = activeProducts.filter((product) => productStockStatus(product) === "low-stock").length;
   const inStock = Math.max(total - lowStock - outOfStock, 0);
   const statusTotal = Math.max(inStock + lowStock + outOfStock, 1);
   const inStockPercent = (inStock / statusTotal) * 100;
@@ -123,8 +125,8 @@ function InventoryStatusChart({ products }) {
         </div>
         <div className="inventory-legend">
           <div><span className="legend-dot legend-green" /><span>In Stock</span><strong>{inStock}</strong></div>
-          <div><span className="legend-dot legend-orange" /><span>Low Stock</span><strong>{lowStock}</strong></div>
-          <div><span className="legend-dot legend-red" /><span>Out of Stock</span><strong>{outOfStock}</strong></div>
+          <button type="button" className="stock-legend-button" onClick={() => onOpenStockFilter("low-stock")}><span className="legend-dot legend-orange" /><span>Low Stock</span><strong>{lowStock}</strong></button>
+          <button type="button" className="stock-legend-button" onClick={() => onOpenStockFilter("out-of-stock")}><span className="legend-dot legend-red" /><span>Out of Stock</span><strong>{outOfStock}</strong></button>
         </div>
       </div>
     </div>
@@ -185,12 +187,13 @@ function SalesCalendar({ calendar }) {
   );
 }
 
-function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
+function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilter = "all", onStockFilterChange }) {
   const REFRESH_INTERVAL_MS = 6000;
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [productsList, setProductsList] = useState([]);
   const [productSearch, setProductSearch] = useState("");
+  const [dismissedStockAlertKey, setDismissedStockAlertKey] = useState("");
   const [manageForm, setManageForm] = useState({ id: null, name: "", category: "", selling_price: "", current_stock: "", image_url: "" });
   const [usersList, setUsersList] = useState([]);
   const [manageError, setManageError] = useState(null);
@@ -201,6 +204,12 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
   const [expandedVendorDeliveryIds, setExpandedVendorDeliveryIds] = useState(() => new Set());
   const [createProductForm, setCreateProductForm] = useState({ name: "", category: "", selling_price: "", current_stock: "", image_url: "" });
   const [createAccountForm, setCreateAccountForm] = useState({ name: "", role: "STAFF", vendor_id: "", contact_person: "", contact_number: "" });
+  const stockAlerts = data?.stock_alert_products || data?.low_stock_products || [];
+  const currentStockAlertKey = stockAlertKey(stockAlerts);
+
+  useEffect(() => {
+    if (!currentStockAlertKey) setDismissedStockAlertKey("");
+  }, [currentStockAlertKey]);
 
   useEffect(() => {
     if (!token) {
@@ -302,7 +311,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
     return <div className="dashboard-shell"><p className="error-message">You do not have access to Account Management.</p></div>;
   }
 
-  const stockAlerts = data.stock_alert_products || data.low_stock_products || [];
+  const openStockList = (filter) => onNavigate?.("inventory", { stockFilter: filter });
 
   if (data.vendor_summary && viewMode === "dashboard") {
     const paymentSummary = data.vendor_summary.payment_summary || {};
@@ -437,46 +446,21 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
           )}
         </section>
 
-        <section className="dashboard-card">
-          <h3>Recent deliveries</h3>
-          {data.vendor_summary.recent_deliveries.length === 0 ? (
-            <p>No recent deliveries found.</p>
-          ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Date</th>
-                  <th>Time</th>
-                  <th>Items</th>
-                  <th>Payment</th>
-                  <th>Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.vendor_summary.recent_deliveries.map((delivery) => (
-                  <tr key={delivery.id}>
-                    <td data-label="ID">{delivery.id}</td>
-                    <td data-label="Date">{formatRecordDate(delivery.delivery_date)}</td>
-                    <td data-label="Time">{formatRecordTime(delivery.delivery_time)}</td>
-                    <td data-label="Items">{delivery.items || "-"}</td>
-                    <td data-label="Payment"><span className={`vendor-delivery-payment ${String(delivery.payment_status || "UNPAID").toUpperCase() === "PAID" ? "is-paid" : "is-unpaid"}`}>{String(delivery.payment_status || "UNPAID").toUpperCase() === "PAID" ? "Paid" : "Unpaid"}</span></td>
-                    <td data-label="Total">{formatCurrency(delivery.total_amount)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
       </div>
     );
   }
 
   const normalizedProductSearch = productSearch.trim().toLowerCase();
   const matchesProductSearch = (product) => !normalizedProductSearch || `${product.name || ""} ${product.category || ""}`.toLowerCase().includes(normalizedProductSearch);
-  const inventoryProducts = (productsList.length ? productsList : data?.products || [])
-    .filter((product) => product.active === 1 || product.active === true)
-    .filter(matchesProductSearch);
+  const inventorySource = productsList.length ? productsList : data?.products || [];
+  const selectedStockFilter = normalizeStockFilter(stockFilter);
+  const inventoryProducts = activeInventoryProducts(inventorySource, selectedStockFilter, productSearch);
+  const stockFilterOptions = [
+    { value: "all", label: "All products" },
+    { value: "low-stock", label: "Low stock" },
+    { value: "out-of-stock", label: "Out of stock" },
+  ];
+  const inventoryTitle = selectedStockFilter === "low-stock" ? "Low-stock products" : selectedStockFilter === "out-of-stock" ? "Out-of-stock products" : "Inventory";
   const filteredProducts = productsList.filter(matchesProductSearch);
 
   const inventoryGrid = (
@@ -484,10 +468,18 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
       <div className="management-hero">
         <div>
           <span className="management-kicker">{role === "VENDOR" ? "Read-only stock monitor" : "Live stock"}</span>
-          <h2>Inventory</h2>
-          <p>{role === "VENDOR" ? "Monitor the current stock of products available from the arena." : "Track products and their available stock at a glance."}</p>
+          <h2>{inventoryTitle}</h2>
+          <p>{selectedStockFilter === "low-stock" ? "Active products with 1 to 10 units remaining. Plan your next restock." : selectedStockFilter === "out-of-stock" ? "Active products with no available stock. Review these products before the next sale or delivery." : role === "VENDOR" ? "Monitor the current stock of products available from the arena." : "Track products and their available stock at a glance."}</p>
         </div>
         <div className="management-count"><strong>{inventoryProducts.length}</strong><span>items</span></div>
+      </div>
+
+      <div className="inventory-stock-filters" role="group" aria-label="Filter inventory by stock status">
+        {stockFilterOptions.map((option) => (
+          <button type="button" key={option.value} className={selectedStockFilter === option.value ? "is-selected" : ""} aria-pressed={selectedStockFilter === option.value} onClick={() => onStockFilterChange?.(option.value)}>
+            {option.label}<span>{activeInventoryProducts(inventorySource, option.value).length}</span>
+          </button>
+        ))}
       </div>
 
       <div className="product-search-row">
@@ -500,7 +492,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
 
       <div className="inventory-grid">
         {inventoryProducts.length === 0 ? (
-            <p className="muted-text">No inventory items match your search.</p>
+            <div className="inventory-empty-state"><StockIcon outOfStock={selectedStockFilter === "out-of-stock"} /><h3>{productSearch ? "No matching products" : selectedStockFilter === "all" ? "No active products" : `No ${selectedStockFilter} products`}</h3><p>{productSearch ? "Try another product name or category, or choose a different stock filter." : selectedStockFilter === "all" ? "Products will appear here when they are added to the active catalog." : "There are no active products in this stock group right now."}</p></div>
         ) : (
           inventoryProducts.map((product) => (
             <article key={product.id} className="inventory-card">
@@ -515,7 +507,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
                 <h3>{product.name}</h3>
                 <p>{product.category || "General"}</p>
                 <div className="inventory-stock-row">
-                  <span>Available stock</span>
+                  <span className={`inventory-stock-label is-${productStockStatus(product)}`}>{productStockStatus(product) === "out-of-stock" ? "Out of stock" : productStockStatus(product) === "low-stock" ? "Low stock" : "Available stock"}</span>
                   <strong>{Number(product.current_stock || 0)} {product.unit || "units"}</strong>
                 </div>
               </div>
@@ -551,14 +543,16 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
               <span className="metric-label">Total current inventory</span>
               <strong>{data.total_current_inventory}</strong>
             </div>
-            <div className="metric-card">
+            <button type="button" className="metric-card stock-counter-launch is-low-stock" onClick={() => openStockList("low-stock")}>
               <span className="metric-label">Low-stock products</span>
               <strong>{data.low_stock_count}</strong>
-            </div>
-            <div className="metric-card">
+              <span className="stock-counter-footer"><StockIcon /><span>View products <span aria-hidden="true">&rarr;</span></span></span>
+            </button>
+            <button type="button" className="metric-card stock-counter-launch is-out-of-stock" onClick={() => openStockList("out-of-stock")}>
               <span className="metric-label">Out-of-stock products</span>
               <strong>{data.out_of_stock_count}</strong>
-            </div>
+              <span className="stock-counter-footer"><StockIcon outOfStock /><span>View products <span aria-hidden="true">&rarr;</span></span></span>
+            </button>
         </div>
       )}
 
@@ -566,112 +560,16 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate }) {
 
       {viewMode === "dashboard" && (
         <>
+          {currentStockAlertKey && dismissedStockAlertKey !== currentStockAlertKey && (
+            <StockNotification products={stockAlerts} onOpen={openStockList} onDismiss={() => setDismissedStockAlertKey(currentStockAlertKey)} />
+          )}
           <section className="dashboard-chart-grid">
             <SalesTrendChart sales={data.recent_sales} />
-            <InventoryStatusChart products={productsList} />
+            <InventoryStatusChart products={productsList} onOpenStockFilter={openStockList} />
           </section>
 
           <SalesCalendar calendar={data.sales_calendar} />
 
-          <section className="dashboard-card dashboard-charts">
-            <h3>Recent activity</h3>
-            <div className="table-pair">
-              <div>
-                <h4>Recent sales</h4>
-                {data.recent_sales.length === 0 ? (
-                  <p>No recent sales available.</p>
-                ) : (
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>ID</th>
-                        <th>Date</th>
-                        <th>Items</th>
-                        <th>Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.recent_sales.map((sale) => (
-                        <tr key={sale.id}>
-                          <td data-label="ID">{sale.id}</td>
-                          <td data-label="Date">{formatRecordDate(sale.sale_date)}</td>
-                          <td data-label="Items">{sale.item_count}</td>
-                          <td data-label="Total">{formatCurrency(sale.total_amount)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-
-              <div>
-                <h4>Recent deliveries</h4>
-                {data.recent_deliveries.length === 0 ? (
-                  <p>No recent deliveries available.</p>
-                ) : (
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>ID</th>
-                        <th>Date</th>
-                        <th>Vendor</th>
-                        <th>Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.recent_deliveries.map((delivery) => (
-                        <tr key={delivery.id}>
-                          <td data-label="ID">{delivery.id}</td>
-                          <td data-label="Date">{formatRecordDate(delivery.delivery_date)}</td>
-                          <td data-label="Vendor">{delivery.vendor_name}</td>
-                          <td data-label="Total">{formatCurrency(delivery.total_amount)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </div>
-          </section>
-
-          <section className="low-stock-alert">
-            <div className="low-stock-alert-header">
-              <div>
-                <span className="chart-kicker">Inventory attention</span>
-                <h3>Low-stock and Out of Stock Alert</h3>
-                <p>Products running low or unavailable. Out-of-stock items appear first.</p>
-              </div>
-              <span className="low-stock-alert-count">{stockAlerts.length} {stockAlerts.length === 1 ? "alert" : "alerts"}</span>
-            </div>
-            {stockAlerts.length === 0 ? (
-              <div className="low-stock-empty"><span className="low-stock-empty-icon">✓</span><span>No active products are low on stock or out of stock.</span></div>
-            ) : (
-              <table className="low-stock-table">
-                <thead>
-                  <tr>
-                    <th></th>
-                    <th>Name</th>
-                    <th>Category</th>
-                    <th>Current Stock</th>
-                    <th>Reorder Level</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stockAlerts.map((product) => (
-                    <tr key={product.id}>
-                      <td data-label="">{product.image_url ? <img className="low-stock-product-image" src={product.image_url} alt="" /> : <span className="low-stock-product-icon">{product.name.slice(0, 1).toUpperCase()}</span>}</td>
-                      <td data-label="Product"><strong className="low-stock-product-name">{product.name}</strong></td>
-                      <td data-label="Category">{product.category || "General"}</td>
-                      <td data-label="Current Stock"><strong className="stock-number">{product.current_stock} {product.unit || "units"}</strong></td>
-                      <td data-label="Reorder Level">{product.minimum_stock} {product.unit || "units"}</td>
-                      <td data-label="Status"><span className={`low-stock-status${Number(product.current_stock) <= 0 ? " out-of-stock" : ""}`}>{Number(product.current_stock) <= 0 ? "Out of Stock" : "Low Stock"}</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </section>
         </>
       )}
 

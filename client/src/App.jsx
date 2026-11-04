@@ -6,6 +6,7 @@ import POS from "./POS";
 import useAuth from "./hooks/useAuth";
 import { apiUrl } from "./api";
 import AccountManagement from "./AccountManagement";
+import { normalizeStockFilter } from "./stockAlerts";
 import "./mobile.css";
 
 const MOBILE_SIDEBAR_BREAKPOINT = 980;
@@ -96,6 +97,7 @@ function App() {
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState(null);
   const [view, setView] = useState("dashboard");
+  const [inventoryStockFilter, setInventoryStockFilter] = useState("all");
   const [transitionDirection, setTransitionDirection] = useState("forward");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -204,7 +206,10 @@ function App() {
     setError(null);
   };
 
-  const navigate = (nextView) => {
+  const navigate = (nextView, options = {}) => {
+    if (nextView === "inventory") {
+      setInventoryStockFilter(normalizeStockFilter(options.stockFilter));
+    }
     const orderedViews = [
       "dashboard",
       ...(role !== "VENDOR" ? ["total-sales"] : []),
@@ -591,7 +596,7 @@ function App() {
                 {view === "total-sales" && role !== "VENDOR" && <TotalSales token={token} onBack={() => navigate("dashboard")} />}
                 {view === "pos" && <POS token={token} role={role} vendorId={vendorId} viewMode="pos" />}
                 {view === "products" && <Dashboard token={token} role={role} vendorId={vendorId} viewMode="products" />}
-                {view === "inventory" && <Dashboard token={token} role={role} vendorId={vendorId} viewMode="inventory" />}
+                {view === "inventory" && <Dashboard token={token} role={role} vendorId={vendorId} viewMode="inventory" stockFilter={inventoryStockFilter} onStockFilterChange={setInventoryStockFilter} />}
                 {view === "deliveries" && <POS token={token} role={role} vendorId={vendorId} viewMode="deliveries" />}
                 {view === "sales-history" && <POS token={token} role={role} vendorId={vendorId} viewMode="sales-history" />}
                 {view === "users" && <AccountManagement token={token} />}
