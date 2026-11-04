@@ -579,31 +579,6 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     setProductSearch("");
   };
 
-  const handleDeleteReturn = async (entry) => {
-    if (!window.confirm("Remove this return? Any automatically restocked items will be deducted from current inventory.")) return;
-    setError(null);
-    setStatus(null);
-    const legacyId = Array.isArray(entry.return_ids) ? entry.return_ids[0] : String(entry.return_ids || entry.id).split(',')[0];
-    const endpoint = entry.return_batch_id
-      ? `/api/vendor-returns/batch/${encodeURIComponent(entry.return_batch_id)}`
-      : `/api/vendor-returns/${legacyId}`;
-
-    try {
-      const res = await fetch(apiUrl(endpoint), { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || 'Unable to remove vendor return.');
-      }
-      setReturnEntries((current) => current.filter((row) => entry.return_batch_id
-        ? row.return_batch_id !== entry.return_batch_id
-        : String(row.id) !== String(entry.id)));
-      setStatus(entry.return_batch_id ? 'Vendor return batch removed successfully.' : 'Vendor return removed successfully.');
-      window.dispatchEvent(new Event('productsUpdated'));
-    } catch (err) {
-      setError(err.message || 'Unable to remove vendor return.');
-    }
-  };
-
   const handleConfirmPayment = async (entry) => {
     setError(null);
     setStatus(null);
@@ -783,7 +758,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
               visibleReturnEntries.length === 0 ? <p className="transaction-empty">No return records{historyEmptySuffix}.</p> : (
                 <div className="management-table-wrap">
                   <table>
-                    <thead><tr><th>Return ID</th><th>Delivery #</th><th>Vendor</th><th>Products</th><th>Date</th><th>Time</th><th>Qty</th><th>Returned Amount</th>{role !== 'VENDOR' && <th>Action</th>}</tr></thead>
+                    <thead><tr><th>Return ID</th><th>Delivery #</th><th>Vendor</th><th>Products</th><th>Date</th><th>Time</th><th>Qty</th><th>Returned Amount</th></tr></thead>
                     <tbody>{visibleReturnEntries.map((entry) => <tr key={entry.id}>
                       <td data-label="Return ID">{getDisplayReturnId(entry)}</td>
                       <td data-label="Delivery #">{entry.delivery_id ? `#${entry.delivery_id}` : 'Legacy'}</td>
@@ -793,7 +768,6 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                       <td data-label="Time">{entry.return_time}</td>
                       <td data-label="Qty">{entry.quantity}</td>
                       <td data-label="Returned Amount">{formatCurrency(entry.total_product_price_returned)}</td>
-                      {role !== 'VENDOR' && <td data-label="Action"><button type="button" className="small-button" onClick={() => handleDeleteReturn(entry)}>Remove Return</button></td>}
                     </tr>)}</tbody>
                   </table>
                 </div>
