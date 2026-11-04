@@ -6,9 +6,9 @@ import "./Reports.css";
 
 const REPORTS = {
   "total-sales": { title: "Total Sales", description: "Recorded sales + deliveries − returns" },
-  sales: { title: "Recorded Sales", description: "Transactions and units sold" },
+  sales: { title: "Recorded Sales", description: "Transactions and items sold" },
   inventory: { title: "Inventory", description: "Stock movement and current levels" },
-  "vendor-deliveries": { title: "Vendor deliveries", description: "Grouped pickups and delivery value" },
+  "vendor-deliveries": { title: "Deliveries", description: "Grouped pickups and delivery value" },
 };
 
 function Reports({ token, role, initialMode }) {

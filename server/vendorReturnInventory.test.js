@@ -27,7 +27,7 @@ async function fixture(t) {
   app.use(express.json());
   app.use((req, res, next) => {
     req.db = db;
-    req.user = { role: "ADMIN", user_id: 3 };
+    req.user = { role: "STAFF", user_id: 3 };
     next();
   });
   app.use("/returns", returnRoutes);
@@ -100,7 +100,7 @@ test("Removing a batch cannot make stock negative or partially reverse the batch
   db.products[1].current_stock = 0;
   const removed = await request(`/returns/batch/${created.body.data.return_batch_id}`, "DELETE");
   assert.equal(removed.status, 400);
-  assert.match(removed.body.error, /needs 1 units in stock/);
+  assert.match(removed.body.error, /needs 1 items in stock/);
   assert.deepEqual(stocks(), [7, 0]);
   assert.equal(db.vendor_returns.length, 2);
   assert.equal(db.inventory_movements.length, 2);
@@ -124,7 +124,7 @@ test("Delivery changes cannot double-restock returns or reduce quantities below 
     vendor_id: 1, items: [{ product_id: 1, quantity: 1 }, { product_id: 2, quantity: 2 }],
   });
   assert.equal(edit.status, 400);
-  assert.match(edit.body.error, /already has 2 returned units/);
+  assert.match(edit.body.error, /already has 2 returned items/);
   assert.deepEqual(stocks(), [7, 6]);
   const paymentEdit = await request("/deliveries/1", "PUT", {
     vendor_id: 1, payment_status: "PAID",

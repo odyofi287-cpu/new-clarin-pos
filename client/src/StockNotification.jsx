@@ -14,7 +14,7 @@ export function StockIcon({ outOfStock = false }) {
 export default function StockNotification({ products, onOpen, onDismiss }) {
   const groups = [
     { filter: "out-of-stock", label: "Out-of-stock products", hint: "Unavailable for delivery or sale", count: products.filter((product) => productStockStatus(product) === "out-of-stock").length },
-    { filter: "low-stock", label: "Low-stock products", hint: "10 units or fewer remaining", count: products.filter((product) => productStockStatus(product) === "low-stock").length },
+    { filter: "low-stock", label: "Low-stock products", hint: "10 Items or fewer remaining", count: products.filter((product) => productStockStatus(product) === "low-stock").length },
   ].filter((group) => group.count > 0);
   const total = groups.reduce((sum, group) => sum + group.count, 0);
 

@@ -178,7 +178,7 @@ export async function totalSalesReport(db, start, end) {
   }
   const productMap = new Map();
   for (const row of activity) {
-    const p = productMap.get(n(row.product_id)) || { product_id: n(row.product_id), name: row.name, category: row.category || "General", unit: row.unit || "units", image_url: row.image_url || null,
+    const p = productMap.get(n(row.product_id)) || { product_id: n(row.product_id), name: row.name, category: row.category || "General", unit: row.unit || "item", image_url: row.image_url || null,
       recorded_quantity: 0, delivered_quantity: 0, returned_quantity: 0, recorded_sales: 0, delivery_total: 0, return_total: 0 };
     for (const key of ["recorded_quantity", "delivered_quantity", "returned_quantity", "recorded_sales", "delivery_total", "return_total"]) p[key] += n(row[key]);
     productMap.set(p.product_id, p);

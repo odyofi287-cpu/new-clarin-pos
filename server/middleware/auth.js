@@ -59,6 +59,26 @@ export function requireAdmin(req, res, next) {
   next();
 }
 
+// Delivery changes are Staff-only, including for sessions issued before a role
+// change. A cached Staff claim must not allow an account now assigned to Admin.
+export async function requireCurrentStaff(req, res, next) {
+  if (req.user?.role !== "STAFF") {
+    return res.status(403).json({ error: "Staff access required" });
+  }
+  try {
+    const account = await dbGet(req.db,
+      "SELECT u.id, u.active, u.vendor_id, r.name AS role FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = $1 AND u.active = 1",
+      [Number(req.user.user_id)],
+      "SELECT u.id, u.active, u.vendor_id, r.name AS role FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = ? AND u.active = 1");
+    if (!account || Number(account.active) !== 1 || normalizeSessionRole(account.role) !== "STAFF") {
+      return res.status(403).json({ error: "An active Staff account is required" });
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+
 export function requireVendorAccess(req, res, next) {
   const rawVendor = req.params.vendorId ?? req.body.vendorId ?? req.query.vendorId;
   if (rawVendor === undefined) {

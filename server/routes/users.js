@@ -1,7 +1,7 @@
 import express from "express";
 import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
-import { requireRole, requireAdmin } from "../middleware/auth.js";
+import { requireRole, requireAdmin, requireCurrentStaff } from "../middleware/auth.js";
 import { SUPPORTED_ROLES } from "../roleMigration.js";
 import { dbAll, dbGet, dbRun, isInMemoryDb, isPostgresDb, withTransaction } from "./dbCompat.js";
 import { publishDataChange } from "../events.js";
@@ -188,6 +188,23 @@ router.post(["/verify-admin", "/verify-superadmin"], requireAdmin, async (req, r
     return res.status(401).json({ error: "Invalid admin password" });
   }
 
+  res.json({ data: { verified: true } });
+});
+
+router.post("/verify-staff", requireCurrentStaff, async (req, res) => {
+  const { password } = req.body;
+  if (typeof password !== "string" || !password) {
+    return res.status(400).json({ error: "Your Staff password is required" });
+  }
+  const user = await dbGet(req.db,
+    "SELECT u.id, u.password, r.name AS role FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = $1 AND u.active = 1",
+    [req.user.user_id],
+    "SELECT u.id, u.password, r.name AS role FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = ? AND u.active = 1");
+  if (!user || user.role !== "STAFF") return res.status(403).json({ error: "Staff access required" });
+  const valid = typeof user.password === "string" && user.password.startsWith("$2")
+    ? Boolean(bcrypt && await bcrypt.compare(password, user.password))
+    : password === user.password;
+  if (!valid) return res.status(401).json({ error: "Invalid Staff password" });
   res.json({ data: { verified: true } });
 });
 

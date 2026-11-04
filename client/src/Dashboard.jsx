@@ -2,6 +2,9 @@ import { Fragment, useEffect, useState } from "react";
 import { apiUrl } from "./api";
 import StockNotification, { StockIcon } from "./StockNotification";
 import { activeInventoryProducts, normalizeStockFilter, productStockStatus, stockAlertKey } from "./stockAlerts";
+import SalesCalendar from "./SalesCalendar";
+import { formatItemQuantity } from "./productQuantity";
+import "./productManagement.css";
 
 function formatCurrency(value) {
   return value == null ? "0.00" : Number(value).toLocaleString("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 });
@@ -133,60 +136,6 @@ function InventoryStatusChart({ products, onOpenStockFilter }) {
   );
 }
 
-function SalesCalendar({ calendar }) {
-  const [mode, setMode] = useState("daily");
-  const dailyRows = calendar?.daily || [];
-  const monthlyRows = calendar?.monthly || [];
-  const [selectedDate, setSelectedDate] = useState("");
-  const [selectedMonth, setSelectedMonth] = useState("");
-  const rows = mode === "daily" ? dailyRows : monthlyRows;
-  const selectedPeriod = mode === "daily" ? selectedDate : selectedMonth;
-  const selectedRow = rows.find((row) => row.period === selectedPeriod) || null;
-  const firstPeriod = rows[0]?.period || "";
-  const lastPeriod = rows[rows.length - 1]?.period || "";
-  const label = (period) => mode === "daily" ? formatRecordDate(period) : new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${period}-01T00:00:00Z`));
-
-  useEffect(() => {
-    setSelectedDate((current) => dailyRows.some((row) => row.period === current) ? current : dailyRows[dailyRows.length - 1]?.period || "");
-    setSelectedMonth((current) => monthlyRows.some((row) => row.period === current) ? current : monthlyRows[monthlyRows.length - 1]?.period || "");
-  }, [dailyRows, monthlyRows]);
-
-  return (
-    <section className="sales-calendar-card">
-      <div className="sales-calendar-heading">
-        <div><span className="chart-kicker">Sales recorder</span><h3>Sales Calendar</h3><p>Compare recorded and net sales by period.</p></div>
-        <div className="sales-calendar-tabs">
-          <button type="button" className={mode === "daily" ? "active" : ""} onClick={() => setMode("daily")}>Daily</button>
-          <button type="button" className={mode === "monthly" ? "active" : ""} onClick={() => setMode("monthly")}>Monthly</button>
-        </div>
-      </div>
-      <div className="sales-calendar-picker">
-        <label>{mode === "daily" ? "Choose a date" : "Choose a month"}
-          <input
-            type={mode === "daily" ? "date" : "month"}
-            value={selectedPeriod}
-            min={firstPeriod}
-            max={lastPeriod}
-            onChange={(event) => mode === "daily" ? setSelectedDate(event.target.value) : setSelectedMonth(event.target.value)}
-          />
-        </label>
-        <span>{selectedRow ? label(selectedRow.period) : "Choose an available period"}</span>
-      </div>
-      {selectedRow ? (
-        <div className="sales-period-detail">
-          <div className="sales-period-title"><span>{mode === "daily" ? "Daily sales" : "Monthly sales"}</span><strong>{label(selectedRow.period)}</strong></div>
-          <div className="sales-period-metrics">
-            <div><span>Recorded sales</span><strong>{formatCurrency(selectedRow.recorded_sales)}</strong></div>
-            <div><span>Vendor deliveries</span><strong>{formatCurrency(selectedRow.vendor_deliveries)}</strong></div>
-            <div><span>Vendor returns</span><strong className="returns-value">-{formatCurrency(selectedRow.vendor_returns)}</strong></div>
-            <div className="net"><span>Net sales</span><strong>{formatCurrency(selectedRow.net_sales)}</strong></div>
-          </div>
-        </div>
-      ) : <p className="sales-calendar-empty">Choose a date from the last 31 days or a month from the last 12 months to view its sales.</p>}
-    </section>
-  );
-}
-
 function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilter = "all", onStockFilterChange }) {
   const REFRESH_INTERVAL_MS = 6000;
   const [data, setData] = useState(null);
@@ -198,6 +147,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
   const [usersList, setUsersList] = useState([]);
   const [manageError, setManageError] = useState(null);
   const [manageSuccess, setManageSuccess] = useState(null);
+  const [deletingProductId, setDeletingProductId] = useState(null);
   const [showCreateProductWindow, setShowCreateProductWindow] = useState(false);
   const [showEditProductWindow, setShowEditProductWindow] = useState(false);
   const [showCreateAccountWindow, setShowCreateAccountWindow] = useState(false);
@@ -217,12 +167,15 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
       return;
     }
 
+    let productsRequestSequence = 0;
+    let active = true;
     const loadProducts = () => {
+      const requestSequence = ++productsRequestSequence;
       const productQuery = role === "VENDOR" ? "active=1" : "active=all";
       fetch(apiUrl(`/api/products?${productQuery}`), { headers: { Authorization: `Bearer ${token}` } })
         .then((r) => r.json())
         .then((p) => {
-          if (!p.error) {
+          if (active && requestSequence === productsRequestSequence && !p.error) {
             setProductsList(p.data || []);
           }
         })
@@ -289,6 +242,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
     window.__loadUsersDashboard = loadUsers;
 
     return () => {
+      active = false;
       window.clearInterval(intervalId);
       window.removeEventListener('productsUpdated', handleProductsUpdated);
       eventStream.close();
@@ -469,7 +423,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
         <div>
           <span className="management-kicker">{role === "VENDOR" ? "Read-only stock monitor" : "Live stock"}</span>
           <h2>{inventoryTitle}</h2>
-          <p>{selectedStockFilter === "low-stock" ? "Active products with 1 to 10 units remaining. Plan your next restock." : selectedStockFilter === "out-of-stock" ? "Active products with no available stock. Review these products before the next sale or delivery." : role === "VENDOR" ? "Monitor the current stock of products available from the arena." : "Track products and their available stock at a glance."}</p>
+          <p>{selectedStockFilter === "low-stock" ? "Active products with 1 to 10 Items remaining. Plan your next restock." : selectedStockFilter === "out-of-stock" ? "Active products with no available stock. Review these products before the next sale or delivery." : role === "VENDOR" ? "Monitor the current stock of products available from the arena." : "Track products and their available stock at a glance."}</p>
         </div>
         <div className="management-count"><strong>{inventoryProducts.length}</strong><span>items</span></div>
       </div>
@@ -508,7 +462,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
                 <p>{product.category || "General"}</p>
                 <div className="inventory-stock-row">
                   <span className={`inventory-stock-label is-${productStockStatus(product)}`}>{productStockStatus(product) === "out-of-stock" ? "Out of stock" : productStockStatus(product) === "low-stock" ? "Low stock" : "Available stock"}</span>
-                  <strong>{Number(product.current_stock || 0)} {product.unit || "units"}</strong>
+                  <strong>{formatItemQuantity(product.current_stock)}</strong>
                 </div>
               </div>
             </article>
@@ -535,7 +489,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
               <span className="metric-label">Transaction count</span>
               <strong>{data.todays_transaction_count}</strong>
             </div>
-            <div className="metric-card" title="Today's recorded sale units plus delivered units minus returned units.">
+            <div className="metric-card" title="Today's recorded sale items plus delivered items minus returned items.">
               <span className="metric-label">Items sold today</span>
               <strong>{data.items_sold_today}</strong>
             </div>
@@ -568,7 +522,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
             <InventoryStatusChart products={productsList} onOpenStockFilter={openStockList} />
           </section>
 
-          <SalesCalendar calendar={data.sales_calendar} />
+          <SalesCalendar calendar={data.sales_calendar} token={token} />
 
         </>
       )}
@@ -627,7 +581,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
                         <td data-label="Name">{prod.name}</td>
                         <td data-label="Category">{prod.category || 'General'}</td>
                         <td data-label="Price">{formatCurrency(prod.selling_price)}</td>
-                        <td data-label="Stock">{prod.current_stock}</td>
+                        <td data-label="Stock">{formatItemQuantity(prod.current_stock)}</td>
                         <td data-label="Status"><span className={`management-status ${prod.active === 1 ? 'is-active' : 'is-inactive'}`}>{prod.active === 1 ? 'Active' : 'Inactive'}</span></td>
                         <td data-label="Actions"><div className="management-actions">
                           <button className="small-button" onClick={() => {
@@ -638,7 +592,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
                           }}>Edit</button>
                           {prod.active === 1 ? (
                             <button className="small-button" onClick={async () => {
-                              if (!confirm(`Remove product \"${prod.name}\"? This will mark it inactive.`)) return;
+                              if (!confirm(`Archive product \"${prod.name}\"? You can restore it later.`)) return;
                               try {
                                 const res = await fetch(apiUrl(`/api/products/${prod.id}`), { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
                                 const text = await res.text();
@@ -649,7 +603,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
                                 window.dispatchEvent(new Event('productsUpdated'));
                                 fetch(apiUrl('/api/dashboard'), { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.json()).then((payload) => { if (!payload.error) setData(payload.data); }).catch(() => {});
                               } catch (err) { alert(err.message || 'Unable to remove product'); }
-                            }}>Remove</button>
+                            }}>Archive</button>
                           ) : (
                             <button className="small-button" onClick={async () => {
                               try {
@@ -669,6 +623,26 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
                               } catch (err) { alert(err.message || 'Unable to restore product'); }
                             }}>Restore</button>
                           )}
+                          <button type="button" className="small-button product-delete-button" disabled={deletingProductId === prod.id} aria-label={`Delete ${prod.name}`} onClick={async () => {
+                            if (!window.confirm(`Permanently remove \"${prod.name}\" from the product list? It cannot be restored. Existing sales, deliveries, and returns will keep their records, and future returns will not make this product reappear.`)) return;
+                            setDeletingProductId(prod.id);
+                            setManageError(null);
+                            setManageSuccess(null);
+                            try {
+                              const response = await fetch(apiUrl(`/api/products/${prod.id}/permanent`), {
+                                method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+                              });
+                              const body = await response.json();
+                              if (!response.ok) throw new Error(body.error || 'Unable to delete product');
+                              setProductsList((current) => current.filter((product) => product.id !== prod.id));
+                              setManageSuccess(`${prod.name} removed from the product list. Its transaction history is preserved.`);
+                              window.dispatchEvent(new Event('productsUpdated'));
+                            } catch (error) {
+                              setManageError(error.message || 'Unable to delete product');
+                            } finally {
+                              setDeletingProductId(null);
+                            }
+                          }}>{deletingProductId === prod.id ? 'Deleting…' : 'Delete'}</button>
                         </div></td>
                       </tr>
                     ))}
@@ -876,7 +850,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
                   category: manageForm.category,
                   selling_price: Number(manageForm.selling_price) || 0,
                   minimum_stock: 0,
-                  unit: 'unit',
+                  unit: 'item',
                   current_stock: Number(manageForm.current_stock) || 0,
                   image_url: manageForm.image_url || null,
                 };

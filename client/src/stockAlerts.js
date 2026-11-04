@@ -1,5 +1,5 @@
 // Keep dashboard shortcuts and inventory lists aligned with the dashboard API:
-// low stock means 1–10 units; zero/negative stock means out of stock.
+// low stock means 1–10 items; zero/negative stock means out of stock.
 export const LOW_STOCK_LIMIT = 10;
 
 export function productStockStatus(product) {
@@ -16,7 +16,7 @@ export function normalizeStockFilter(filter) {
 export function activeInventoryProducts(products = [], filter = "all", search = "") {
   const stockFilter = normalizeStockFilter(filter);
   const query = search.trim().toLowerCase();
-  return products.filter((product) => Number(product.active ?? 1) === 1)
+  return products.filter((product) => !product.deleted_at && Number(product.active ?? 1) === 1)
     .filter((product) => stockFilter === "all" || productStockStatus(product) === stockFilter)
     .filter((product) => !query || `${product.name || ""} ${product.category || ""}`.toLowerCase().includes(query));
 }

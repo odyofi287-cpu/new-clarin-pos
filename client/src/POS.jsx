@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { apiUrl } from "./api";
 import HistoryCalendar from "./HistoryCalendar.jsx";
 import { filterHistory, countHistoryDates } from "./historyCalendar.js";
+import { formatItemQuantity } from "./productQuantity";
 import "./history.css";
 import "./transaction-entry.css";
 
@@ -68,7 +69,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   const isPosEntryView = viewMode === "pos";
   const isDeliveriesView = viewMode === "deliveries";
   const isSalesHistoryView = viewMode === "sales-history";
-  const canManagePickupEntries = role === "ADMIN" && isDeliveriesView;
+  const canManagePickupEntries = role === "STAFF" && isDeliveriesView;
   const canManagePaymentStatus = ["ADMIN", "STAFF"].includes(role) && isDeliveriesView;
   const [products, setProducts] = useState([]);
   const [vendors, setVendors] = useState([]);
@@ -94,6 +95,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   const [pickupMode, setPickupMode] = useState("create");
   const [editingPickupId, setEditingPickupId] = useState(null);
   const [editingPickupOriginalQuantities, setEditingPickupOriginalQuantities] = useState({});
+  const [editingPickupProducts, setEditingPickupProducts] = useState([]);
   const [historyMode, setHistoryMode] = useState(null);
   const [historySelections, setHistorySelections] = useState(() => Object.fromEntries(
     ['pickups', 'returns', 'payments', 'sales'].map((key) => [key, { mode: 'daily', date: getManilaBusinessDate() }])
@@ -404,7 +406,15 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     : entryMode === "return"
       ? returnQuantities
       : saleQuantities;
-  const catalogProducts = entryMode === "return" ? returnProducts : products;
+  const catalogProducts = useMemo(() => {
+    if (entryMode === "return") return returnProducts;
+    if (entryMode !== "pickup" || pickupMode !== "edit") return products;
+    const merged = new Map(products.map((product) => [Number(product.id), product]));
+    // Existing delivery lines remain editable even after catalog deletion. They
+    // are never added back to the ordinary product catalog or new transactions.
+    for (const product of editingPickupProducts) merged.set(Number(product.id), product);
+    return [...merged.values()];
+  }, [entryMode, pickupMode, products, returnProducts, editingPickupProducts]);
   const filteredCatalogProducts = useMemo(() => {
     const search = productSearch.trim().toLowerCase();
     if (!search) return catalogProducts;
@@ -485,6 +495,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     setPickupMode("create");
     setPickupQuantities({});
     setEditingPickupOriginalQuantities({});
+    setEditingPickupProducts([]);
   };
 
   const updateTransactionQuantity = (product, nextValue) => {
@@ -495,7 +506,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     const availableStock = entryMode === "return"
       ? Number(product.returnable_quantity || 0)
       : entryMode === "pickup" && pickupMode === "edit"
-        ? Number(product.current_stock || 0) + Number(editingPickupOriginalQuantities[product.id] || 0)
+        ? (product.deleted_at || Number(product.active) !== 1 ? 0 : Number(product.current_stock || 0)) + Number(editingPickupOriginalQuantities[product.id] || 0)
         : Number(product.current_stock || 0);
     const quantity = Number.isFinite(parsed) ? Math.max(0, Math.min(Math.trunc(parsed), availableStock)) : 0;
     const setQuantities = entryMode === "pickup"
@@ -564,7 +575,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   };
 
   const handleDeleteReturn = async (entry) => {
-    if (!window.confirm("Remove this return? Any automatically restocked units will be deducted from current inventory.")) return;
+    if (!window.confirm("Remove this return? Any automatically restocked items will be deducted from current inventory.")) return;
     setError(null);
     setStatus(null);
     const legacyId = Array.isArray(entry.return_ids) ? entry.return_ids[0] : String(entry.return_ids || entry.id).split(',')[0];
@@ -809,7 +820,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       setSaleQuantities({});
       setProductSearch("");
       setSaleForm({ product_id: "", quantity: "1" });
-      setStatus(`Sale recorded with ${transactionItems.length} product${transactionItems.length === 1 ? '' : 's'} and ${transactionQuantityTotal} total units.`);
+      setStatus(`Sale recorded with ${transactionItems.length} product${transactionItems.length === 1 ? '' : 's'} and ${formatItemQuantity(transactionQuantityTotal)} in total.`);
       window.dispatchEvent(new Event('productsUpdated'));
     } catch (err) {
       setError(err.message || 'Unable to record sale');
@@ -825,6 +836,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   };
 
   async function openEditPickup(record) {
+    if (!canManagePickupEntries) return;
     try {
       const detailRes = await fetch(apiUrl(`/api/deliveries/${record.id}`), {
         headers: { Authorization: `Bearer ${token}` },
@@ -834,6 +846,13 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
         throw new Error(detailBody.error || "Unable to load pickup details");
       }
       const items = detailBody.data?.items || [];
+      const originalProducts = await Promise.all(items.map(async (item) => {
+        const response = await fetch(apiUrl(`/api/products/${item.product_id}`), { headers: { Authorization: `Bearer ${token}` } });
+        const body = await response.json();
+        if (!response.ok || !body.data) throw new Error(body.error || 'Unable to load an original delivery product');
+        return { ...body.data, selling_price: Number(item.unit_cost) };
+      }));
+      setEditingPickupProducts(originalProducts);
       setEditingPickupId(record.id);
       setPickupMode("edit");
       setPickupForm({
@@ -861,6 +880,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   }
 
   async function handleDeletePickup(pickupId) {
+    if (!canManagePickupEntries) return;
     if (!window.confirm("Delete this vendor pickup? This action cannot be undone.")) {
       return;
     }
@@ -999,19 +1019,20 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     setSubmitting(true);
     try {
       if (pickupMode === "edit" && editingPickupId) {
-        const adminPassword = window.prompt('Enter the Admin password to confirm this pickup update:');
-        if (!adminPassword || !adminPassword.trim()) {
-          throw new Error('Admin verification password is required');
+        if (!canManagePickupEntries) throw new Error('Only Staff can edit vendor pickups.');
+        const staffPassword = window.prompt('Enter your Staff password to confirm this pickup update:');
+        if (!staffPassword || !staffPassword.trim()) {
+          throw new Error('Staff verification password is required');
         }
 
-        const verifyRes = await fetch(apiUrl('/api/users/verify-admin'), {
+        const verifyRes = await fetch(apiUrl('/api/users/verify-staff'), {
           method: 'POST',
           headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ password: adminPassword }),
+          body: JSON.stringify({ password: staffPassword }),
         });
         const verifyBody = await verifyRes.json().catch(() => ({}));
         if (!verifyRes.ok) {
-          throw new Error(verifyBody.error || 'Admin verification failed');
+          throw new Error(verifyBody.error || 'Staff verification failed');
         }
 
         const res = await fetch(apiUrl(`/api/deliveries/${editingPickupId}`), {
@@ -1186,7 +1207,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                     const availableStock = isReturnEntry
                       ? Number(product.returnable_quantity || 0)
                       : entryMode === "pickup" && pickupMode === "edit"
-                        ? stock + Number(editingPickupOriginalQuantities[product.id] || 0)
+                        ? (product.deleted_at || Number(product.active) !== 1 ? 0 : stock) + Number(editingPickupOriginalQuantities[product.id] || 0)
                         : stock;
                     const canAdd = quantity < availableStock;
                     return (
@@ -1208,7 +1229,8 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                         <div className="transaction-product-copy">
                           <span>{product.category || "General"}</span>
                           <h4>{product.name}</h4>
-                          <p>{formatCurrency(product.selling_price)} · {isReturnEntry ? `${Number(product.delivered_quantity || 0)} ${product.unit || "units"} delivered` : `${availableStock} ${product.unit || "units"} available`}</p>
+                          <p>{formatCurrency(product.selling_price)} · {isReturnEntry ? `${formatItemQuantity(product.delivered_quantity)} delivered` : `${formatItemQuantity(availableStock)} available`}</p>
+                          {product.deleted_at && !isReturnEntry && <small className="removed-product-note">Deleted product · existing delivery only</small>}
                           {isReturnEntry && Number(product.returned_quantity || 0) > 0 && (
                             <small className="transaction-return-balance">{Number(product.returned_quantity)} returned · {availableStock} remaining</small>
                           )}
@@ -1231,7 +1253,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
             <aside className="transaction-summary">
               <div>
                 <span className="transaction-eyebrow">{isReturnEntry ? "Return summary" : "Order summary"}</span>
-                <h3>{transactionItems.length} product{transactionItems.length === 1 ? "" : "s"} · {transactionQuantityTotal} units</h3>
+                <h3>{transactionItems.length} product{transactionItems.length === 1 ? "" : "s"} · {formatItemQuantity(transactionQuantityTotal)}</h3>
                 {transactionItems.length ? (
                   <ul>
                     {transactionItems.map((item) => <li key={item.id}><span>{item.name} <b>×{item.quantity}</b></span><strong>{formatCurrency(item.quantity * Number(item.selling_price || 0))}</strong></li>)}
@@ -1264,7 +1286,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       <section className="dashboard-card">
         <div className="pos-header">
           <div>
-            <h2>{isSalesHistoryView ? "Sales & Pickup History" : isDeliveriesView ? "Vendor Deliveries" : "Direct-to-Vendor POS"}</h2>
+            <h2>{isSalesHistoryView ? "Sales & Pickup History" : isDeliveriesView ? "Deliveries" : "Direct-to-Vendor POS"}</h2>
             <p className="muted-text">
               {isSalesHistoryView
                 ? "Review recorded POS sales and vendor pickup records."
@@ -1510,7 +1532,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                     <select value={pickupForm.product_id} onChange={(event) => setPickupForm({ ...pickupForm, product_id: event.target.value })} required>
                       <option value="">Select product</option>
                       {products.map((product) => (
-                        <option key={product.id} value={product.id}>{product.name} - {product.category || 'General'} — Stock: {product.current_stock} {product.unit || 'units'}</option>
+                        <option key={product.id} value={product.id}>{product.name} - {product.category || 'General'} — Stock: {formatItemQuantity(product.current_stock)}</option>
                       ))}
                     </select>
                   </label>
@@ -1526,12 +1548,12 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                     <input type="number" min="1" value={pickupForm.quantity} onChange={(event) => setPickupForm({ ...pickupForm, quantity: event.target.value })} required />
                   </label>
                   <label>
-                    Unit price
+                    Item price
                     <input value={pickupForm.unit_price} readOnly placeholder="Auto-filled from product data" />
                   </label>
                   <label>
                     Total price
-                    <input value={pickupForm.total_price} readOnly placeholder="Quantity × unit price" />
+                    <input value={pickupForm.total_price} readOnly placeholder="Quantity × item price" />
                   </label>
                 </div>
 

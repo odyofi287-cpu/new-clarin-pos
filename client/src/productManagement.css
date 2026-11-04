@@ -1,0 +1,7 @@
+.products-page .management-actions { flex-wrap: wrap; }
+.workspace-content .products-page .management-count { background: #edf4fd; border: 1px solid #d7e5f4; }
+.workspace-content .products-page .management-count span { color: #5d789c; }
+.workspace-content .products-page .product-delete-button { color: #ae3443; background: #fff1f3; border: 1px solid #efc9d0; }
+.workspace-content .products-page .product-delete-button:hover { color: #902434; background: #ffe5e9; border-color: #db9ca8; box-shadow: none; }
+.workspace-content .products-page .product-delete-button:focus-visible { outline: 3px solid #b13f50; outline-offset: 2px; }
+.transaction-product-copy .removed-product-note { display: block; color: #a34e1b; font-size: 0.72rem; margin-top: 0.35rem; }

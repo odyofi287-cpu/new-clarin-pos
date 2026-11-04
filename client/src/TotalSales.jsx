@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiUrl } from "./api";
+import { formatItemQuantity } from "./productQuantity";
 
 const REFRESH_INTERVAL_MS = 6000;
 
@@ -217,9 +218,9 @@ function TotalSales({ token, onBack }) {
                   <span>{product.category || "General"}</span>
                 </div>
                 <div className="total-sales-product-stat is-net"><span>Net sales</span><strong>{formatCurrency(product.net_sales)}</strong></div>
-                <div className="total-sales-product-stat"><span>Recorded sales</span><strong>{formatCurrency(product.recorded_sales)}</strong><small>{Number(product.recorded_quantity || 0).toLocaleString()} {product.unit || "units"}</small></div>
-                <div className="total-sales-product-stat"><span>Deliveries</span><strong>{formatCurrency(product.delivery_total)}</strong><small>{Number(product.delivered_quantity || 0).toLocaleString()} {product.unit || "units"}</small></div>
-                <div className="total-sales-product-stat is-return"><span>Returns</span><strong>-{formatCurrency(product.return_total)}</strong><small>{Number(product.returned_quantity || 0).toLocaleString()} {product.unit || "units"}</small></div>
+                <div className="total-sales-product-stat"><span>Recorded sales</span><strong>{formatCurrency(product.recorded_sales)}</strong><small>{formatItemQuantity(product.recorded_quantity)}</small></div>
+                <div className="total-sales-product-stat"><span>Deliveries</span><strong>{formatCurrency(product.delivery_total)}</strong><small>{formatItemQuantity(product.delivered_quantity)}</small></div>
+                <div className="total-sales-product-stat is-return"><span>Returns</span><strong>-{formatCurrency(product.return_total)}</strong><small>{formatItemQuantity(product.returned_quantity)}</small></div>
                 <div className="total-sales-share"><span>{Number(product.share_percent || 0).toFixed(1)}%</span><i><b style={{ width: `${Math.min(Number(product.share_percent || 0), 100)}%` }} /></i></div>
               </article>
             ))}

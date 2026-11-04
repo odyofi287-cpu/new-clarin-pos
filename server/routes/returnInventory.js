@@ -39,7 +39,7 @@ export async function reverseVendorReturnStock(db, entry, userId) {
     "UPDATE products SET current_stock = current_stock - ? WHERE id = ? AND current_stock >= ?"
   );
   if (!result.changes) {
-    throw new Error(`Cannot remove this return: product ${entry.product_id} needs ${quantity} units in stock to reverse its restock`);
+    throw new Error(`Cannot remove this return: product ${entry.product_id} needs ${quantity} items in stock to reverse its restock`);
   }
   await dbRun(db,
     `INSERT INTO inventory_movements (product_id, movement_type, quantity, reference_type, reference_id, user_id, created_at)

@@ -88,10 +88,11 @@ router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
 
     const products = [];
     for (const item of cart) {
-      const product = await dbGet(req.db, "SELECT id, name, selling_price, current_stock FROM products WHERE id = $1", [item.product_id], "SELECT id, name, selling_price, current_stock FROM products WHERE id = ?");
+      const product = await dbGet(req.db, "SELECT id, name, selling_price, current_stock, active, deleted_at FROM products WHERE id = $1", [item.product_id], "SELECT id, name, selling_price, current_stock, active, deleted_at FROM products WHERE id = ?");
       if (!product) {
         throw new Error(`Product not found: ${item.product_id}`);
       }
+      if (product.deleted_at || Number(product.active) !== 1) return res.status(400).json({ error: `Product is no longer available for sale: ${product.name}` });
       products.push({ ...product, sellQuantity: item.quantity });
     }
 
@@ -100,7 +101,7 @@ router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
 
     const saleResult = await withTransaction(req.db, async () => {
       for (const product of products) {
-        const stockUpdate = await dbRun(req.db, "UPDATE products SET current_stock = current_stock - $1 WHERE id = $2 AND current_stock >= $1 RETURNING id", [product.sellQuantity, product.id], "UPDATE products SET current_stock = current_stock - ? WHERE id = ? AND current_stock >= ?");
+        const stockUpdate = await dbRun(req.db, "UPDATE products SET current_stock = current_stock - $1 WHERE id = $2 AND current_stock >= $1 AND active = 1 AND deleted_at IS NULL RETURNING id", [product.sellQuantity, product.id], "UPDATE products SET current_stock = current_stock - ? WHERE id = ? AND current_stock >= ? AND active = 1 AND deleted_at IS NULL");
         if (!stockUpdate.changes) {
           throw new Error(`Insufficient stock for ${product.name}`);
         }

@@ -5,6 +5,8 @@
 
 .transaction-entry-page form {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: 1.25rem;
 }
 
@@ -80,6 +82,7 @@
 }
 
 .transaction-details label {
+  min-width: 0;
   color: #34567f;
   display: grid;
   font-size: 0.75rem;
@@ -474,6 +477,7 @@
 .payment-product-drawer p { color: #7b8da4; font-size: 0.72rem; margin: 0; }
 
 @media (max-width: 1120px) {
+  .transaction-details.is-return-details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .payment-account-main {
     align-items: start;
     grid-template-areas: "identity meta" "amounts amounts" "actions actions";
@@ -489,11 +493,11 @@
   .transaction-entry-header > .small-button { align-self: flex-start; }
   .transaction-details,
   .transaction-details.has-payment-status,
-  .transaction-details.is-return-details { grid-template-columns: 1fr; padding: 0.8rem; }
+  .transaction-details.is-return-details { grid-template-columns: minmax(0, 1fr); padding: 0.8rem; }
   .transaction-search { min-width: 0; width: 100%; }
-  .transaction-product-grid { grid-template-columns: 1fr; }
-  .transaction-summary { align-items: stretch; grid-template-columns: 1fr; }
-  .transaction-summary:has(.return-delivery-calculation) { grid-template-columns: 1fr; }
+  .transaction-product-grid { grid-template-columns: minmax(0, 1fr); }
+  .transaction-summary { align-items: stretch; grid-template-columns: minmax(0, 1fr); }
+  .transaction-summary:has(.return-delivery-calculation) { grid-template-columns: minmax(0, 1fr); }
   .transaction-total { border-left: 0; border-top: 1px solid #cbdff3; padding: 0.75rem 0 0; }
   .transaction-summary .primary-button { width: 100%; }
   .transaction-history-list { padding: 0.8rem; }

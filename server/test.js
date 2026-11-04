@@ -556,12 +556,12 @@ test("Vendor can view returns but cannot create or delete them", async () => {
   assert.strictEqual(deleteRes.status, 403);
 });
 
-test("Admin can update pickup details and payment status after password verification", async () => {
-  const token = await login("superadmin@clarin.local", "Superadmin123!");
-  const verify = await fetch(`${base}/api/users/verify-admin`, {
+test("Staff can update pickup details and payment status after own password verification", async () => {
+  const token = await login("staff@clarin.local", "Staff123!");
+  const verify = await fetch(`${base}/api/users/verify-staff`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ password: 'Superadmin123!' })
+    body: JSON.stringify({ password: 'Staff123!' })
   });
   assert.strictEqual(verify.status, 200);
 
@@ -581,12 +581,12 @@ test("Admin can update pickup details and payment status after password verifica
       items: [{ product_id: productId, quantity, unit_cost: 25 }],
     })
   });
-  assert.strictEqual(updateRes.status, 200, 'Expected superadmin edit to succeed after verification');
+  assert.strictEqual(updateRes.status, 200, 'Expected Staff edit to succeed after verification');
   const updated = await updateRes.json();
   assert.strictEqual(updated.data.vendor_id, 1);
   assert.strictEqual(updated.data.items[0].quantity, quantity);
   assert.strictEqual(updated.data.payment_status, 'PAID');
-  assert.strictEqual(updated.data.payment_confirmed_by_name, 'System Owner');
+  assert.strictEqual(updated.data.payment_confirmed_by_name, 'POS Staff');
   assert(updated.data.payment_confirmed_at, 'Expected payment confirmation metadata after marking paid');
 
   const unpaidRes = await fetch(`${base}/api/deliveries/1`, {
@@ -607,8 +607,8 @@ test("Admin can update pickup details and payment status after password verifica
   assert.strictEqual(unpaid.data.payment_confirmed_at, null);
 });
 
-test("Admin can delete a pickup after creation", async () => {
-  const token = await login("superadmin@clarin.local", "Superadmin123!");
+test("Staff can delete a pickup after creation", async () => {
+  const token = await login("staff@clarin.local", "Staff123!");
   const productsRes = await fetch(`${base}/api/products?active=1`, { headers: { Authorization: `Bearer ${token}` } });
   const product = (await productsRes.json()).data[0];
   const createRes = await fetch(`${base}/api/deliveries`, {
@@ -631,6 +631,39 @@ test("Admin can delete a pickup after creation", async () => {
   assert.strictEqual(deleteRes.status, 200, 'Expected pickup delete to succeed');
   const deletedBody = await deleteRes.json();
   assert.strictEqual(deletedBody.data.deleted, true);
+});
+
+test("Admin and Vendor cannot edit/delete deliveries or verify a Staff password; reads remain available", async () => {
+  for (const [email, password] of [["superadmin@clarin.local", "Superadmin123!"], ["vendor@clarin.local", "Vendor123!"]]) {
+    const token = await login(email, password);
+    const headers = { "content-type": "application/json", Authorization: `Bearer ${token}` };
+    assert.strictEqual((await fetch(`${base}/api/deliveries/1`, { headers })).status, 200);
+    for (const method of ["PUT", "DELETE"]) {
+      assert.strictEqual((await fetch(`${base}/api/deliveries/1`, { method, headers,
+        ...(method === "PUT" ? { body: JSON.stringify({ vendor_id: 1, items: [{ product_id: 1, quantity: 1 }] }) } : {}) })).status, 403);
+    }
+    assert.strictEqual((await fetch(`${base}/api/users/verify-staff`, { method: "POST", headers,
+      body: JSON.stringify({ password: "Staff123!" }) })).status, 403);
+  }
+});
+
+test("Staff password verification rejects missing and incorrect passwords", async () => {
+  const token = await login("staff@clarin.local", "Staff123!");
+  const headers = { "content-type": "application/json", Authorization: `Bearer ${token}` };
+  for (const [body, status] of [[{}, 400], [{ password: "wrong-password" }, 401]]) {
+    assert.strictEqual((await fetch(`${base}/api/users/verify-staff`, { method: "POST", headers, body: JSON.stringify(body) })).status, status);
+  }
+});
+
+test("Cached Staff tokens do not let current Admin, Vendor or missing accounts mutate deliveries", async () => {
+  for (const userId of [1, 4, 99999]) {
+    const token = jwt.sign({ user_id: userId, role: "STAFF" }, process.env.JWT_SECRET || "change-this-secret", { expiresIn: "1h" });
+    for (const method of ["PUT", "DELETE"]) {
+      assert.strictEqual((await fetch(`${base}/api/deliveries/1`, { method, headers: {
+        "content-type": "application/json", Authorization: `Bearer ${token}`,
+      }, ...(method === "PUT" ? { body: "{}" } : {}) })).status, 403);
+    }
+  }
 });
 
 test("Vendor cannot access another vendor delivery by ID", async () => {

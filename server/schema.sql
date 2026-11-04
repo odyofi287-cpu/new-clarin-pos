@@ -34,9 +34,10 @@ CREATE TABLE IF NOT EXISTS products (
   selling_price NUMERIC NOT NULL,
   current_stock INTEGER NOT NULL DEFAULT 0,
   minimum_stock INTEGER NOT NULL DEFAULT 0,
-  unit TEXT NOT NULL DEFAULT 'unit',
+  unit TEXT NOT NULL DEFAULT 'item',
   image_url TEXT,
   active INTEGER NOT NULL DEFAULT 1,
+  deleted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

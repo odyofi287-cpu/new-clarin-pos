@@ -2,6 +2,7 @@ import express from "express";
 import { requireRole } from "../middleware/auth.js";
 import { dbAll, dbGet, isInMemoryDb } from "./dbCompat.js";
 import { getBusinessDate } from "../businessDate.js";
+import { getSalesCalendarRange, salesCalendarRangeInput } from "../salesCalendarRange.js";
 
 const router = express.Router();
 
@@ -166,7 +167,7 @@ function buildProductSales(products = [], saleItems = [], deliveryItems = [], re
       name: product.name || "Unknown product",
       category: product.category || "General",
       image_url: product.image_url || null,
-      unit: product.unit || "units",
+      unit: product.unit || "item",
       ...total,
       net_quantity: total.recorded_quantity + total.delivered_quantity - total.returned_quantity,
       net_sales: total.recorded_sales + total.delivery_total - total.return_total,
@@ -361,6 +362,21 @@ router.get("/", requireRole("ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to load dashboard" });
+  }
+});
+
+router.get("/sales-calendar", requireRole("ADMIN", "STAFF"), async (req, res) => {
+  let range;
+  try {
+    range = salesCalendarRangeInput(req.query);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+  try {
+    res.json({ data: await getSalesCalendarRange(req.db, range.start, range.end) });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Unable to load sales for this date range" });
   }
 });
 

@@ -426,10 +426,10 @@ router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
         const eligibleProduct = eligibleById.get(productId);
         if (!eligibleProduct) {
           const product = returnItems.find((item) => item.productId === productId)?.product;
-          throw new Error(`${product?.name || `Product ${productId}`} has no delivered units available for return from this vendor`);
+          throw new Error(`${product?.name || `Product ${productId}`} has no delivered items available for return from this vendor`);
         }
         if (requestedQuantity > Number(eligibleProduct.returnable_quantity || 0)) {
-          throw new Error(`Only ${eligibleProduct.returnable_quantity} delivered ${eligibleProduct.unit || "units"} of ${eligibleProduct.name} remain available for return`);
+          throw new Error(`Only ${eligibleProduct.returnable_quantity} delivered items of ${eligibleProduct.name} remain available for return`);
         }
         for (const item of returnItems.filter((entry) => entry.productId === productId)) {
           item.totalPrice = Number(eligibleProduct.selling_price || 0) * item.qty;

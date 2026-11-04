@@ -6,6 +6,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import pg from 'pg';
 import { getBusinessDate } from './businessDate.js';
 import { SUPPORTED_ROLES, migrateAdminRoleInMemory, migrateAdminRoleSqlite, migrateAdminRolePostgres } from './roleMigration.js';
+import { ensureProductDeletionSchema } from './productDeletionSchema.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = path.join(__dirname, "data");
@@ -232,7 +233,7 @@ class InMemoryDB {
       return {
         run: (name, category, price, current_stock, minimum_stock, unit, image_url) => {
           const id = this.products.length + 1;
-          this.products.push({ id, name, category, selling_price: price, current_stock, minimum_stock, unit, image_url: image_url || null, active: 1, created_at: new Date().toISOString() });
+          this.products.push({ id, name, category, selling_price: price, current_stock, minimum_stock, unit, image_url: image_url || null, active: 1, deleted_at: null, created_at: new Date().toISOString() });
           return { lastInsertRowid: id };
         },
       };
@@ -240,7 +241,10 @@ class InMemoryDB {
 
     if (normalized.includes("FROM PRODUCTS")) {
       return {
-        all: () => this.products.map((p) => ({ ...p })),
+        all: () => this.products
+          .filter((p) => !normalized.includes("DELETED_AT IS NULL") || !p.deleted_at)
+          .filter((p) => !normalized.includes("ACTIVE = 1") || Number(p.active) === 1)
+          .map((p) => ({ ...p })),
         get: (name) => this.products.find((p) => p.name === name) || undefined,
         run: (name, category, price, current_stock, minimum_stock, unit) => {
           const id = this.products.length + 1;
@@ -256,6 +260,18 @@ class InMemoryDB {
           const id = Number(normalized.includes("CURRENT_STOCK = CURRENT_STOCK - ? WHERE ID = ? AND CURRENT_STOCK >= ?") ? args[1] : args[args.length - 1]);
           const prod = this.products.find((p) => p.id === id);
           if (!prod) return { changes: 0 };
+          if (normalized.includes("DELETED_AT IS NULL") && prod.deleted_at) return { changes: 0 };
+          if (normalized.includes("AND ACTIVE = 1") && Number(prod.active) !== 1) return { changes: 0 };
+
+          if (normalized.includes("DELETED_AT = CURRENT_TIMESTAMP")) {
+            prod.active = 0;
+            prod.deleted_at = new Date().toISOString();
+            return { changes: 1 };
+          }
+          if (normalized.startsWith("UPDATE PRODUCTS SET ACTIVE")) {
+            prod.active = normalized.includes("ACTIVE = 0") ? 0 : Number(args[0]);
+            return { changes: 1 };
+          }
 
           if (normalized.includes("CURRENT_STOCK = CURRENT_STOCK + ?")) {
             const delta = Number(args[0]);
@@ -277,6 +293,9 @@ class InMemoryDB {
           }
 
           if (normalized.includes("IMAGE_URL = ?")) {
+            if (normalized.startsWith("UPDATE PRODUCTS SET NAME")) {
+              [prod.name, prod.category, prod.selling_price, prod.unit, prod.minimum_stock] = args.slice(0, 5);
+            }
             prod.image_url = args[5] || null;
             return { changes: 1 };
           }
@@ -521,7 +540,10 @@ class InMemoryDB {
 
     if (normalized.includes("FROM DELIVERY_ITEMS")) {
       return {
-        all: (deliveryId) => this.delivery_items.filter((it) => it.delivery_id === deliveryId).map((it) => ({ ...it })),
+        all: (deliveryId) => this.delivery_items.filter((it) => it.delivery_id === deliveryId).map((it) => ({
+          ...it,
+          ...(normalized.includes("JOIN PRODUCTS") ? { product_name: this.products.find((product) => product.id === it.product_id)?.name || "Unknown" } : {}),
+        })),
         run: (delivery_id, product_id, quantity, unit_cost) => {
           const id = this.delivery_items.length + 1;
           const row = { id, delivery_id, product_id, quantity, unit_cost };
@@ -667,6 +689,7 @@ class PostgresDB {
   async initialize() {
     const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
     await this.pool.query(schema);
+    await ensureProductDeletionSchema(this);
     await this.pool.query("ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS delivery_time TEXT");
     await this.pool.query("ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS payment_status TEXT NOT NULL DEFAULT 'UNPAID'");
     await this.pool.query("ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS payment_confirmed_at TIMESTAMPTZ");
@@ -835,6 +858,7 @@ function migrateSchema(db) {
   if (!productColumnNames.has("image_url")) {
     db.exec("ALTER TABLE products ADD COLUMN image_url TEXT");
   }
+  ensureProductDeletionSchema(db);
 
   const deliveryColumns = db.prepare("PRAGMA table_info(deliveries)").all();
   if (!deliveryColumns.some((column) => column.name === "delivery_time")) {
@@ -916,9 +940,10 @@ function createSchema(db) {
       selling_price REAL NOT NULL,
       current_stock INTEGER NOT NULL DEFAULT 0,
       minimum_stock INTEGER NOT NULL DEFAULT 0,
-      unit TEXT NOT NULL DEFAULT 'unit',
+      unit TEXT NOT NULL DEFAULT 'item',
       image_url TEXT,
       active INTEGER NOT NULL DEFAULT 1,
+      deleted_at TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `);

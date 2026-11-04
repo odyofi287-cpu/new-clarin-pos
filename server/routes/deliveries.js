@@ -1,5 +1,5 @@
 import express from "express";
-import { requireRole } from "../middleware/auth.js";
+import { requireRole, requireCurrentStaff } from "../middleware/auth.js";
 import { publishDataChange } from "../events.js";
 import { dbAll, dbGet, dbRun, isInMemoryDb, withTransaction } from "./dbCompat.js";
 import { getBusinessDate } from "../businessDate.js";
@@ -213,10 +213,11 @@ router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
       if (!productId || !Number.isFinite(quantity) || quantity <= 0) {
         throw new Error("Each pickup item must include a valid product and quantity");
       }
-      const product = await dbGet(req.db, "SELECT id, current_stock, selling_price FROM products WHERE id = $1", [productId], "SELECT id, current_stock, selling_price FROM products WHERE id = ?");
+      const product = await dbGet(req.db, "SELECT id, current_stock, selling_price, active, deleted_at FROM products WHERE id = $1", [productId], "SELECT id, current_stock, selling_price, active, deleted_at FROM products WHERE id = ?");
       if (!product) {
         throw new Error(`Product ${productId} not found`);
       }
+      if (product.deleted_at || Number(product.active) !== 1) throw new Error(`Product ${productId} is no longer available for new deliveries`);
       const resolvedUnitCost = Number.isFinite(unitCost) && unitCost > 0 ? unitCost : Number(product.selling_price || 0);
       itemPayloads.push({ productId, quantity, unitCost: resolvedUnitCost, product });
     }
@@ -226,9 +227,9 @@ router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
       for (const item of itemPayloads) {
         const stockUpdate = await dbRun(
           req.db,
-          "UPDATE products SET current_stock = current_stock - $1 WHERE id = $2 AND current_stock >= $1 RETURNING id",
+          "UPDATE products SET current_stock = current_stock - $1 WHERE id = $2 AND current_stock >= $1 AND active = 1 AND deleted_at IS NULL RETURNING id",
           [item.quantity, item.productId],
-          "UPDATE products SET current_stock = current_stock - ? WHERE id = ? AND current_stock >= ?"
+          "UPDATE products SET current_stock = current_stock - ? WHERE id = ? AND current_stock >= ? AND active = 1 AND deleted_at IS NULL"
         );
         if (!stockUpdate.changes) throw new Error(`Insufficient stock for product ${item.productId}`);
       }
@@ -283,7 +284,7 @@ router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
   }
 });
 
-router.put("/:id", requireRole("ADMIN"), async (req, res) => {
+router.put("/:id", requireCurrentStaff, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const existing = await dbGet(req.db, "SELECT id, vendor_id, delivery_date, delivery_time, total_amount, payment_status FROM deliveries WHERE id = $1", [id], "SELECT id, vendor_id, delivery_date, delivery_time, total_amount, payment_status FROM deliveries WHERE id = ?");
@@ -327,7 +328,7 @@ router.put("/:id", requireRole("ADMIN"), async (req, res) => {
       itemPayloads.push({ productId, quantity, unitCost: resolvedUnitCost });
     }
 
-    const totalAmount = itemPayloads.reduce((sum, item) => sum + item.quantity * item.unitCost, 0);
+    let totalAmount = itemPayloads.reduce((sum, item) => sum + item.quantity * item.unitCost, 0);
     await withTransaction(req.db, async () => {
       const lockedDelivery = await dbGet(req.db,
         "SELECT id, vendor_id FROM deliveries WHERE id = $1 FOR UPDATE", [id],
@@ -346,11 +347,28 @@ router.put("/:id", requireRole("ADMIN"), async (req, res) => {
         const deliveredQuantity = itemPayloads.filter((item) => item.productId === productId)
           .reduce((sum, item) => sum + item.quantity, 0);
         if (deliveredQuantity < quantity) {
-          throw new Error(`Product ${productId} already has ${quantity} returned units; remove those returns before reducing its delivered quantity`);
+          throw new Error(`Product ${productId} already has ${quantity} returned items; remove those returns before reducing its delivered quantity`);
         }
       }
       const previousItems = await dbAll(req.db,
-        "SELECT product_id, quantity FROM delivery_items WHERE delivery_id = $1", [id]);
+        "SELECT product_id, quantity, unit_cost FROM delivery_items WHERE delivery_id = $1", [id]);
+      for (const item of itemPayloads) {
+        const product = await dbGet(req.db,
+          "SELECT id, active, deleted_at FROM products WHERE id = $1 FOR UPDATE", [item.productId],
+          "SELECT id, active, deleted_at FROM products WHERE id = ?");
+        if (!product) throw new Error(`Product ${item.productId} not found`);
+        if (product.deleted_at || Number(product.active) !== 1) {
+          const original = previousItems.filter((row) => Number(row.product_id) === item.productId);
+          const originalQuantity = original.reduce((sum, row) => sum + Number(row.quantity), 0);
+          const requestedQuantity = itemPayloads.filter((row) => row.productId === item.productId).reduce((sum, row) => sum + row.quantity, 0);
+          if (!originalQuantity || requestedQuantity > originalQuantity) {
+            throw new Error(`Removed product ${item.productId} can only retain or reduce its existing delivery quantity`);
+          }
+          // Preserve the historical price of removed products in old deliveries.
+          item.unitCost = original.reduce((sum, row) => sum + Number(row.quantity) * Number(row.unit_cost), 0) / originalQuantity;
+        }
+      }
+      totalAmount = itemPayloads.reduce((sum, item) => sum + item.quantity * item.unitCost, 0);
       for (const item of previousItems) {
         await dbRun(req.db, "UPDATE products SET current_stock = current_stock + $1 WHERE id = $2 RETURNING id", [item.quantity, item.product_id], "UPDATE products SET current_stock = current_stock + ? WHERE id = ?");
         await dbRun(
@@ -500,7 +518,7 @@ router.post("/:id/confirm-payment", requireRole("ADMIN", "STAFF"), async (req, r
   }
 });
 
-router.delete("/:id", requireRole("ADMIN", "STAFF"), async (req, res) => {
+router.delete("/:id", requireCurrentStaff, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const delivery = await dbGet(req.db, "SELECT id, vendor_id, total_amount FROM deliveries WHERE id = $1", [id], "SELECT id, vendor_id, total_amount FROM deliveries WHERE id = ?");
@@ -514,7 +532,7 @@ router.delete("/:id", requireRole("ADMIN", "STAFF"), async (req, res) => {
         "SELECT id FROM deliveries WHERE id = ?");
       if (!lockedDelivery) throw new Error("Pickup not found");
       if ((await getDeliveryReturns(req.db, id)).length) {
-        throw new Error("Remove this pickup's returns before deleting the pickup to avoid restocking returned units twice");
+        throw new Error("Remove this pickup's returns before deleting the pickup to avoid restocking returned items twice");
       }
       const items = await dbAll(req.db,
         "SELECT product_id, quantity FROM delivery_items WHERE delivery_id = $1", [id]);
