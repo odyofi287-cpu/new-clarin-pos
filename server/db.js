@@ -354,6 +354,10 @@ class InMemoryDB {
             ...d,
             vendor_code: this.vendors.find((vendor) => vendor.id === d.vendor_id)?.vendor_code || null,
             vendor_name: this.vendors.find((vendor) => vendor.id === d.vendor_id)?.name || "Unknown",
+            actor_id: d.created_by ?? null,
+            actor_name: this.users.find((user) => user.id === d.created_by)?.name || "Unattributed account",
+            actor_username: this.users.find((user) => user.id === d.created_by)?.username || null,
+            product_refs: this.delivery_items.filter((item) => item.delivery_id === d.id).map((item) => ({ id: item.product_id, name: this.products.find((product) => product.id === item.product_id)?.name })),
             payment_status: d.payment_status || "UNPAID",
             payment_confirmed_by_name: this.users.find((user) => user.id === d.payment_confirmed_by)?.name || null,
           }));

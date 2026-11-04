@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiUrl } from "./api";
 import { formatItemQuantity } from "./productQuantity";
+import SalesAccountBreakdown from "./SalesAccountBreakdown";
 
 const REFRESH_INTERVAL_MS = 6000;
 
@@ -170,6 +171,8 @@ function TotalSales({ token, onBack }) {
           <small>All-time recorded vendor returns</small>
         </article>
       </section>
+
+      <SalesAccountBreakdown token={token} />
 
       <section className="total-sales-chart-grid">
         <SalesBarChart

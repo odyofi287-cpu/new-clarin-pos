@@ -176,3 +176,10 @@
     border-bottom: 0;
   }
 }
+.transaction-history-filters { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)) auto; gap:14px; align-items:end; padding:18px; background:#f7faff; border:1px solid #dce7f5; border-radius:12px; min-width:0; }
+.transaction-history-filters label { display:grid; gap:8px; min-width:0; color:#36597f; font-size:.8rem; font-weight:700; }
+.transaction-history-filters select { width:100%; min-width:0; min-height:44px; padding:10px; border:1px solid #cfddf0; border-radius:8px; background:#fff; color:#294e78; }
+.transaction-history-filters p { grid-column:1/-1; color:#7185a0; font-size:.75rem; line-height:1.5; margin:0; }
+.history-account-username { display:block; color:#7185a0; font-size:.74rem; margin-top:5px; }
+.history-account-identity { display:block; min-width:0; overflow-wrap:anywhere; }
+@media(max-width:760px) { .transaction-history-filters { grid-template-columns:minmax(0,1fr); padding:14px; } }

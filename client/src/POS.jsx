@@ -4,6 +4,7 @@ import HistoryCalendar from "./HistoryCalendar.jsx";
 import { filterHistory, countHistoryDates } from "./historyCalendar.js";
 import { formatItemQuantity } from "./productQuantity";
 import { packSize, packLabel } from "./deliveryPacks";
+import { filterTransactions, transactionFilterOptions } from "./transactionFilters";
 import "./history.css";
 import "./transaction-entry.css";
 
@@ -99,6 +100,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   const [editingPickupOriginalQuantities, setEditingPickupOriginalQuantities] = useState({});
   const [editingPickupProducts, setEditingPickupProducts] = useState([]);
   const [historyMode, setHistoryMode] = useState(null);
+  const [transactionFilters, setTransactionFilters] = useState({ product: "", account: "" });
   const [historySelections, setHistorySelections] = useState(() => Object.fromEntries(
     ['pickups', 'returns', 'payments', 'sales'].map((key) => [key, { mode: 'daily', date: getManilaBusinessDate() }])
   ));
@@ -614,9 +616,12 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     });
   };
 
-  const visiblePickupEntries = filterHistory(pickupEntries, 'delivery_date', historySelection);
+  const filteredPickupHistory = isSalesHistoryView ? filterTransactions(pickupEntries, transactionFilters) : pickupEntries;
+  const filteredRecordedHistory = isSalesHistoryView ? filterTransactions(salesHistory, transactionFilters) : salesHistory;
+  const transactionOptions = transactionFilterOptions([...salesHistory, ...pickupEntries], products);
+  const visiblePickupEntries = filterHistory(filteredPickupHistory, 'delivery_date', historySelection);
   const visibleReturnEntries = filterHistory(returnEntries, 'return_date', historySelection);
-  const visibleSalesHistory = filterHistory(salesHistory, 'sale_date', historySelection);
+  const visibleSalesHistory = filterHistory(filteredRecordedHistory, 'sale_date', historySelection);
   const historyEmptySuffix = historySelection.mode === 'daily'
     ? ` for ${formatDeliveryDate(historySelection.date)}` : '';
 
@@ -1332,8 +1337,20 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
 
         {isSalesHistoryView && (
           <div className="history-sections">
+            <section className="transaction-history-filters" aria-label="Filter sales and pickup history">
+              <label>Product<select value={transactionFilters.product} onChange={(event) => setTransactionFilters((current) => ({ ...current, product: event.target.value }))}>
+                <option value="">All products</option>
+                {transactionOptions.products.map((product) => <option key={product.id} value={product.id}>{product.name} · #{product.id}</option>)}
+              </select></label>
+              <label>Sold / delivered by<select value={transactionFilters.account} onChange={(event) => setTransactionFilters((current) => ({ ...current, account: event.target.value }))}>
+                <option value="">All accounts</option>
+                {transactionOptions.accounts.map((account) => <option key={account.id} value={account.id}>{account.name}{account.username ? ` (@${account.username})` : ""}{account.id !== "unattributed" ? ` · #${account.id}` : ""}</option>)}
+              </select></label>
+              {(transactionFilters.product || transactionFilters.account) && <button type="button" className="small-button" onClick={() => setTransactionFilters({ product: "", account: "" })}>Clear filters</button>}
+              <p>Filters match whole transactions, including bulk records. Delivery accounts identify the user who recorded the pickup.</p>
+            </section>
             <HistoryCalendar selection={historySelection} onChange={updateHistorySelection}
-              dateCounts={countHistoryDates([...salesHistory.map((entry) => ({ date: entry.sale_date })), ...pickupEntries.map((entry) => ({ date: entry.delivery_date }))], 'date')}
+              dateCounts={countHistoryDates([...filteredRecordedHistory.map((entry) => ({ date: entry.sale_date })), ...filteredPickupHistory.map((entry) => ({ date: entry.delivery_date }))], 'date')}
               recordCount={visibleSalesHistory.length + visiblePickupEntries.length} />
             <section className="history-section history-section-sales">
               <header className="history-section-header">
@@ -1360,7 +1377,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                         <tr key={`sales-history-${entry.id}`}>
                           <td data-label="Sale ID">{entry.id}</td>
                           <td data-label="Date">{formatDeliveryDate(entry.sale_date)}</td>
-                          <td data-label="Sold By">{entry.sold_by || "Unknown"}</td>
+                          <td data-label="Sold By"><span className="history-account-identity">{entry.actor_name || entry.sold_by || "Unattributed account"}{entry.actor_username && <small className="history-account-username">@{entry.actor_username}</small>}</span></td>
                           <td data-label="Items">{entry.items || "-"}</td>
                           <td data-label="Quantity">{entry.item_count}</td>
                           <td data-label="Total">{formatCurrency(entry.total_amount)}</td>
@@ -1387,6 +1404,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                         <th>Pickup ID</th>
                         <th>Vendor ID</th>
                         <th>Vendor</th>
+                        <th>Delivered By</th>
                         <th>Product(s)</th>
                         <th>Date</th>
                         <th>Pickup Time</th>
@@ -1400,6 +1418,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                           <td data-label="Pickup ID">{entry.id}</td>
                           <td data-label="Vendor ID">{getDisplayVendorId(entry)}</td>
                           <td data-label="Vendor">{entry.vendor_name || entry.vendor_id}</td>
+                          <td data-label="Delivered By"><span className="history-account-identity">{entry.actor_name || "Unattributed account"}{entry.actor_username && <small className="history-account-username">@{entry.actor_username}</small>}</span></td>
                           <td data-label="Product(s)">{entry.items || "-"}</td>
                           <td data-label="Date">{formatDeliveryDate(entry.delivery_date)}</td>
                           <td data-label="Pickup Time">{entry.delivery_time || "-"}</td>

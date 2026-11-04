@@ -4,6 +4,7 @@ import { publishDataChange } from "../events.js";
 import { dbAll, dbGet, dbRun, isInMemoryDb, isPostgresDb, withTransaction } from "./dbCompat.js";
 import { getBusinessDate } from "../businessDate.js";
 import { deliveryQuantity, money } from "../productEconomics.js";
+import { productReferences } from "../historyMetadata.js";
 
 const router = express.Router();
 
@@ -93,24 +94,30 @@ router.get("/", requireRole("ADMIN", "STAFF", "VENDOR"), async (req, res) => {
     const deliveries = await dbAll(
       req.db,
       `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.delivery_time, d.total_amount,
+              d.created_by AS actor_id, creator.name AS actor_name, creator.username AS actor_username,
+              JSON_AGG(JSON_BUILD_OBJECT('id', di.product_id, 'name', p.name)) AS product_refs,
               COALESCE(d.payment_status, 'UNPAID') AS payment_status, d.payment_confirmed_at, d.payment_confirmed_by,
               confirmer.name AS payment_confirmed_by_name, d.created_at,
               COALESCE(STRING_AGG(p.name || ' (' || di.quantity::text || ')', ', ' ORDER BY p.name), '') AS items
        FROM deliveries d
        JOIN vendors v ON d.vendor_id = v.id
+       LEFT JOIN users creator ON creator.id = d.created_by
        LEFT JOIN users confirmer ON confirmer.id = d.payment_confirmed_by
        LEFT JOIN delivery_items di ON di.delivery_id = d.id
        LEFT JOIN products p ON p.id = di.product_id
        ${pgWhereClause}
-       GROUP BY d.id, v.id, confirmer.id
+       GROUP BY d.id, v.id, confirmer.id, creator.id
        ORDER BY d.delivery_date DESC, d.delivery_time DESC NULLS LAST, d.id DESC`,
       params,
       `SELECT d.id, d.vendor_id, v.vendor_code, v.name AS vendor_name, d.delivery_date, d.delivery_time, d.total_amount,
+              d.created_by AS actor_id, creator.name AS actor_name, creator.username AS actor_username,
+              JSON_GROUP_ARRAY(JSON_OBJECT('id', di.product_id, 'name', p.name)) AS product_refs,
               COALESCE(d.payment_status, 'UNPAID') AS payment_status, d.payment_confirmed_at, d.payment_confirmed_by,
               confirmer.name AS payment_confirmed_by_name, d.created_at,
               COALESCE(GROUP_CONCAT(p.name || ' (' || di.quantity || ')', ', '), '') AS items
        FROM deliveries d
        JOIN vendors v ON d.vendor_id = v.id
+       LEFT JOIN users creator ON creator.id = d.created_by
        LEFT JOIN users confirmer ON confirmer.id = d.payment_confirmed_by
        LEFT JOIN delivery_items di ON di.delivery_id = d.id
        LEFT JOIN products p ON p.id = di.product_id
@@ -119,7 +126,7 @@ router.get("/", requireRole("ADMIN", "STAFF", "VENDOR"), async (req, res) => {
        ORDER BY d.delivery_date DESC, d.delivery_time DESC, d.id DESC`
     );
 
-    res.json({ data: await addDeliveryAccountAmounts(req.db, deliveries) });
+    res.json({ data: await addDeliveryAccountAmounts(req.db, deliveries.map((delivery) => ({ ...delivery, product_refs: productReferences(delivery.product_refs) }))) });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to load deliveries" });

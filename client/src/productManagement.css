@@ -15,3 +15,6 @@
 .product-price-preview small { display: block; margin-top: 4px; font-weight: 400; color: #637a98; }
 .product-price-preview strong { font-size: 1.2rem; overflow-wrap: anywhere; }
 @media(max-width:400px) { .product-economics-grid { grid-template-columns: minmax(0,1fr); } .product-price-preview { align-items: start; flex-direction: column; } }
+.inventory-category-filter { display:grid; gap:8px; min-width:0; flex:0 1 240px; color:#486383; font-size:.8rem; font-weight:700; }
+.inventory-category-filter select { min-width:0; width:100%; min-height:44px; padding:10px 12px; border:1px solid #d2dff0; border-radius:8px; background:#fff; color:#2b4d76; }
+@media(max-width:760px) { .inventory-category-filter { flex:auto; width:100%; } }

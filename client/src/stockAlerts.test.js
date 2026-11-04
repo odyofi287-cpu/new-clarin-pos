@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { activeInventoryProducts, normalizeStockFilter, productStockStatus, stockAlertKey } from "./stockAlerts.js";
+import { activeInventoryProducts, inventoryCategories, normalizeStockFilter, productStockStatus, stockAlertKey } from "./stockAlerts.js";
 
 const products = [
   { id: 1, name: "Water", category: "Drinks", current_stock: 0, active: 1, image_url: "water.jpg" },
@@ -10,6 +10,14 @@ const products = [
   { id: 5, name: "Archived", current_stock: 0, active: 0 },
   { id: 6, name: "Negative stock", current_stock: -2, active: 1 },
 ];
+
+test("user-defined inventory categories intersect with search and stock status, without losing images", () => {
+  assert.deepEqual(inventoryCategories([...products, { id: 9, name: "Removed", active: 0, category: "Hidden" }, { id: 10, name: "Deleted", active: 1, deleted_at: "2026-11-05", category: "Removed" }]), ["Drinks", "Food", "General"]);
+  assert.deepEqual(activeInventoryProducts(products, "low-stock", "", "Drinks").map((product) => product.id), [2]);
+  assert.deepEqual(activeInventoryProducts(products, "all", "bread", "Food").map((product) => product.id), [3]);
+  assert.equal(activeInventoryProducts(products, "all", "juice", "Food").length, 0);
+  assert.equal(activeInventoryProducts(products, "out-of-stock", "", "Drinks")[0], products[0]);
+});
 
 test("stock statuses match the dashboard boundaries and numeric strings", () => {
   assert.deepEqual(products.map(productStockStatus), ["out-of-stock", "low-stock", "low-stock", "in-stock", "out-of-stock", "out-of-stock"]);

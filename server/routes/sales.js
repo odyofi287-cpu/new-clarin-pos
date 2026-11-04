@@ -4,6 +4,7 @@ import { publishDataChange } from "../events.js";
 import { dbAll, dbGet, dbRun, isInMemoryDb, isPostgresDb, withTransaction } from "./dbCompat.js";
 import { getBusinessDate } from "../businessDate.js";
 import { money } from "../productEconomics.js";
+import { productReferences } from "../historyMetadata.js";
 
 const router = express.Router();
 
@@ -20,6 +21,10 @@ router.get("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
             id: sale.id,
             sale_date: sale.sale_date,
             sold_by: user?.name || "Unknown",
+            actor_id: sale.user_id ?? null,
+            actor_name: user?.name || "Unattributed account",
+            actor_username: user?.username || null,
+            product_refs: productReferences(items.map((item) => ({ id: item.product_id, name: req.db.products.find((product) => product.id === item.product_id)?.name }))),
             items: items.map((item) => {
               const product = req.db.products.find((entry) => entry.id === item.product_id);
               return `${product?.name || "Unknown"} (${item.quantity})`;
@@ -33,17 +38,19 @@ router.get("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
 
     const sales = await dbAll(
       req.db,
-      `SELECT s.id, s.sale_date, s.total_amount, u.name AS sold_by,
+      `SELECT s.id, s.sale_date, s.total_amount, u.name AS sold_by, s.user_id AS actor_id, u.name AS actor_name, u.username AS actor_username,
+              JSON_AGG(JSON_BUILD_OBJECT('id', si.product_id, 'name', p.name)) AS product_refs,
               COALESCE(SUM(si.quantity), 0) AS item_count,
               COALESCE(STRING_AGG(p.name || ' (' || si.quantity || ')', ', '), '') AS items
          FROM sales s
          LEFT JOIN users u ON u.id = s.user_id
          LEFT JOIN sale_items si ON si.sale_id = s.id
          LEFT JOIN products p ON p.id = si.product_id
-        GROUP BY s.id, s.sale_date, s.total_amount, s.created_at, u.name
+        GROUP BY s.id, s.sale_date, s.total_amount, s.created_at, u.id
         ORDER BY s.sale_date DESC, s.created_at DESC`,
       [],
-      `SELECT s.id, s.sale_date, s.total_amount, u.name AS sold_by,
+      `SELECT s.id, s.sale_date, s.total_amount, u.name AS sold_by, s.user_id AS actor_id, u.name AS actor_name, u.username AS actor_username,
+              JSON_GROUP_ARRAY(JSON_OBJECT('id', si.product_id, 'name', p.name)) AS product_refs,
               COALESCE(SUM(si.quantity), 0) AS item_count,
               COALESCE(GROUP_CONCAT(p.name || ' (' || si.quantity || ')', ', '), '') AS items
          FROM sales s
@@ -53,7 +60,7 @@ router.get("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
         GROUP BY s.id
         ORDER BY s.sale_date DESC, s.created_at DESC`
     );
-    res.json({ data: sales });
+    res.json({ data: sales.map((sale) => ({ ...sale, product_refs: productReferences(sale.product_refs) })) });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to load sales history" });

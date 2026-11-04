@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { apiUrl } from "./api";
 import StockNotification, { StockIcon } from "./StockNotification";
-import { activeInventoryProducts, normalizeStockFilter, productStockStatus, stockAlertKey } from "./stockAlerts";
+import { activeInventoryProducts, inventoryCategories, normalizeStockFilter, productStockStatus, stockAlertKey } from "./stockAlerts";
 import SalesCalendar from "./SalesCalendar";
 import { formatItemQuantity } from "./productQuantity";
 import "./productManagement.css";
@@ -143,6 +143,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
   const [error, setError] = useState(null);
   const [productsList, setProductsList] = useState([]);
   const [productSearch, setProductSearch] = useState("");
+  const [inventoryCategory, setInventoryCategory] = useState("");
   const [dismissedStockAlertKey, setDismissedStockAlertKey] = useState("");
   const [manageForm, setManageForm] = useState({ id: null, name: "", category: "", selling_price: "", current_stock: "", image_url: "", ...emptyProductEconomics });
   const [usersList, setUsersList] = useState([]);
@@ -409,7 +410,8 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
   const matchesProductSearch = (product) => !normalizedProductSearch || `${product.name || ""} ${product.category || ""}`.toLowerCase().includes(normalizedProductSearch);
   const inventorySource = productsList.length ? productsList : data?.products || [];
   const selectedStockFilter = normalizeStockFilter(stockFilter);
-  const inventoryProducts = activeInventoryProducts(inventorySource, selectedStockFilter, productSearch);
+  const inventoryProducts = activeInventoryProducts(inventorySource, selectedStockFilter, productSearch, inventoryCategory);
+  const categoryOptions = inventoryCategories(inventorySource);
   const stockFilterOptions = [
     { value: "all", label: "All products" },
     { value: "low-stock", label: "Low stock" },
@@ -432,7 +434,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
       <div className="inventory-stock-filters" role="group" aria-label="Filter inventory by stock status">
         {stockFilterOptions.map((option) => (
           <button type="button" key={option.value} className={selectedStockFilter === option.value ? "is-selected" : ""} aria-pressed={selectedStockFilter === option.value} onClick={() => onStockFilterChange?.(option.value)}>
-            {option.label}<span>{activeInventoryProducts(inventorySource, option.value).length}</span>
+            {option.label}<span>{activeInventoryProducts(inventorySource, option.value, productSearch, inventoryCategory).length}</span>
           </button>
         ))}
       </div>
@@ -442,12 +444,19 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
           Search inventory
           <input type="search" value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Search by product or category" />
         </label>
-        {productSearch && <button type="button" className="small-button" onClick={() => setProductSearch("")}>Clear</button>}
+        <label className="inventory-category-filter">Product category
+          <select value={inventoryCategory} onChange={(event) => setInventoryCategory(event.target.value)}>
+            <option value="">All categories</option>
+            {inventoryCategory && !categoryOptions.includes(inventoryCategory) && <option value={inventoryCategory}>{inventoryCategory} (no products)</option>}
+            {categoryOptions.map((category) => <option value={category} key={category}>{category}</option>)}
+          </select>
+        </label>
+        {(productSearch || inventoryCategory) && <button type="button" className="small-button" onClick={() => { setProductSearch(""); setInventoryCategory(""); }}>Clear search &amp; category</button>}
       </div>
 
       <div className="inventory-grid">
         {inventoryProducts.length === 0 ? (
-            <div className="inventory-empty-state"><StockIcon outOfStock={selectedStockFilter === "out-of-stock"} /><h3>{productSearch ? "No matching products" : selectedStockFilter === "all" ? "No active products" : `No ${selectedStockFilter} products`}</h3><p>{productSearch ? "Try another product name or category, or choose a different stock filter." : selectedStockFilter === "all" ? "Products will appear here when they are added to the active catalog." : "There are no active products in this stock group right now."}</p></div>
+            <div className="inventory-empty-state"><StockIcon outOfStock={selectedStockFilter === "out-of-stock"} /><h3>{productSearch || inventoryCategory ? "No matching products" : selectedStockFilter === "all" ? "No active products" : `No ${selectedStockFilter} products`}</h3><p>{productSearch || inventoryCategory ? "Try another product name or category, or choose a different stock filter." : selectedStockFilter === "all" ? "Products will appear here when they are added to the active catalog." : "There are no active products in this stock group right now."}</p></div>
         ) : (
           inventoryProducts.map((product) => (
             <article key={product.id} className="inventory-card">

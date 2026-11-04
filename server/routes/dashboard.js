@@ -4,6 +4,7 @@ import { dbAll, dbGet, isInMemoryDb } from "./dbCompat.js";
 import { getBusinessDate } from "../businessDate.js";
 import { getSalesCalendarRange, salesCalendarRangeInput } from "../salesCalendarRange.js";
 import { getProfitEvents, summarizeProfit, profitReport } from "../profitData.js";
+import { accountSalesReport } from "../accountSales.js";
 
 const router = express.Router();
 
@@ -364,6 +365,14 @@ router.get("/", requireRole("ADMIN", "STAFF", "VENDOR"), async (req, res) => {
     console.error(error);
     res.status(500).json({ error: "Failed to load dashboard" });
   }
+});
+
+router.get("/account-sales", requireRole("ADMIN", "STAFF"), async (req, res) => {
+  let range;
+  try { range = salesCalendarRangeInput(req.query); }
+  catch (error) { return res.status(400).json({ error: error.message }); }
+  try { res.set("Cache-Control", "no-store").json({ data: await accountSalesReport(req.db, range.start, range.end) }); }
+  catch (error) { console.error(error); res.status(500).json({ error: "Unable to load account sales breakdown" }); }
 });
 
 router.get("/profits", requireRole("ADMIN", "STAFF"), async (req, res) => {

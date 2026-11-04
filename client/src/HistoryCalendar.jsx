@@ -38,7 +38,7 @@ export default function HistoryCalendar({ selection, onChange, dateCounts, recor
           <span>{Number(date.slice(8))}</span><small>{dateCounts[date] ? <>{dateCounts[date]}<span className="history-day-count-label"> record{dateCounts[date] === 1 ? "" : "s"}</span></> : "—"}</small>
         </button> : <span key={`empty-${index}`} />)}
       </div>
-      <p>Choose a day to view its records. Counts follow any active vendor filter.</p>
+      <p>Choose a day to view its records. Counts follow the active list filters.</p>
     </div>}
   </section>;
 }
