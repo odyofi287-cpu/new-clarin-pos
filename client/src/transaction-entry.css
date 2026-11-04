@@ -517,3 +517,9 @@
   .payment-row-actions { grid-template-columns: 1fr; }
   .payment-product-drawer-heading { align-items: flex-start; flex-direction: column; gap: 0.28rem; }
 }
+.transaction-pack-choice { min-width:0; padding:0 14px 10px; }
+.transaction-pack-choice label { display:grid; gap:5px; font-size:.73rem; color:#607895; font-weight:600; }
+.transaction-pack-choice select { width:100%; min-width:0; min-height:42px; background:#f5f8fe; color:#2b507c; border:1px solid #d7e3f3; border-radius:8px; padding:8px; }
+.transaction-pack-choice small { display:block; color:#587493; font-size:.72rem; line-height:1.5; margin-top:7px; }
+.transaction-product-copy .transaction-size-note { display:block; margin:5px 0; font-size:.72rem; color:#6c819e; }
+.transaction-summary .transaction-pack-summary { display:block; margin-top:5px; color:#6983a3; font-weight:400; font-size:.73rem; }

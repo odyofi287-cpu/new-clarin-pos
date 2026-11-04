@@ -3,6 +3,7 @@ import { apiUrl } from "./api";
 import HistoryCalendar from "./HistoryCalendar.jsx";
 import { filterHistory, countHistoryDates } from "./historyCalendar.js";
 import { formatItemQuantity } from "./productQuantity";
+import { packSize, packLabel } from "./deliveryPacks";
 import "./history.css";
 import "./transaction-entry.css";
 
@@ -79,6 +80,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   const [entryMode, setEntryMode] = useState(null);
   const [productSearch, setProductSearch] = useState("");
   const [pickupQuantities, setPickupQuantities] = useState({});
+  const [pickupPackModes, setPickupPackModes] = useState({});
   const [saleQuantities, setSaleQuantities] = useState({});
   const [returnQuantities, setReturnQuantities] = useState({});
   const [returnDeliveries, setReturnDeliveries] = useState([]);
@@ -424,8 +426,9 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
   }, [catalogProducts, productSearch]);
 
   const transactionItems = useMemo(() => catalogProducts
-    .map((product) => ({ ...product, quantity: Number(transactionQuantities[product.id] || 0) }))
-    .filter((product) => Number.isInteger(product.quantity) && product.quantity > 0), [catalogProducts, transactionQuantities]);
+    .map((product) => ({ ...product, quantity: Number(transactionQuantities[product.id] || 0), entry_unit: entryMode === "pickup" ? (pickupPackModes[product.id] || "item") : "item" }))
+    .map((product) => ({ ...product, entry_quantity: product.quantity / (packSize(product, product.entry_unit) || 1) }))
+    .filter((product) => Number.isInteger(product.quantity) && product.quantity > 0), [catalogProducts, transactionQuantities, entryMode, pickupPackModes]);
 
   const transactionQuantityTotal = useMemo(
     () => transactionItems.reduce((total, item) => total + item.quantity, 0),
@@ -494,6 +497,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     setEditingPickupId(null);
     setPickupMode("create");
     setPickupQuantities({});
+    setPickupPackModes({});
     setEditingPickupOriginalQuantities({});
     setEditingPickupProducts([]);
   };
@@ -508,7 +512,8 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       : entryMode === "pickup" && pickupMode === "edit"
         ? (product.deleted_at || Number(product.active) !== 1 ? 0 : Number(product.current_stock || 0)) + Number(editingPickupOriginalQuantities[product.id] || 0)
         : Number(product.current_stock || 0);
-    const quantity = Number.isFinite(parsed) ? Math.max(0, Math.min(Math.trunc(parsed), availableStock)) : 0;
+    const multiplier = entryMode === "pickup" ? packSize(product, pickupPackModes[product.id] || "item") : 1;
+    const quantity = Number.isFinite(parsed) && multiplier ? Math.max(0, Math.min(Math.trunc(parsed / multiplier), Math.floor(availableStock / multiplier))) * multiplier : 0;
     const setQuantities = entryMode === "pickup"
       ? setPickupQuantities
       : entryMode === "return"
@@ -868,6 +873,8 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       });
       const originalQuantities = Object.fromEntries(items.map((item) => [item.product_id, Number(item.quantity || 0)]));
       setPickupQuantities(originalQuantities);
+      // Open existing deliveries in Items; this also supports mixed legacy lines.
+      setPickupPackModes({});
       setEditingPickupOriginalQuantities(originalQuantities);
       setHistoryMode(null);
       setEntryMode("pickup");
@@ -1014,6 +1021,8 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       product_id: item.id,
       quantity: item.quantity,
       unit_cost: Number(item.selling_price || 0),
+      entry_unit: item.entry_unit,
+      entry_quantity: item.entry_quantity,
     }));
 
     setSubmitting(true);
@@ -1203,13 +1212,16 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                 <div className="transaction-product-grid">
                   {filteredCatalogProducts.map((product) => {
                     const quantity = Number(transactionQuantities[product.id] || 0);
+                    const packMode = entryMode === "pickup" ? pickupPackModes[product.id] || "item" : "item";
+                    const multiplier = packSize(product, packMode) || 1;
+                    const packQuantity = quantity / multiplier;
                     const stock = Number(product.current_stock || 0);
                     const availableStock = isReturnEntry
                       ? Number(product.returnable_quantity || 0)
                       : entryMode === "pickup" && pickupMode === "edit"
                         ? (product.deleted_at || Number(product.active) !== 1 ? 0 : stock) + Number(editingPickupOriginalQuantities[product.id] || 0)
                         : stock;
-                    const canAdd = quantity < availableStock;
+                    const canAdd = quantity + multiplier <= availableStock;
                     return (
                       <article className={`transaction-product-card tone-${Number(product.id) % 4}`} key={product.id}>
                         <div className="transaction-product-art">
@@ -1229,19 +1241,31 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                         <div className="transaction-product-copy">
                           <span>{product.category || "General"}</span>
                           <h4>{product.name}</h4>
+                          {product.volume_ml != null && <small className="transaction-size-note">{Number(product.volume_ml).toLocaleString()} mL{product.quantity_per_case ? ` · ${product.quantity_per_case} Items / case` : ""}</small>}
                           <p>{formatCurrency(product.selling_price)} · {isReturnEntry ? `${formatItemQuantity(product.delivered_quantity)} delivered` : `${formatItemQuantity(availableStock)} available`}</p>
                           {product.deleted_at && !isReturnEntry && <small className="removed-product-note">Deleted product · existing delivery only</small>}
                           {isReturnEntry && Number(product.returned_quantity || 0) > 0 && (
                             <small className="transaction-return-balance">{Number(product.returned_quantity)} returned · {availableStock} remaining</small>
                           )}
                         </div>
+                        {entryMode === "pickup" && <div className="transaction-pack-choice">
+                          <label>Deliver by<select aria-label={`Delivery basis for ${product.name}`} value={packMode} onChange={(event) => {
+                            setPickupPackModes((current) => ({ ...current, [product.id]: event.target.value }));
+                            setPickupQuantities((current) => ({ ...current, [product.id]: 0 }));
+                          }}>
+                            <option value="item">Item</option>
+                            <option value="half-case" disabled={!packSize(product, "half-case")}>Half-case{packSize(product, "half-case") ? ` (${packSize(product, "half-case")} Items)` : " (unavailable)"}</option>
+                            <option value="case" disabled={!packSize(product, "case")}>Case{packSize(product, "case") ? ` (${packSize(product, "case")} Items)` : " (set case size)"}</option>
+                          </select></label>
+                          <small>{formatCurrency(multiplier * Number(product.selling_price))} / {packMode === "item" ? "Item" : packMode} · {formatItemQuantity(quantity)} selected</small>
+                        </div>}
                         <div className="transaction-quantity-control">
-                          <button type="button" aria-label={`Remove one ${product.name}`} onClick={() => updateTransactionQuantity(product, quantity - 1)} disabled={quantity === 0}>−</button>
+                          <button type="button" aria-label={`Remove one ${product.name}`} onClick={() => updateTransactionQuantity(product, quantity - multiplier)} disabled={quantity === 0}>−</button>
                           <label>
                             <span className="sr-only">Quantity for {product.name}</span>
-                            <input type="number" min="0" max={availableStock} value={quantity || ""} placeholder="0" onChange={(event) => updateTransactionQuantity(product, event.target.value)} />
+                            <input type="number" min="0" step="1" max={Math.floor(availableStock / multiplier)} value={packQuantity || ""} placeholder="0" onChange={(event) => updateTransactionQuantity(product, Number(event.target.value) * multiplier)} />
                           </label>
-                          <button type="button" aria-label={`Add one ${product.name}`} onClick={() => updateTransactionQuantity(product, quantity + 1)} disabled={!canAdd}>+</button>
+                          <button type="button" aria-label={`Add one ${product.name}`} onClick={() => updateTransactionQuantity(product, quantity + multiplier)} disabled={!canAdd}>+</button>
                         </div>
                       </article>
                     );
@@ -1256,7 +1280,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                 <h3>{transactionItems.length} product{transactionItems.length === 1 ? "" : "s"} · {formatItemQuantity(transactionQuantityTotal)}</h3>
                 {transactionItems.length ? (
                   <ul>
-                    {transactionItems.map((item) => <li key={item.id}><span>{item.name} <b>×{item.quantity}</b></span><strong>{formatCurrency(item.quantity * Number(item.selling_price || 0))}</strong></li>)}
+                    {transactionItems.map((item) => <li key={item.id}><span>{item.name} <b>×{item.quantity}</b>{item.entry_unit !== "item" && <small className="transaction-pack-summary">{packLabel(item.entry_unit, item.entry_quantity)} · {formatItemQuantity(item.quantity)}</small>}</span><strong>{formatCurrency(item.quantity * Number(item.selling_price || 0))}</strong></li>)}
                   </ul>
                 ) : <p>Choose product quantities to build this {isReturnEntry ? "return" : "record"}.</p>}
               </div>

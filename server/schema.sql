@@ -32,6 +32,10 @@ CREATE TABLE IF NOT EXISTS products (
   name TEXT NOT NULL,
   category TEXT,
   selling_price NUMERIC NOT NULL,
+  volume_ml NUMERIC,
+  quantity_per_case INTEGER,
+  base_price NUMERIC,
+  markup_price NUMERIC,
   current_stock INTEGER NOT NULL DEFAULT 0,
   minimum_stock INTEGER NOT NULL DEFAULT 0,
   unit TEXT NOT NULL DEFAULT 'item',
@@ -59,7 +63,11 @@ CREATE TABLE IF NOT EXISTS delivery_items (
   delivery_id INTEGER NOT NULL REFERENCES deliveries(id),
   product_id INTEGER NOT NULL REFERENCES products(id),
   quantity INTEGER NOT NULL,
-  unit_cost NUMERIC NOT NULL
+  unit_cost NUMERIC NOT NULL,
+  unit_base_price NUMERIC,
+  entry_unit TEXT NOT NULL DEFAULT 'item',
+  entry_quantity INTEGER,
+  case_size INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_deliveries_delivery_date ON deliveries(delivery_date);
@@ -90,7 +98,8 @@ CREATE TABLE IF NOT EXISTS sale_items (
   sale_id INTEGER NOT NULL REFERENCES sales(id),
   product_id INTEGER NOT NULL REFERENCES products(id),
   quantity INTEGER NOT NULL,
-  unit_price NUMERIC NOT NULL
+  unit_price NUMERIC NOT NULL,
+  unit_base_price NUMERIC
 );
 
 CREATE INDEX IF NOT EXISTS idx_sales_sale_date ON sales(sale_date);
@@ -104,6 +113,7 @@ CREATE TABLE IF NOT EXISTS vendor_returns (
   product_id INTEGER NOT NULL REFERENCES products(id),
   quantity INTEGER NOT NULL,
   total_product_price_returned NUMERIC NOT NULL DEFAULT 0,
+  unit_base_price NUMERIC,
   return_date DATE NOT NULL,
   return_time TEXT NOT NULL,
   created_by INTEGER REFERENCES users(id),

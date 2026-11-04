@@ -5,6 +5,7 @@ import { activeInventoryProducts, normalizeStockFilter, productStockStatus, stoc
 import SalesCalendar from "./SalesCalendar";
 import { formatItemQuantity } from "./productQuantity";
 import "./productManagement.css";
+import ProductEconomicsFields, { emptyProductEconomics, productEconomicsPayload } from "./ProductEconomicsFields";
 
 function formatCurrency(value) {
   return value == null ? "0.00" : Number(value).toLocaleString("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 });
@@ -143,7 +144,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
   const [productsList, setProductsList] = useState([]);
   const [productSearch, setProductSearch] = useState("");
   const [dismissedStockAlertKey, setDismissedStockAlertKey] = useState("");
-  const [manageForm, setManageForm] = useState({ id: null, name: "", category: "", selling_price: "", current_stock: "", image_url: "" });
+  const [manageForm, setManageForm] = useState({ id: null, name: "", category: "", selling_price: "", current_stock: "", image_url: "", ...emptyProductEconomics });
   const [usersList, setUsersList] = useState([]);
   const [manageError, setManageError] = useState(null);
   const [manageSuccess, setManageSuccess] = useState(null);
@@ -152,7 +153,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
   const [showEditProductWindow, setShowEditProductWindow] = useState(false);
   const [showCreateAccountWindow, setShowCreateAccountWindow] = useState(false);
   const [expandedVendorDeliveryIds, setExpandedVendorDeliveryIds] = useState(() => new Set());
-  const [createProductForm, setCreateProductForm] = useState({ name: "", category: "", selling_price: "", current_stock: "", image_url: "" });
+  const [createProductForm, setCreateProductForm] = useState({ name: "", category: "", selling_price: "", current_stock: "", image_url: "", ...emptyProductEconomics });
   const [createAccountForm, setCreateAccountForm] = useState({ name: "", role: "STAFF", vendor_id: "", contact_person: "", contact_number: "" });
   const stockAlerts = data?.stock_alert_products || data?.low_stock_products || [];
   const currentStockAlertKey = stockAlertKey(stockAlerts);
@@ -481,6 +482,11 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
               <strong>{formatCurrency(data.calculated_todays_sales)}</strong>
               <span className="total-sales-launch-footer"><b>View analytics →</b></span>
             </button>
+            <button type="button" className="metric-card total-sales-launch profit-launch" onClick={() => onNavigate?.("profits")}>
+              <span className="metric-label">Today's profit</span>
+              <strong>{formatCurrency(data.todays_profit)}</strong>
+              <span className="total-sales-launch-footer"><b>{data.profit_missing_cost_items ? "Some Items have no saved cost · View details →" : "View profit analytics →"}</b></span>
+            </button>
             <div className="metric-card">
               <span className="metric-label">Today's delivery value</span>
               <strong>{formatCurrency(data.todays_total_deliveries)}</strong>
@@ -578,14 +584,14 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
                     {filteredProducts.map((prod) => (
                       <tr key={prod.id}>
                         <td data-label="Image">{prod.image_url ? <img className="product-thumb" src={prod.image_url} alt="" /> : <span className="product-thumb product-thumb-empty">{prod.name.slice(0, 1).toUpperCase()}</span>}</td>
-                        <td data-label="Name">{prod.name}</td>
+                        <td data-label="Name"><strong>{prod.name}</strong><small className="product-size-note">{prod.volume_ml != null ? `${Number(prod.volume_ml).toLocaleString()} mL` : 'Volume not set'} · {prod.quantity_per_case != null ? `${prod.quantity_per_case} Items / case` : 'Case size not set'}</small></td>
                         <td data-label="Category">{prod.category || 'General'}</td>
-                        <td data-label="Price">{formatCurrency(prod.selling_price)}</td>
+                        <td data-label="Price">{formatCurrency(prod.selling_price)}<small className="product-size-note">{prod.base_price != null ? `${formatCurrency(prod.base_price)} base + ${formatCurrency(prod.markup_price)} mark-up` : 'Base price not set'}</small></td>
                         <td data-label="Stock">{formatItemQuantity(prod.current_stock)}</td>
                         <td data-label="Status"><span className={`management-status ${prod.active === 1 ? 'is-active' : 'is-inactive'}`}>{prod.active === 1 ? 'Active' : 'Inactive'}</span></td>
                         <td data-label="Actions"><div className="management-actions">
                           <button className="small-button" onClick={() => {
-                            setManageForm({ id: prod.id, name: prod.name, category: prod.category || '', selling_price: prod.selling_price, current_stock: prod.current_stock, image_url: prod.image_url || '' });
+                            setManageForm({ ...prod, category: prod.category || '', image_url: prod.image_url || '' });
                             setShowEditProductWindow(true);
                             setManageError(null);
                             setManageSuccess(null);
@@ -838,6 +844,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
               <h3>Edit Product</h3>
               <button className="small-button" onClick={() => setShowEditProductWindow(false)}>Close</button>
             </div>
+            {manageError && <p className="error-message" role="alert">{manageError}</p>}
 
             <form onSubmit={async (e) => {
               e.preventDefault();
@@ -848,7 +855,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
                 const payload = {
                   name: manageForm.name,
                   category: manageForm.category,
-                  selling_price: Number(manageForm.selling_price) || 0,
+                  ...productEconomicsPayload(manageForm),
                   minimum_stock: 0,
                   unit: 'item',
                   current_stock: Number(manageForm.current_stock) || 0,
@@ -866,7 +873,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
                 if (window.__loadProductsDashboard) window.__loadProductsDashboard();
                 window.dispatchEvent(new Event('productsUpdated'));
                 fetch(apiUrl('/api/dashboard'), { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.json()).then((payload) => { if (!payload.error) setData(payload.data); }).catch(() => {});
-                setManageForm({ id: null, name: '', category: '', selling_price: '', current_stock: '', image_url: '' });
+                setManageForm({ id: null, name: '', category: '', selling_price: '', current_stock: '', image_url: '', ...emptyProductEconomics });
                 setShowEditProductWindow(false);
               } catch (err) {
                 setManageError(err.message || 'Update failed');
@@ -880,10 +887,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
                 Category
                 <input value={manageForm.category} onChange={(e) => setManageForm({ ...manageForm, category: e.target.value })} />
               </label>
-              <label>
-                Price
-                <input type="number" step="0.01" value={manageForm.selling_price} onChange={(e) => setManageForm({ ...manageForm, selling_price: e.target.value })} />
-              </label>
+              <ProductEconomicsFields form={manageForm} onChange={setManageForm} />
               <label className="product-image-field">
                 Product image
                 <input type="file" accept="image/*" onChange={(e) => readProductImage(e.target.files?.[0], (image_url) => setManageForm({ ...manageForm, image_url }), setManageError)} />
@@ -909,6 +913,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
               <h3>Create Product</h3>
               <button className="small-button" onClick={() => setShowCreateProductWindow(false)}>Close</button>
             </div>
+            {manageError && <p className="error-message" role="alert">{manageError}</p>}
 
             <form onSubmit={async (e) => {
               e.preventDefault();
@@ -918,7 +923,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
                 const createPayload = {
                   name: createProductForm.name,
                   category: createProductForm.category,
-                  selling_price: Number(createProductForm.selling_price) || 0,
+                  ...productEconomicsPayload(createProductForm),
                   initial_stock: Number(createProductForm.current_stock) || 0,
                   minimum_stock: 0,
                   image_url: createProductForm.image_url || null,
@@ -935,7 +940,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
                 if (window.__loadProductsDashboard) window.__loadProductsDashboard();
                 window.dispatchEvent(new Event('productsUpdated'));
                 fetch(apiUrl('/api/dashboard'), { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.json()).then((payload) => { if (!payload.error) setData(payload.data); }).catch(() => {});
-                setCreateProductForm({ name: '', category: '', selling_price: '', current_stock: '', image_url: '' });
+                setCreateProductForm({ name: '', category: '', selling_price: '', current_stock: '', image_url: '', ...emptyProductEconomics });
                 setShowCreateProductWindow(false);
               } catch (err) {
                 setManageError(err.message || 'Create failed');
@@ -949,10 +954,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
                 Category
                 <input value={createProductForm.category} onChange={(e) => setCreateProductForm({ ...createProductForm, category: e.target.value })} />
               </label>
-              <label>
-                Price
-                <input type="number" step="0.01" value={createProductForm.selling_price} onChange={(e) => setCreateProductForm({ ...createProductForm, selling_price: e.target.value })} />
-              </label>
+              <ProductEconomicsFields form={createProductForm} onChange={setCreateProductForm} />
               <label className="product-image-field">
                 Product image
                 <input type="file" accept="image/*" onChange={(e) => readProductImage(e.target.files?.[0], (image_url) => setCreateProductForm({ ...createProductForm, image_url }), setManageError)} />
@@ -960,7 +962,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
               </label>
               <label>
                 Initial Stock
-                <input type="number" value={createProductForm.current_stock} onChange={(e) => setCreateProductForm({ ...createProductForm, current_stock: e.target.value })} />
+                <input type="number" min="0" step="1" value={createProductForm.current_stock} onChange={(e) => setCreateProductForm({ ...createProductForm, current_stock: e.target.value })} required />
               </label>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                 <button type="button" className="small-button" onClick={() => setShowCreateProductWindow(false)}>Cancel</button>

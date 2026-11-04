@@ -4,6 +4,7 @@ import express from "express";
 import Database from "better-sqlite3";
 import products from "./routes/products.js";
 import { ensureProductDeletionSchema } from "./productDeletionSchema.js";
+import { ensureProductEconomicsSchema } from "./productEconomics.js";
 import { restockVendorReturn, reverseVendorReturnStock } from "./routes/returnInventory.js";
 import { getStockAlerts } from "./routes/dashboard.js";
 import { buildReportDocument } from "./reportDocument.js";
@@ -65,6 +66,7 @@ test("SQL catalog deletion preserves foreign-key history, images and stock; retu
     INSERT INTO sales VALUES (1); INSERT INTO sale_items VALUES (1,1,1,2,30);
     INSERT INTO deliveries VALUES (1); INSERT INTO delivery_items VALUES (1,1,1,4,25);`);
   ensureProductDeletionSchema(db);
+  ensureProductEconomicsSchema(db);
   const historyBefore = JSON.stringify([db.prepare("SELECT * FROM sale_items").all(), db.prepare("SELECT * FROM delivery_items").all()]);
   const request = await api(t, db);
   assert.equal((await request("/products/1/permanent", "DELETE", undefined, "VENDOR")).status, 403);

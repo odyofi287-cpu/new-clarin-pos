@@ -2,6 +2,14 @@ import express from "express";
 import { requireRole } from "../middleware/auth.js";
 import { publishDataChange } from "../events.js";
 import { dbAll, dbGet, dbRun, withTransaction } from "./dbCompat.js";
+import { productEconomicsInput } from "../productEconomics.js";
+
+const PRODUCT_FIELDS = "id, name, category, selling_price, current_stock, minimum_stock, unit, image_url, active, deleted_at, volume_ml, quantity_per_case, base_price, markup_price";
+function productForRole(product, role) {
+  if (!product || role !== "VENDOR") return product;
+  const { base_price, markup_price, ...publicProduct } = product;
+  return publicProduct;
+}
 
 const router = express.Router();
 
@@ -34,14 +42,14 @@ router.get("/", requireRole("ADMIN", "STAFF", "VENDOR"), async (req, res) => {
     const includeInactive = req.user.role !== 'VENDOR' && requestedInactive;
     const products = await dbAll(
       req.db,
-      `SELECT id, name, category, selling_price, current_stock, minimum_stock, unit, image_url, active FROM products WHERE deleted_at IS NULL${includeInactive ? '' : ' AND active = 1'}`
+      `SELECT ${PRODUCT_FIELDS} FROM products WHERE deleted_at IS NULL${includeInactive ? '' : ' AND active = 1'}`
     );
     const filtered = products
       .filter(p => {
         if (!q) return true;
         return (p.name || "").toLowerCase().includes(q) || (p.category || "").toLowerCase().includes(q);
       })
-      .map(p => ({ ...p, status: computeStatus(p) }));
+      .map(p => ({ ...productForRole(p, req.user.role), status: computeStatus(p) }));
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.json({ data: filtered });
   } catch (error) {
@@ -53,15 +61,18 @@ router.get("/", requireRole("ADMIN", "STAFF", "VENDOR"), async (req, res) => {
 // Create beverage
 router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
-    const { name, category, selling_price, unit = 'item', minimum_stock = 0, initial_stock = 0, image_url = null } = req.body;
+    const { name, category, unit = 'item', minimum_stock = 0, initial_stock = 0, image_url = null } = req.body;
     const normalizedImageUrl = normalizeImageUrl(image_url);
-    if (!name || selling_price == null) return res.status(400).json({ error: 'name and selling_price required' });
+    if (!name || !String(name).trim()) return res.status(400).json({ error: 'Product name is required' });
+    let economics;
+    try { economics = productEconomicsInput(req.body); } catch (error) { return res.status(400).json({ error: error.message }); }
+    if (!Number.isInteger(Number(initial_stock)) || Number(initial_stock) < 0) return res.status(400).json({ error: 'Initial stock must be a non-negative whole number' });
     const result = await withTransaction(req.db, async () => {
       const created = await dbRun(
         req.db,
-        "INSERT INTO products (name, category, selling_price, current_stock, minimum_stock, unit, image_url, active) VALUES ($1, $2, $3, $4, $5, $6, $7, 1) RETURNING id",
-        [name, category || null, selling_price, initial_stock, minimum_stock, unit, normalizedImageUrl],
-        "INSERT INTO products (name, category, selling_price, current_stock, minimum_stock, unit, image_url, active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)"
+        "INSERT INTO products (name, category, selling_price, current_stock, minimum_stock, unit, image_url, volume_ml, quantity_per_case, base_price, markup_price, active) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 1) RETURNING id",
+        [name.trim(), category || null, economics.selling_price, Number(initial_stock), minimum_stock, unit, normalizedImageUrl, economics.volume_ml, economics.quantity_per_case, economics.base_price, economics.markup_price],
+        "INSERT INTO products (name, category, selling_price, current_stock, minimum_stock, unit, image_url, volume_ml, quantity_per_case, base_price, markup_price, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)"
       );
       if (initial_stock > 0) {
         await dbRun(
@@ -74,7 +85,7 @@ router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
       return created;
     });
     const prodId = result.lastInsertRowid;
-    const prod = await dbGet(req.db, "SELECT id, name, category, selling_price, current_stock, minimum_stock, unit, image_url, active FROM products WHERE id = $1", [prodId], "SELECT id, name, category, selling_price, current_stock, minimum_stock, unit, image_url, active FROM products WHERE id = ?");
+    const prod = await dbGet(req.db, `SELECT ${PRODUCT_FIELDS} FROM products WHERE id = $1`, [prodId]);
     publishDataChange("product");
     res.status(201).json({ data: { ...prod, status: computeStatus(prod) } });
   } catch (error) {
@@ -87,7 +98,7 @@ router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
 router.put('/:id', requireRole('ADMIN','STAFF'), async (req,res) => {
   try {
     const id = Number(req.params.id);
-    const { name, category, selling_price, unit, minimum_stock, current_stock, image_url = null } = req.body;
+    const { name, category, unit, minimum_stock, current_stock, image_url = null } = req.body;
     const normalizedImageUrl = normalizeImageUrl(image_url);
     let stockValue = null;
     if (current_stock !== undefined) {
@@ -96,11 +107,14 @@ router.put('/:id', requireRole('ADMIN','STAFF'), async (req,res) => {
         return res.status(400).json({ error: 'Current stock must be a non-negative whole number' });
       }
     }
-    const prod = await dbGet(req.db, 'SELECT id, current_stock, deleted_at FROM products WHERE id = $1', [id], 'SELECT id, current_stock, deleted_at FROM products WHERE id = ?');
+    const prod = await dbGet(req.db, `SELECT ${PRODUCT_FIELDS} FROM products WHERE id = $1`, [id]);
     if (!prod) return res.status(404).json({ error: 'Product not found' });
     if (prod.deleted_at) return res.status(410).json({ error: 'This product was permanently removed from the catalog' });
+    let economics;
+    try { economics = productEconomicsInput(req.body, prod); } catch (error) { return res.status(400).json({ error: error.message }); }
+    if (!String(name || '').trim()) return res.status(400).json({ error: 'Product name is required' });
     await withTransaction(req.db, async () => {
-      const changed = await dbRun(req.db, 'UPDATE products SET name = $1, category = $2, selling_price = $3, unit = $4, minimum_stock = $5, image_url = $6 WHERE id = $7 AND deleted_at IS NULL RETURNING id', [name, category, selling_price, unit, minimum_stock, normalizedImageUrl, id], 'UPDATE products SET name = ?, category = ?, selling_price = ?, unit = ?, minimum_stock = ?, image_url = ? WHERE id = ? AND deleted_at IS NULL');
+      const changed = await dbRun(req.db, 'UPDATE products SET name = $1, category = $2, selling_price = $3, unit = $4, minimum_stock = $5, image_url = $6, volume_ml = $7, quantity_per_case = $8, base_price = $9, markup_price = $10 WHERE id = $11 AND deleted_at IS NULL RETURNING id', [name.trim(), category ?? prod.category, economics.selling_price, unit || prod.unit, minimum_stock ?? prod.minimum_stock, normalizedImageUrl, economics.volume_ml, economics.quantity_per_case, economics.base_price, economics.markup_price, id], 'UPDATE products SET name = ?, category = ?, selling_price = ?, unit = ?, minimum_stock = ?, image_url = ?, volume_ml = ?, quantity_per_case = ?, base_price = ?, markup_price = ? WHERE id = ? AND deleted_at IS NULL');
       if (!changed.changes) throw new Error('Product is no longer available for editing');
       if (stockValue !== null) {
         await dbRun(req.db, 'UPDATE products SET current_stock = $1 WHERE id = $2 RETURNING id', [stockValue, id], 'UPDATE products SET current_stock = ? WHERE id = ?');
@@ -110,7 +124,7 @@ router.put('/:id', requireRole('ADMIN','STAFF'), async (req,res) => {
         }
       }
     });
-    const updated = await dbGet(req.db, 'SELECT id, name, category, selling_price, current_stock, minimum_stock, unit, image_url, active FROM products WHERE id = $1', [id], 'SELECT id, name, category, selling_price, current_stock, minimum_stock, unit, image_url, active FROM products WHERE id = ?');
+    const updated = await dbGet(req.db, `SELECT ${PRODUCT_FIELDS} FROM products WHERE id = $1`, [id]);
     publishDataChange("product");
     res.json({ data: { ...updated, status: computeStatus(updated) } });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Failed to update product' }); }
@@ -136,9 +150,9 @@ router.patch('/:id/activate', requireRole('ADMIN','STAFF'), async (req,res)=>{
 router.get('/:id', requireRole('ADMIN','STAFF','VENDOR'), async (req,res)=>{
   try {
     const id = Number(req.params.id);
-    const prod = await dbGet(req.db, 'SELECT id, name, category, selling_price, current_stock, minimum_stock, unit, image_url, active, deleted_at FROM products WHERE id = $1', [id], 'SELECT id, name, category, selling_price, current_stock, minimum_stock, unit, image_url, active, deleted_at FROM products WHERE id = ?');
+    const prod = await dbGet(req.db, `SELECT ${PRODUCT_FIELDS} FROM products WHERE id = $1`, [id]);
     if (!prod) return res.status(404).json({ error: 'Not found' });
-    res.json({ data: { ...prod, status: computeStatus(prod) } });
+    res.json({ data: { ...productForRole(prod, req.user.role), status: computeStatus(prod) } });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Failed to load product' }); }
 });
 

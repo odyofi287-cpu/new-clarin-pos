@@ -7,6 +7,7 @@ import pg from 'pg';
 import { getBusinessDate } from './businessDate.js';
 import { SUPPORTED_ROLES, migrateAdminRoleInMemory, migrateAdminRoleSqlite, migrateAdminRolePostgres } from './roleMigration.js';
 import { ensureProductDeletionSchema } from './productDeletionSchema.js';
+import { ensureProductEconomicsSchema } from './productEconomics.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = path.join(__dirname, "data");
@@ -231,9 +232,9 @@ class InMemoryDB {
 
     if (normalized.startsWith("INSERT INTO PRODUCTS")) {
       return {
-        run: (name, category, price, current_stock, minimum_stock, unit, image_url) => {
+        run: (name, category, price, current_stock, minimum_stock, unit, image_url, volume_ml = null, quantity_per_case = null, base_price = null, markup_price = null) => {
           const id = this.products.length + 1;
-          this.products.push({ id, name, category, selling_price: price, current_stock, minimum_stock, unit, image_url: image_url || null, active: 1, deleted_at: null, created_at: new Date().toISOString() });
+          this.products.push({ id, name, category, selling_price: price, current_stock, minimum_stock, unit, image_url: image_url || null, volume_ml, quantity_per_case, base_price, markup_price, active: 1, deleted_at: null, created_at: new Date().toISOString() });
           return { lastInsertRowid: id };
         },
       };
@@ -297,6 +298,9 @@ class InMemoryDB {
               [prod.name, prod.category, prod.selling_price, prod.unit, prod.minimum_stock] = args.slice(0, 5);
             }
             prod.image_url = args[5] || null;
+            if (normalized.includes("BASE_PRICE = ?")) {
+              [prod.volume_ml, prod.quantity_per_case, prod.base_price, prod.markup_price] = args.slice(6, 10);
+            }
             return { changes: 1 };
           }
 
@@ -400,9 +404,9 @@ class InMemoryDB {
 
     if (normalized.startsWith("INSERT INTO DELIVERY_ITEMS")) {
       return {
-        run: (delivery_id, product_id, quantity, unit_cost) => {
+        run: (delivery_id, product_id, quantity, unit_cost, unit_base_price = null, entry_unit = 'item', entry_quantity = quantity, case_size = null) => {
           const id = this.delivery_items.length + 1;
-          const row = { id, delivery_id, product_id, quantity, unit_cost };
+          const row = { id, delivery_id, product_id, quantity, unit_cost, unit_base_price, entry_unit, entry_quantity, case_size };
           this.delivery_items.push(row);
           return { lastInsertRowid: id };
         }
@@ -468,9 +472,9 @@ class InMemoryDB {
           }
           return this.sale_items.map((it) => ({ ...it }));
         },
-        run: (sale_id, product_id, quantity, unit_price) => {
+        run: (sale_id, product_id, quantity, unit_price, unit_base_price = null) => {
           const id = this.sale_items.length + 1;
-          const row = { id, sale_id, product_id, quantity, unit_price };
+          const row = { id, sale_id, product_id, quantity, unit_price, unit_base_price };
           this.sale_items.push(row);
           return { lastInsertRowid: id };
         },
@@ -544,9 +548,9 @@ class InMemoryDB {
           ...it,
           ...(normalized.includes("JOIN PRODUCTS") ? { product_name: this.products.find((product) => product.id === it.product_id)?.name || "Unknown" } : {}),
         })),
-        run: (delivery_id, product_id, quantity, unit_cost) => {
+        run: (delivery_id, product_id, quantity, unit_cost, unit_base_price = null, entry_unit = 'item', entry_quantity = quantity, case_size = null) => {
           const id = this.delivery_items.length + 1;
-          const row = { id, delivery_id, product_id, quantity, unit_cost };
+          const row = { id, delivery_id, product_id, quantity, unit_cost, unit_base_price, entry_unit, entry_quantity, case_size };
           this.delivery_items.push(row);
           return { lastInsertRowid: id };
         },
@@ -555,9 +559,9 @@ class InMemoryDB {
 
     if (normalized.startsWith("INSERT INTO DELIVERY_ITEMS")) {
       return {
-        run: (delivery_id, product_id, quantity, unit_cost) => {
+        run: (delivery_id, product_id, quantity, unit_cost, unit_base_price = null, entry_unit = 'item', entry_quantity = quantity, case_size = null) => {
           const id = this.delivery_items.length + 1;
-          const row = { id, delivery_id, product_id, quantity, unit_cost };
+          const row = { id, delivery_id, product_id, quantity, unit_cost, unit_base_price, entry_unit, entry_quantity, case_size };
           this.delivery_items.push(row);
           return { lastInsertRowid: id };
         }
@@ -601,7 +605,7 @@ class InMemoryDB {
 
     if (normalized.startsWith("INSERT INTO VENDOR_RETURNS")) {
       return {
-        run: (vendor_id, delivery_id, product_id, quantity, total_product_price_returned, return_date, return_time, created_by, return_batch_id) => {
+        run: (vendor_id, delivery_id, product_id, quantity, total_product_price_returned, return_date, return_time, created_by, return_batch_id, unit_base_price = null) => {
           const id = Math.max(this.vendorReturnSequence || 0, ...this.vendor_returns.map((row) => row.id), 0) + 1;
           this.vendorReturnSequence = id;
           const row = {
@@ -615,6 +619,7 @@ class InMemoryDB {
             return_time,
             created_by,
             return_batch_id,
+            unit_base_price,
             created_at: new Date().toISOString(),
           };
           this.vendor_returns.push(row);
@@ -690,6 +695,7 @@ class PostgresDB {
     const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
     await this.pool.query(schema);
     await ensureProductDeletionSchema(this);
+    await ensureProductEconomicsSchema(this);
     await this.pool.query("ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS delivery_time TEXT");
     await this.pool.query("ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS payment_status TEXT NOT NULL DEFAULT 'UNPAID'");
     await this.pool.query("ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS payment_confirmed_at TIMESTAMPTZ");
@@ -859,6 +865,8 @@ function migrateSchema(db) {
     db.exec("ALTER TABLE products ADD COLUMN image_url TEXT");
   }
   ensureProductDeletionSchema(db);
+  // SQLite additions are synchronous; the helper executes them before returning.
+  ensureProductEconomicsSchema(db);
 
   const deliveryColumns = db.prepare("PRAGMA table_info(deliveries)").all();
   if (!deliveryColumns.some((column) => column.name === "delivery_time")) {

@@ -322,7 +322,8 @@ router.get("/eligible-products", requireRole("ADMIN", "STAFF", "VENDOR"), async 
     }
 
     const products = await getVendorReturnableProducts(req.db, vendorId, deliveryId, businessDate);
-    res.json({ data: products, business_date: businessDate, delivery_id: deliveryId });
+    // Return entry needs the original selling price, never confidential costs.
+    res.json({ data: products.map(({ base_price, markup_price, ...product }) => product), business_date: businessDate, delivery_id: deliveryId });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to load delivered products for this vendor" });
@@ -417,6 +418,9 @@ router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
       }
 
       const eligibleProducts = await getVendorReturnableProducts(req.db, vendorId, deliveryId, businessDate);
+      const originalItems = isInMemoryDb(req.db)
+        ? req.db.delivery_items.filter((item) => Number(item.delivery_id) === deliveryId)
+        : await dbAll(req.db, "SELECT product_id, quantity, unit_base_price FROM delivery_items WHERE delivery_id = $1", [deliveryId]);
       const eligibleById = new Map(eligibleProducts.map((product) => [Number(product.id), product]));
       const requestedByProduct = new Map();
       for (const item of returnItems) {
@@ -433,6 +437,10 @@ router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
         }
         for (const item of returnItems.filter((entry) => entry.productId === productId)) {
           item.totalPrice = Number(eligibleProduct.selling_price || 0) * item.qty;
+          const original = originalItems.filter((line) => Number(line.product_id) === productId);
+          const deliveredCount = original.reduce((sum, line) => sum + Number(line.quantity), 0);
+          item.unitBasePrice = original.length && original.every((line) => line.unit_base_price != null)
+            ? original.reduce((sum, line) => sum + Number(line.quantity) * Number(line.unit_base_price), 0) / deliveredCount : null;
         }
       }
 
@@ -440,11 +448,11 @@ router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
       for (const item of [...returnItems].sort((a, b) => a.productId - b.productId)) {
         const result = await dbRun(
           req.db,
-          `INSERT INTO vendor_returns (vendor_id, delivery_id, product_id, quantity, total_product_price_returned, return_date, return_time, created_by, return_batch_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-          [vendorId, deliveryId, item.productId, item.qty, item.totalPrice, return_date, return_time, req.user.user_id || req.user.id, returnBatchId],
-          `INSERT INTO vendor_returns (vendor_id, delivery_id, product_id, quantity, total_product_price_returned, return_date, return_time, created_by, return_batch_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO vendor_returns (vendor_id, delivery_id, product_id, quantity, total_product_price_returned, return_date, return_time, created_by, return_batch_id, unit_base_price)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+          [vendorId, deliveryId, item.productId, item.qty, item.totalPrice, return_date, return_time, req.user.user_id || req.user.id, returnBatchId, item.unitBasePrice],
+          `INSERT INTO vendor_returns (vendor_id, delivery_id, product_id, quantity, total_product_price_returned, return_date, return_time, created_by, return_batch_id, unit_base_price)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         );
         await restockVendorReturn(req.db, {
           id: result.lastInsertRowid,

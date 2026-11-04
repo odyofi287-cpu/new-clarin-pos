@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Dashboard from "./Dashboard";
 import TotalSales from "./TotalSales";
+import Profits from "./Profits";
 import Reports from "./Reports";
 import POS from "./POS";
 import useAuth from "./hooks/useAuth";
@@ -212,7 +213,7 @@ function App() {
     }
     const orderedViews = [
       "dashboard",
-      ...(role !== "VENDOR" ? ["total-sales"] : []),
+      ...(role !== "VENDOR" ? ["total-sales", "profits"] : []),
       ...(role !== "VENDOR" ? ["pos"] : []),
       "deliveries",
       ...(role !== "VENDOR" ? ["sales-history"] : []),
@@ -248,7 +249,7 @@ function App() {
 
   const accountName = username || "Account";
 
-  const activeNavId = view === "total-sales" ? "dashboard" : view;
+  const activeNavId = ["total-sales", "profits"].includes(view) ? "dashboard" : view;
 
   const handleNavClick = (item) => {
     if (item.view) {
@@ -578,7 +579,7 @@ function App() {
                     <span />
                   </button>
                   <div>
-                  <h2>{view === "dashboard" ? "Dashboard" : view === "total-sales" ? "Total Sales" : view === "pos" ? "POS" : view === "products" ? "Products" : view === "inventory" ? "Inventory" : view === "deliveries" ? "Deliveries" : view === "sales-history" ? "Sales & Pickup History" : view === "users" ? "Account Management" : "Reports"}</h2>
+                  <h2>{view === "dashboard" ? "Dashboard" : view === "profits" ? "Profits" : view === "total-sales" ? "Total Sales" : view === "pos" ? "POS" : view === "products" ? "Products" : view === "inventory" ? "Inventory" : view === "deliveries" ? "Deliveries" : view === "sales-history" ? "Sales & Pickup History" : view === "users" ? "Account Management" : "Reports"}</h2>
                   </div>
                 </div>
                 <div className="workspace-meta">
@@ -594,6 +595,7 @@ function App() {
               >
                 {view === "dashboard" && <Dashboard token={token} role={role} vendorId={vendorId} viewMode="dashboard" onNavigate={navigate} />}
                 {view === "total-sales" && role !== "VENDOR" && <TotalSales token={token} onBack={() => navigate("dashboard")} />}
+                {view === "profits" && role !== "VENDOR" && <Profits token={token} onBack={() => navigate("dashboard")} />}
                 {view === "pos" && <POS token={token} role={role} vendorId={vendorId} viewMode="pos" />}
                 {view === "products" && <Dashboard token={token} role={role} vendorId={vendorId} viewMode="products" />}
                 {view === "inventory" && <Dashboard token={token} role={role} vendorId={vendorId} viewMode="inventory" stockFilter={inventoryStockFilter} onStockFilterChange={setInventoryStockFilter} />}

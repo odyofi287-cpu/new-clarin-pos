@@ -1,8 +1,9 @@
 import express from "express";
 import { requireRole, requireCurrentStaff } from "../middleware/auth.js";
 import { publishDataChange } from "../events.js";
-import { dbAll, dbGet, dbRun, isInMemoryDb, withTransaction } from "./dbCompat.js";
+import { dbAll, dbGet, dbRun, isInMemoryDb, isPostgresDb, withTransaction } from "./dbCompat.js";
 import { getBusinessDate } from "../businessDate.js";
+import { deliveryQuantity, money } from "../productEconomics.js";
 
 const router = express.Router();
 
@@ -168,18 +169,18 @@ router.get("/:id", requireRole("ADMIN", "STAFF", "VENDOR"), async (req, res) => 
 
     const items = await dbAll(
       req.db,
-      `SELECT di.id, di.product_id, p.name AS product_name, di.quantity, di.unit_cost
+      `SELECT di.id, di.product_id, p.name AS product_name, di.quantity, di.unit_cost, di.entry_unit, di.entry_quantity, di.case_size
        FROM delivery_items di
        JOIN products p ON di.product_id = p.id
        WHERE di.delivery_id = $1`,
       [id],
-      `SELECT di.id, di.product_id, p.name AS product_name, di.quantity, di.unit_cost
+      `SELECT di.id, di.product_id, p.name AS product_name, di.quantity, di.unit_cost, di.entry_unit, di.entry_quantity, di.case_size
        FROM delivery_items di
        JOIN products p ON di.product_id = p.id
        WHERE di.delivery_id = ?`
     );
 
-    res.json({ data: await addDeliveryAccountAmounts(req.db, { ...delivery, items }) });
+    res.json({ data: await addDeliveryAccountAmounts(req.db, { ...delivery, items: items.map(({ unit_base_price, ...item }) => item) }) });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to load delivery" });
@@ -208,31 +209,33 @@ router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
     const itemPayloads = [];
     for (const item of normalizedItems) {
       const productId = Number(item.product_id);
-      const quantity = Number(item.quantity);
-      const unitCost = Number(item.unit_cost ?? 0);
+      const quantity = Number(item.entry_quantity ?? item.quantity);
       if (!productId || !Number.isFinite(quantity) || quantity <= 0) {
         throw new Error("Each pickup item must include a valid product and quantity");
       }
-      const product = await dbGet(req.db, "SELECT id, current_stock, selling_price, active, deleted_at FROM products WHERE id = $1", [productId], "SELECT id, current_stock, selling_price, active, deleted_at FROM products WHERE id = ?");
+      const product = await dbGet(req.db, "SELECT id, current_stock, selling_price, base_price, quantity_per_case, active, deleted_at FROM products WHERE id = $1", [productId]);
       if (!product) {
         throw new Error(`Product ${productId} not found`);
       }
       if (product.deleted_at || Number(product.active) !== 1) throw new Error(`Product ${productId} is no longer available for new deliveries`);
-      const resolvedUnitCost = Number.isFinite(unitCost) && unitCost > 0 ? unitCost : Number(product.selling_price || 0);
-      itemPayloads.push({ productId, quantity, unitCost: resolvedUnitCost, product });
+      itemPayloads.push({ productId, ...deliveryQuantity(item, product), unitCost: Number(product.selling_price), unitBasePrice: product.base_price ?? null, input: item });
     }
 
-    const totalAmount = itemPayloads.reduce((sum, item) => sum + item.quantity * item.unitCost, 0);
+    let totalAmount;
     const deliveryResult = await withTransaction(req.db, async () => {
-      for (const item of itemPayloads) {
+      for (const item of [...itemPayloads].sort((a, b) => a.productId - b.productId)) {
+        const product = await dbGet(req.db, "SELECT id, selling_price, base_price, quantity_per_case, active, deleted_at FROM products WHERE id = $1 FOR UPDATE", [item.productId], "SELECT id, selling_price, base_price, quantity_per_case, active, deleted_at FROM products WHERE id = ?");
+        if (!product || product.deleted_at || Number(product.active) !== 1) throw new Error(`Product ${item.productId} is no longer available for new deliveries`);
+        Object.assign(item, deliveryQuantity(item.input, product), { unitCost: Number(product.selling_price), unitBasePrice: product.base_price ?? null });
         const stockUpdate = await dbRun(
           req.db,
           "UPDATE products SET current_stock = current_stock - $1 WHERE id = $2 AND current_stock >= $1 AND active = 1 AND deleted_at IS NULL RETURNING id",
-          [item.quantity, item.productId],
+          isPostgresDb(req.db) ? [item.quantity, item.productId] : [item.quantity, item.productId, item.quantity],
           "UPDATE products SET current_stock = current_stock - ? WHERE id = ? AND current_stock >= ? AND active = 1 AND deleted_at IS NULL"
         );
         if (!stockUpdate.changes) throw new Error(`Insufficient stock for product ${item.productId}`);
       }
+      totalAmount = money(itemPayloads.reduce((sum, item) => sum + item.quantity * item.unitCost, 0));
 
       const result = await dbRun(
         req.db,
@@ -244,9 +247,9 @@ router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
       for (const item of itemPayloads) {
         const insertedItem = await dbRun(
           req.db,
-          "INSERT INTO delivery_items (delivery_id, product_id, quantity, unit_cost) VALUES ($1, $2, $3, $4) RETURNING id",
-          [result.lastInsertRowid, item.productId, item.quantity, item.unitCost],
-          "INSERT INTO delivery_items (delivery_id, product_id, quantity, unit_cost) VALUES (?, ?, ?, ?)"
+          "INSERT INTO delivery_items (delivery_id, product_id, quantity, unit_cost, unit_base_price, entry_unit, entry_quantity, case_size) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
+          [result.lastInsertRowid, item.productId, item.quantity, item.unitCost, item.unitBasePrice, item.entryUnit, item.entryQuantity, item.caseSize],
+          "INSERT INTO delivery_items (delivery_id, product_id, quantity, unit_cost, unit_base_price, entry_unit, entry_quantity, case_size) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         );
         await dbRun(
           req.db,
@@ -274,6 +277,9 @@ router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
           product_id: item.productId,
           quantity: item.quantity,
           unit_cost: item.unitCost,
+          entry_unit: item.entryUnit,
+          entry_quantity: item.entryQuantity,
+          case_size: item.caseSize,
           total: item.quantity * item.unitCost,
         })),
       }
@@ -315,17 +321,15 @@ router.put("/:id", requireCurrentStaff, async (req, res) => {
     const itemPayloads = [];
     for (const item of normalizedItems) {
       const productId = Number(item.product_id);
-      const quantity = Number(item.quantity);
-      const unitCost = Number(item.unit_cost ?? 0);
+      const quantity = Number(item.entry_quantity ?? item.quantity);
       if (!productId || !Number.isFinite(quantity) || quantity <= 0) {
         throw new Error("Each pickup item must include a valid product and quantity");
       }
-      const product = await dbGet(req.db, "SELECT id, selling_price FROM products WHERE id = $1", [productId], "SELECT id, selling_price FROM products WHERE id = ?");
+      const product = await dbGet(req.db, "SELECT id, selling_price, base_price, quantity_per_case FROM products WHERE id = $1", [productId]);
       if (!product) {
         throw new Error(`Product ${productId} not found`);
       }
-      const resolvedUnitCost = Number.isFinite(unitCost) && unitCost > 0 ? unitCost : Number(product.selling_price || 0);
-      itemPayloads.push({ productId, quantity, unitCost: resolvedUnitCost });
+      itemPayloads.push({ productId, ...deliveryQuantity(item, product), unitCost: Number(product.selling_price || 0), unitBasePrice: product.base_price ?? null });
     }
 
     let totalAmount = itemPayloads.reduce((sum, item) => sum + item.quantity * item.unitCost, 0);
@@ -351,12 +355,23 @@ router.put("/:id", requireCurrentStaff, async (req, res) => {
         }
       }
       const previousItems = await dbAll(req.db,
-        "SELECT product_id, quantity, unit_cost FROM delivery_items WHERE delivery_id = $1", [id]);
+        "SELECT product_id, quantity, unit_cost, unit_base_price FROM delivery_items WHERE delivery_id = $1", [id]);
       for (const item of itemPayloads) {
         const product = await dbGet(req.db,
-          "SELECT id, active, deleted_at FROM products WHERE id = $1 FOR UPDATE", [item.productId],
-          "SELECT id, active, deleted_at FROM products WHERE id = ?");
+          "SELECT id, active, deleted_at, selling_price, base_price FROM products WHERE id = $1 FOR UPDATE", [item.productId],
+          "SELECT id, active, deleted_at, selling_price, base_price FROM products WHERE id = ?");
         if (!product) throw new Error(`Product ${item.productId} not found`);
+        const originalLines = previousItems.filter((row) => Number(row.product_id) === item.productId);
+        const originalCount = originalLines.reduce((sum, row) => sum + Number(row.quantity), 0);
+        if (originalCount) {
+          // Editing a delivery does not revalue its original price/cost using today's catalog.
+          item.unitCost = originalLines.reduce((sum, row) => sum + Number(row.quantity) * Number(row.unit_cost), 0) / originalCount;
+          item.unitBasePrice = originalLines.every((row) => row.unit_base_price != null)
+            ? originalLines.reduce((sum, row) => sum + Number(row.quantity) * Number(row.unit_base_price), 0) / originalCount : null;
+        } else {
+          item.unitCost = Number(product.selling_price);
+          item.unitBasePrice = product.base_price ?? null;
+        }
         if (product.deleted_at || Number(product.active) !== 1) {
           const original = previousItems.filter((row) => Number(row.product_id) === item.productId);
           const originalQuantity = original.reduce((sum, row) => sum + Number(row.quantity), 0);
@@ -383,7 +398,7 @@ router.put("/:id", requireCurrentStaff, async (req, res) => {
         const stockUpdate = await dbRun(
           req.db,
           "UPDATE products SET current_stock = current_stock - $1 WHERE id = $2 AND current_stock >= $1 RETURNING id",
-          [item.quantity, item.productId],
+          isPostgresDb(req.db) ? [item.quantity, item.productId] : [item.quantity, item.productId, item.quantity],
           "UPDATE products SET current_stock = current_stock - ? WHERE id = ? AND current_stock >= ?"
         );
         if (!stockUpdate.changes) throw new Error(`Insufficient stock for product ${item.productId}`);
@@ -411,7 +426,7 @@ router.put("/:id", requireCurrentStaff, async (req, res) => {
       }
 
       for (const item of itemPayloads) {
-        await dbRun(req.db, "INSERT INTO delivery_items (delivery_id, product_id, quantity, unit_cost) VALUES ($1, $2, $3, $4) RETURNING id", [id, item.productId, item.quantity, item.unitCost], "INSERT INTO delivery_items (delivery_id, product_id, quantity, unit_cost) VALUES (?, ?, ?, ?)");
+        await dbRun(req.db, "INSERT INTO delivery_items (delivery_id, product_id, quantity, unit_cost, unit_base_price, entry_unit, entry_quantity, case_size) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id", [id, item.productId, item.quantity, item.unitCost, item.unitBasePrice, item.entryUnit, item.entryQuantity, item.caseSize], "INSERT INTO delivery_items (delivery_id, product_id, quantity, unit_cost, unit_base_price, entry_unit, entry_quantity, case_size) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
         await dbRun(
           req.db,
           "INSERT INTO inventory_movements (product_id, movement_type, quantity, reference_type, reference_id, user_id, created_at) VALUES ($1, 'STOCK_OUT', $2, 'pickup_update', $3, $4, CURRENT_TIMESTAMP) RETURNING id",

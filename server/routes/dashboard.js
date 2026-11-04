@@ -3,6 +3,7 @@ import { requireRole } from "../middleware/auth.js";
 import { dbAll, dbGet, isInMemoryDb } from "./dbCompat.js";
 import { getBusinessDate } from "../businessDate.js";
 import { getSalesCalendarRange, salesCalendarRangeInput } from "../salesCalendarRange.js";
+import { getProfitEvents, summarizeProfit, profitReport } from "../profitData.js";
 
 const router = express.Router();
 
@@ -365,6 +366,14 @@ router.get("/", requireRole("ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   }
 });
 
+router.get("/profits", requireRole("ADMIN", "STAFF"), async (req, res) => {
+  let range;
+  try { range = salesCalendarRangeInput(req.query); }
+  catch (error) { return res.status(400).json({ error: error.message }); }
+  try { res.set("Cache-Control", "no-store").json({ data: await profitReport(req.db, range.start, range.end, getTodayString()) }); }
+  catch (error) { console.error(error); res.status(500).json({ error: "Unable to load profit analytics" }); }
+});
+
 router.get("/sales-calendar", requireRole("ADMIN", "STAFF"), async (req, res) => {
   let range;
   try {
@@ -556,6 +565,7 @@ async function operationalDashboard(req, res) {
   const today = getTodayString();
   const activityCounts = await getDailyActivityCounts(req.db, today);
   const stockAlerts = await getStockAlerts(req.db);
+  const todayProfit = summarizeProfit(await getProfitEvents(req.db, today, today));
 
   if (isInMemoryDb(req.db)) {
     const salesToday = req.db.sales.filter((sale) => sale.sale_date === today);
@@ -605,6 +615,8 @@ async function operationalDashboard(req, res) {
         todays_total_deliveries: totalDeliveries,
         todays_total_vendor_returns: totalReturns,
         calculated_todays_sales: calculatedSales,
+        todays_profit: todayProfit.gross_profit,
+        profit_missing_cost_items: todayProfit.missing_cost_items,
         ...activityCounts,
         total_current_inventory: totalCurrentInventory,
         ...stockAlerts,
@@ -681,6 +693,8 @@ async function operationalDashboard(req, res) {
       todays_total_deliveries: todaysTotalDeliveries,
       todays_total_vendor_returns: todaysTotalVendorReturns,
       calculated_todays_sales: calculatedTodaysSales,
+      todays_profit: todayProfit.gross_profit,
+      profit_missing_cost_items: todayProfit.missing_cost_items,
       ...activityCounts,
       total_current_inventory: totalCurrentInventory,
       ...stockAlerts,

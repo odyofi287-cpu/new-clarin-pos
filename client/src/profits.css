@@ -1,0 +1,56 @@
+.profit-range-card,.profit-period-card { padding: 24px; min-width: 0; }
+.profit-range-heading { display:flex; justify-content:space-between; align-items:center; gap:18px; margin-bottom:18px; }
+.profit-range-heading h3 { margin:5px 0; color:#23466e; }
+.profit-shortcuts,.profit-tabs { display:flex; gap:8px; flex-wrap:wrap; }
+.profit-range-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)) auto; gap:16px; align-items:end; }
+.profit-range-form label { display:grid; gap:8px; color:#456183; font-size:.82rem; font-weight:600; min-width:0; }
+.profit-range-form input { width:100%; min-width:0; min-height:44px; border:1px solid #ccdaec; border-radius:8px; background:white; padding:10px; color:#23466e; }
+.profit-range-form button { min-height:44px; }
+.profit-help { color:#657c99; font-size:.79rem; line-height:1.65; margin:12px 0 0; }
+.profit-coverage { padding:18px 22px; background:#fff8ea; border:1px solid #ebd49e; border-radius:12px; color:#815d21; }
+.profit-coverage p { margin:8px 0 0; font-size:.8rem; line-height:1.6; }
+.profit-breakdown { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+.profit-breakdown>div { padding:20px; background:#fff; border:1px solid #dce7f5; border-radius:12px; display:grid; gap:8px; }
+.profit-breakdown span { color:#657c99; font-size:.8rem; }
+.profit-breakdown strong { color:#23466e; font-size:1.2rem; overflow-wrap:anywhere; }
+.profit-tabs { background:#edf3fb; padding:4px; border-radius:9px; }
+.profit-tabs button { border:0; border-radius:6px; padding:10px 14px; color:#607898; background:transparent; cursor:pointer; min-height:44px; }
+.profit-tabs .is-active { color:#236de0; background:white; box-shadow:0 2px 6px #16395812; }
+.profit-table-wrap { overflow-x:auto; max-width:100%; }
+.profits-page .profit-table { width:100%; border-collapse:collapse; font-size:.85rem; }
+.profits-page .profit-table th,.profits-page .profit-table td { padding:16px 12px; border-bottom:1px solid #e6edf6; text-align:right; white-space:nowrap; color:#34557c; }
+.profits-page .profit-table th:first-child { text-align:left; }
+.profits-page .profit-table thead { background:#f5f8fd; font-size:.75rem; }
+.profit-table small { display:block; font-weight:400; margin-top:5px; color:#916b2e; }
+.workspace-content .profits-page .profit-positive { color:#147e69; font-weight:750; }
+.workspace-content .profits-page .profit-negative { color:#b23c4c; font-weight:750; }
+.profit-product-row { display:grid; grid-template-columns:56px minmax(0,1.5fr) repeat(3,minmax(0,1fr)); align-items:center; gap:18px; padding:20px 0; border-top:1px solid #e5edf6; }
+.profit-product-row>div { min-width:0; }
+.profit-product-row span { display:block; color:#7185a0; font-size:.75rem; margin-bottom:6px; }
+.profit-product-row strong { display:block; color:#2c4d75; overflow-wrap:anywhere; }
+.profit-product-name span { margin-top:6px; }
+.profit-product-name small { color:#916b2e; }
+.profit-launch { border-color:#c7e5de; }
+@media(max-width:760px) {
+  .profit-range-card,.profit-period-card { padding:18px; }
+  .profit-range-heading { align-items:flex-start; flex-direction:column; }
+  .profit-range-form { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+  .profit-range-form button { grid-column:1/-1; }
+  .profit-breakdown { grid-template-columns:minmax(0,1fr); gap:10px; }
+  .profit-breakdown>div { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:16px; }
+  .profit-product-row { grid-template-columns:48px minmax(0,1fr); gap:12px; }
+  .profit-product-row .total-sales-product-image { width:48px; height:48px; }
+  .profit-product-name { grid-column:2/-1; }
+  .profit-product-row>div:nth-child(n+3) { grid-column:1/-1; display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
+  .profit-product-row>div:nth-child(n+3) span { margin:0; }
+  .workspace-content .profits-page .profit-product-row strong { font-size:1rem; }
+  .workspace-content .profits-page .profit-product-row>div:nth-child(n+3) strong { white-space:nowrap; }
+  .profits-page .profit-table,.profits-page .profit-table tbody { display:block; width:100%; min-width:0; background:transparent; }
+  .profits-page .profit-table thead { display:none; }
+  .profits-page .profit-table tr { display:grid; grid-template-columns:minmax(0,1fr); gap:0; width:100%; min-width:0; padding:12px; margin:0 0 12px; border:1px solid #dce7f5; border-radius:10px; }
+  .profits-page .profit-table th,.profits-page .profit-table td { width:100%; min-width:0; white-space:normal; padding:12px 4px; }
+  .profits-page .profit-table td { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
+  .profits-page .profit-table td::before { content:attr(data-label); margin:0; font-size:.68rem; color:#6b7e9d; font-weight:600; text-align:left; }
+  .profits-page .profit-table td:last-child { border-bottom:0; }
+}
+@media(max-width:400px) { .profit-range-form { grid-template-columns:minmax(0,1fr); } .profit-tabs { width:100%; flex-wrap:nowrap; } .profit-tabs button { flex:1; padding:8px; } }
