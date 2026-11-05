@@ -1,5 +1,5 @@
 import { dbAll, isInMemoryDb } from "./routes/dbCompat.js";
-import { reportDate } from "./reportData.js";
+import { allTimeSalesRange, reportDate } from "./reportData.js";
 import { money } from "./productEconomics.js";
 
 export async function getProfitEvents(db, start, end) {
@@ -23,7 +23,7 @@ export async function getProfitEvents(db, start, end) {
     ].filter((item) => item.date >= start && item.date <= end).map((item) => {
       const resolvedCost = item.unit_base_price ?? products.get(Number(item.product_id))?.legacy_base_price ?? null;
       return {
-        date: item.date, kind: item.kind, product_id: item.product_id, revenue: item.revenue,
+        date: item.date, kind: item.kind, product_id: item.product_id, quantity: Number(item.quantity), revenue: item.revenue,
         known_revenue: resolvedCost == null ? 0 : item.revenue,
         base_cost: resolvedCost == null ? 0 : Number(item.quantity) * Number(resolvedCost) * (item.kind === "return" ? -1 : 1),
         missing_cost_items: resolvedCost == null ? Number(item.quantity) : 0,
@@ -56,7 +56,7 @@ export async function getProfitEvents(db, start, end) {
         FROM vendor_returns vr WHERE vr.return_date BETWEEN $5 AND $6
     ), resolved AS (SELECT events.*, COALESCE(events.unit_base_price, p.legacy_base_price) AS resolved_cost
       FROM events LEFT JOIN products p ON p.id = events.product_id)
-    SELECT event_date AS date, kind, product_id, SUM(revenue) AS revenue,
+    SELECT event_date AS date, kind, product_id, SUM(quantity) AS quantity, SUM(revenue) AS revenue,
       SUM(CASE WHEN resolved_cost IS NOT NULL THEN revenue ELSE 0 END) AS known_revenue,
       SUM(CASE WHEN resolved_cost IS NOT NULL THEN quantity * resolved_cost * direction ELSE 0 END) AS base_cost,
       SUM(CASE WHEN resolved_cost IS NULL THEN quantity ELSE 0 END) AS missing_cost_items,
@@ -67,7 +67,10 @@ export async function getProfitEvents(db, start, end) {
 }
 
 export function summarizeProfit(events) {
-  const result = { gross_profit: 0, net_sales: 0, known_revenue: 0, base_cost: 0, missing_cost_items: 0, missing_cost_lines: 0, reconstructed_cost_items: 0, estimated_cost_items: 0, recorded_profit: 0, delivery_profit: 0, return_profit: 0 };
+  const result = { gross_profit: 0, net_sales: 0, known_revenue: 0, base_cost: 0, missing_cost_items: 0, missing_cost_lines: 0, reconstructed_cost_items: 0, estimated_cost_items: 0, recorded_profit: 0, delivery_profit: 0, return_profit: 0,
+    capital: 0, recorded_capital: 0, delivery_capital: 0, return_capital: 0,
+    recorded_sales: 0, delivery_sales: 0, return_sales: 0,
+    recorded_quantity: 0, delivered_quantity: 0, returned_quantity: 0, net_quantity: 0 };
   for (const row of events) {
     result.net_sales += Number(row.revenue || 0);
     result.known_revenue += Number(row.known_revenue || 0);
@@ -76,17 +79,29 @@ export function summarizeProfit(events) {
     result.missing_cost_lines += Number(row.missing_cost_lines || 0);
     result.reconstructed_cost_items += Number(row.reconstructed_cost_items || 0);
     result.estimated_cost_items += Number(row.estimated_cost_items || 0);
+    result[`${row.kind}_capital`] += Number(row.base_cost || 0);
+    result[`${row.kind}_sales`] += Number(row.revenue || 0);
+    const quantityField = { recorded: "recorded_quantity", delivery: "delivered_quantity", return: "returned_quantity" }[row.kind];
+    result[quantityField] += Number(row.quantity || 0);
     const profit = Number(row.known_revenue || 0) - Number(row.base_cost || 0);
     result.gross_profit += profit;
     result[`${row.kind}_profit`] += profit;
   }
   for (const field of Object.keys(result)) result[field] = money(result[field]);
+  // Capital is the historical base cost of sold/delivered items, net of returns.
+  // Keep base_cost for existing dashboard/report consumers.
+  result.capital = result.base_cost;
+  result.net_quantity = result.recorded_quantity + result.delivered_quantity - result.returned_quantity;
+  result.gross_profit = money(result.known_revenue - result.capital);
   return result;
 }
 
 export async function profitReport(db, start, end, today) {
   const year = today.slice(0, 4);
-  const events = await getProfitEvents(db, start < `${year}-01-01` ? start : `${year}-01-01`, end > `${year}-12-31` ? end : `${year}-12-31`);
+  const allTimeRange = await allTimeSalesRange(db);
+  const first = [start, `${year}-01-01`, allTimeRange.start].sort()[0];
+  const last = [end, `${year}-12-31`, allTimeRange.end].sort().at(-1);
+  const events = await getProfitEvents(db, first, last);
   const selected = events.filter((row) => reportDate(row.date) >= start && reportDate(row.date) <= end);
   const groupBy = (keyFor) => {
     const groups = new Map();
@@ -101,12 +116,15 @@ export async function profitReport(db, start, end, today) {
   const productMap = new Map(products.map((product) => [Number(product.id), product]));
   return {
     generated_for: today, start_date: start, end_date: end,
+    all_time_range: { start_date: allTimeRange.start, end_date: allTimeRange.end },
     summary: {
       range: summarizeProfit(selected),
       daily: summarizeProfit(events.filter((row) => reportDate(row.date) === today)),
       monthly: summarizeProfit(events.filter((row) => reportDate(row.date).slice(0, 7) === today.slice(0, 7))),
       yearly: summarizeProfit(events.filter((row) => reportDate(row.date).slice(0, 4) === year)),
+      all_time: summarizeProfit(events),
     },
+    all_time: [{ period: "All time", ...summarizeProfit(events) }],
     daily: groupBy((row) => reportDate(row.date)).sort((a, b) => b.period.localeCompare(a.period)),
     monthly: groupBy((row) => reportDate(row.date).slice(0, 7)).sort((a, b) => b.period.localeCompare(a.period)),
     yearly: groupBy((row) => reportDate(row.date).slice(0, 4)).sort((a, b) => b.period.localeCompare(a.period)),

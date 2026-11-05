@@ -5,7 +5,7 @@ const metric = (label, value, type = "number") => ({ label, value, type });
 const sum = (rows, key) => rows.reduce((value, row) => value + Number(row[key] || 0), 0);
 
 export function buildReportDocument(mode, data, range, user, generatedAt = new Date().toISOString()) {
-  const titles = { sales: "Recorded Sales Report", inventory: "Inventory Report", "vendor-deliveries": "Deliveries Report", "total-sales": "Total Sales Report" };
+  const titles = { sales: "Recorded Sales Report", inventory: "Inventory Report", "vendor-deliveries": "Deliveries Report", "total-sales": "Total Sales Report", profits: "Capital & Profit Report" };
   const report = {
     mode, title: titles[mode], organization: "New Clarin Sports Arena POS",
     report_id: `NCSA-${mode.toUpperCase()}-${range.start}-${range.end}`,
@@ -30,6 +30,22 @@ export function buildReportDocument(mode, data, range, user, generatedAt = new D
     report.summary = [metric("Original delivery value", sum(data, "amount"), "money"), metric("Deliveries", data.length), metric("Items delivered", sum(data, "quantity"))];
     report.sections = [{ title: "Delivery records", columns: [column("delivery_id", "Delivery ID"), column("vendor", "Vendor"), column("delivery_date", "Delivery Date", "date"), column("products", "Products"), column("quantity", "Items", "number"), column("amount", "Amount (PHP)", "money")], rows: data }];
     report.note = "Amounts are the original delivery values before return deductions, regardless of payment status. Each bulk delivery is one record.";
+  } else if (mode === "profits") {
+    const totals = data.summary.range;
+    report.summary = [metric("Net sales", totals.net_sales, "money"), metric("Sales with capital", totals.known_revenue, "money"), metric("Capital", totals.capital, "money"), metric("Gross profit", totals.gross_profit, "money"), metric("Net items", totals.net_quantity), metric("Items missing cost", totals.missing_cost_items)];
+    const financialColumns = [column("known_revenue", "Sales with capital (PHP)", "money"), column("capital", "Capital (PHP)", "money"), column("gross_profit", "Gross profit (PHP)", "money")];
+    const periodColumns = [column("period", "Period"), column("net_quantity", "Net items", "number"), ...financialColumns];
+    report.sections = [
+      { title: "Product Capital & Profit", columns: [column("name", "Product"), column("net_quantity", "Net items", "number"), ...financialColumns], rows: data.products },
+      { title: "Capital by source", columns: [column("source", "Source"), column("quantity", "Items", "number"), column("sales", "Sales value (PHP)", "money"), column("capital", "Capital (PHP)", "money"), column("profit", "Gross profit (PHP)", "money")], rows: [
+        { source: "Recorded sales", quantity: totals.recorded_quantity, sales: totals.recorded_sales, capital: totals.recorded_capital, profit: totals.recorded_profit },
+        { source: "Deliveries", quantity: totals.delivered_quantity, sales: totals.delivery_sales, capital: totals.delivery_capital, profit: totals.delivery_profit },
+        { source: "Returns (reversal)", quantity: totals.returned_quantity, sales: totals.return_sales, capital: totals.return_capital, profit: totals.return_profit },
+      ] },
+      ...["daily", "monthly", "yearly"].map((key) => ({ title: `${key[0].toUpperCase()}${key.slice(1)} Capital & Profit`, columns: periodColumns, rows: data[key] })),
+    ];
+    report.note = "Capital = the sum of each item's saved base price multiplied by its sold or delivered quantity, less base costs reversed by returns. Gross profit = sales with known capital minus capital. Returns follow the original delivery owner's account. Historical costs are preserved; saved one-time base-price estimates fill eligible legacy gaps. Missing-cost items are excluded from capital and profit, not treated as free. Period tables are separate views of the same selected activity; do not add them together. This is a transaction-value view, not collected cash: unpaid deliveries are included and operating expenses are not deducted. Unsold inventory is not included in transaction capital.";
+    if (totals.estimated_cost_items > 0) report.note += ` ${totals.estimated_cost_items} Item entries use estimated historical costs.`;
   } else {
     report.summary = [metric("Recorded sales", data.totals.recorded_sales, "money"), metric("Delivery value", data.totals.delivery_total, "money"), metric("Return deductions", data.totals.return_total, "money"), metric("Net sales", data.totals.total, "money"), metric("Transactions", data.totals.transactions), metric("Products with activity", data.products.length)];
     const periodColumns = [column("period", "Period"), column("recorded_sales", "Recorded (PHP)", "money"), column("delivery_total", "Deliveries (PHP)", "money"), column("return_total", "Returns (PHP)", "money"), column("total", "Net sales (PHP)", "money"), column("transactions", "Transactions", "number")];

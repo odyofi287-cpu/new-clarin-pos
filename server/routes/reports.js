@@ -4,17 +4,20 @@ import { dbGet, isInMemoryDb } from "./dbCompat.js";
 import { reportRange, allTimeSalesRange, salesReport, inventoryReport, deliveryReport, totalSalesReport } from "../reportData.js";
 import { buildReportDocument, reportCsv } from "../reportDocument.js";
 import { requireSalesIdentity, salesReportingDb } from "../salesScope.js";
+import { profitReport } from "../profitData.js";
+import { getBusinessDate } from "../businessDate.js";
 
 const router = express.Router();
 router.use(requireSalesIdentity);
-const loaders = { sales: salesReport, inventory: inventoryReport, "vendor-deliveries": deliveryReport, "total-sales": totalSalesReport };
+const loaders = { sales: salesReport, inventory: inventoryReport, "vendor-deliveries": deliveryReport, "total-sales": totalSalesReport,
+  profits: (db, start, end) => profitReport(db, start, end, getBusinessDate()) };
 
 for (const [mode, load] of Object.entries(loaders)) {
   const roles = mode === "vendor-deliveries" ? ["ADMIN", "STAFF", "VENDOR"] : ["ADMIN", "STAFF"];
   for (const csv of [false, true]) {
     router.get(`/${mode}${csv ? "/csv" : ""}`, requireRole(...roles), async (req, res) => {
       let range;
-      const allTime = mode === "total-sales" && req.query.scope === "all-time";
+      const allTime = ["total-sales", "profits"].includes(mode) && req.query.scope === "all-time";
       try { if (!allTime) range = reportRange(req.query); }
       catch (error) { return res.status(400).json({ error: error.message }); }
       try {
@@ -37,7 +40,7 @@ for (const [mode, load] of Object.entries(loaders)) {
           res.setHeader("Content-Disposition", `attachment; filename="${mode}-report-${range.start}-to-${range.end}.csv"`);
           return res.send(reportCsv(report));
         }
-        return res.json({ data: mode === "total-sales" ? data.products : data, report });
+        return res.json({ data: ["total-sales", "profits"].includes(mode) ? data.products : data, report });
       } catch (error) {
         console.error(error);
         return res.status(500).json({ error: `Failed to ${csv ? "export" : "load"} ${mode} report` });

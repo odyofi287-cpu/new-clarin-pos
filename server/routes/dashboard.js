@@ -7,6 +7,7 @@ import { getProfitEvents, summarizeProfit, profitReport } from "../profitData.js
 import { accountSalesReport } from "../accountSales.js";
 import { requireSalesIdentity, salesReportingDb, salesScope } from "../salesScope.js";
 import { addDeliveryPaymentAccounts, buildDeliveryPaymentAccounts } from "../deliveryPayments.js";
+import { allTimeSalesRange } from "../reportData.js";
 
 const router = express.Router();
 router.use(requireSalesIdentity);
@@ -357,9 +358,14 @@ router.get("/account-sales", requireRole("ADMIN"), async (req, res) => {
 
 router.get("/profits", requireRole("ADMIN", "STAFF"), async (req, res) => {
   let range;
-  try { range = salesCalendarRangeInput(req.query); }
+  const allTime = req.query.scope === "all-time";
+  try { if (!allTime) range = salesCalendarRangeInput(req.query); }
   catch (error) { return res.status(400).json({ error: error.message }); }
-  try { res.json({ data: { ...await profitReport(await salesReportingDb(req.db, req.user), range.start, range.end, getTodayString()), ...salesScope(req.user) } }); }
+  try {
+    const reportingDb = await salesReportingDb(req.db, req.user);
+    if (allTime) range = await allTimeSalesRange(reportingDb);
+    res.json({ data: { ...await profitReport(reportingDb, range.start, range.end, getTodayString()), period_scope: allTime ? "all-time" : "range", ...salesScope(req.user) } });
+  }
   catch (error) { console.error(error); res.status(500).json({ error: "Unable to load profit analytics" }); }
 });
 

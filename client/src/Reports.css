@@ -9,7 +9,7 @@
 .reports-control-card,.reports-preview-card { background:#fff; border:1px solid #dde6f1; border-radius:10px; box-shadow:0 10px 24px rgba(38,75,122,.06); padding:1.35rem 1.5rem; min-width:0; }
 .reports-section-heading,.reports-preview-heading { align-items:flex-start; display:flex; justify-content:space-between; gap:1rem; }
 .reports-range-badge { background:#f1f6fc; border-radius:999px; color:#557092; font-size:.78rem; padding:.5rem .75rem; white-space:nowrap; }
-.reports-type-grid { display:grid; gap:.7rem; grid-template-columns:repeat(4,minmax(0,1fr)); margin-top:1rem; }
+.reports-type-grid { display:grid; gap:.7rem; grid-template-columns:repeat(5,minmax(0,1fr)); margin-top:1rem; }
 .report-type-button { background:#f8fafc; border:1px solid #dbe5f0; border-radius:8px; color:#536883; cursor:pointer; min-height:76px; padding:.8rem 1rem; text-align:left; }
 .report-type-button:hover { border-color:#8eb6df; }
 .report-type-button.selected { background:#edf6ff; border-color:#327bd0; box-shadow:0 0 0 2px #327bd01f; color:#1e5eaa; }

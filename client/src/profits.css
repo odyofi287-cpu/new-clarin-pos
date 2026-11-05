@@ -1,12 +1,26 @@
 .profit-range-card,.profit-period-card { padding: 24px; min-width: 0; }
 .profit-range-heading { display:flex; justify-content:space-between; align-items:center; gap:18px; margin-bottom:18px; }
 .profit-range-heading h3 { margin:5px 0; color:#23466e; }
+.profit-range-heading>div:first-child { min-width:0; flex:1; }
 .profit-shortcuts,.profit-tabs { display:flex; gap:8px; flex-wrap:wrap; }
 .profit-range-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)) auto; gap:16px; align-items:end; }
 .profit-range-form label { display:grid; gap:8px; color:#456183; font-size:.82rem; font-weight:600; min-width:0; }
 .profit-range-form input { width:100%; min-width:0; min-height:44px; border:1px solid #ccdaec; border-radius:8px; background:white; padding:10px; color:#23466e; }
 .profit-range-form button { min-height:44px; }
 .profit-help { color:#657c99; font-size:.79rem; line-height:1.65; margin:12px 0 0; }
+.profit-all-time { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; padding:14px; background:#f4f8fe; border:1px solid #dce7f5; border-radius:9px; }
+.profit-all-time p { flex:1 1 240px; margin:0; color:#536f93; font-size:.82rem; line-height:1.6; }
+.profit-cashflow { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr); align-items:stretch; gap:12px; }
+.profit-cashflow article { min-width:0; background:#fff; border:1px solid #dce7f5; border-top:3px solid #397cce; border-radius:12px; padding:22px; display:grid; gap:12px; }
+.profit-cashflow .is-capital { border-top-color:#8864bc; background:linear-gradient(145deg,#fff,#faf7ff); }
+.profit-cashflow .is-profit { border-top-color:#26987d; background:linear-gradient(145deg,#fff,#f3fbf7); }
+.profit-cashflow article>span { color:#536f93; font-size:.8rem; font-weight:650; }
+.workspace-content .profit-cashflow strong { color:#254b77; font-size:1.65rem; overflow-wrap:anywhere; }
+.profit-cashflow small { color:#7185a0; font-size:.73rem; line-height:1.5; }
+.profit-equation-symbol { align-self:center; color:#6981a1; font-size:1.35rem; font-weight:700; }
+.profit-period-pair { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:6px; border-top:1px solid #dfe9f4; padding-top:10px; }
+.profit-period-pair span { font-size:.75rem; }
+.profit-period-pair b { font-size:.95rem; overflow-wrap:anywhere; }
 .profit-coverage { padding:18px 22px; background:#fff8ea; border:1px solid #ebd49e; border-radius:12px; color:#815d21; }
 .profit-coverage p { margin:8px 0 0; font-size:.8rem; line-height:1.6; }
 .profit-cost-completed { padding:18px 22px; background:#edf7ff; border:1px solid #c2def5; border-radius:12px; color:#315e88; }
@@ -16,7 +30,8 @@
 .profit-breakdown>div { padding:20px; background:#fff; border:1px solid #dce7f5; border-radius:12px; display:grid; gap:8px; }
 .profit-breakdown span { color:#657c99; font-size:.8rem; }
 .profit-breakdown strong { color:#23466e; font-size:1.2rem; overflow-wrap:anywhere; }
-.profit-tabs { background:#edf3fb; padding:4px; border-radius:9px; }
+.profit-breakdown small { color:#6a809c; font-size:.73rem; line-height:1.6; }
+.profit-tabs { background:#edf3fb; padding:4px; border-radius:9px; flex:0 0 auto; }
 .profit-tabs button { border:0; border-radius:6px; padding:10px 14px; color:#607898; background:transparent; cursor:pointer; min-height:44px; }
 .profit-tabs .is-active { color:#236de0; background:white; box-shadow:0 2px 6px #16395812; }
 .profit-table-wrap { overflow-x:auto; max-width:100%; }
@@ -33,19 +48,29 @@
 .profit-product-row strong { display:block; color:#2c4d75; overflow-wrap:anywhere; }
 .profit-product-name span { margin-top:6px; }
 .profit-product-name small { color:#916b2e; }
+.profit-product-name small,.profit-product-capital small { display:block; margin-top:5px; font-size:.72rem; line-height:1.5; }
+.profit-product-capital small { color:#7185a0; }
 .profit-launch { border-color:#c7e5de; }
 @media(max-width:760px) {
+  .profit-cashflow { grid-template-columns:minmax(0,1fr); gap:8px; }
+  .profit-cashflow article { padding:18px; grid-template-columns:minmax(0,1fr) auto; align-items:baseline; gap:8px; }
+  .profit-cashflow article small { grid-column:1/-1; }
+  .profit-equation-symbol { justify-self:center; font-size:1.15rem; line-height:1; }
+  .workspace-content .profit-cashflow strong { font-size:1.3rem; }
   .profit-range-card,.profit-period-card { padding:18px; }
   .profit-range-heading { align-items:flex-start; flex-direction:column; }
   .profit-range-form { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
   .profit-range-form button { grid-column:1/-1; }
   .profit-breakdown { grid-template-columns:minmax(0,1fr); gap:10px; }
-  .profit-breakdown>div { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:16px; }
+  .profit-breakdown>div { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:baseline; gap:10px; padding:16px; }
+  .profit-breakdown>div small { grid-column:1/-1; }
   .profit-product-row { grid-template-columns:48px minmax(0,1fr); gap:12px; }
   .profit-product-row .total-sales-product-image { width:48px; height:48px; }
   .profit-product-name { grid-column:2/-1; }
   .profit-product-row>div:nth-child(n+3) { grid-column:1/-1; display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
   .profit-product-row>div:nth-child(n+3) span { margin:0; }
+  .profit-product-capital { flex-wrap:wrap; }
+  .profit-product-capital small { flex-basis:100%; text-align:right; }
   .workspace-content .profits-page .profit-product-row strong { font-size:1rem; }
   .workspace-content .profits-page .profit-product-row>div:nth-child(n+3) strong { white-space:nowrap; }
   .profits-page .profit-table,.profits-page .profit-table tbody { display:block; width:100%; min-width:0; background:transparent; }
@@ -56,4 +81,4 @@
   .profits-page .profit-table td::before { content:attr(data-label); margin:0; font-size:.68rem; color:#6b7e9d; font-weight:600; text-align:left; }
   .profits-page .profit-table td:last-child { border-bottom:0; }
 }
-@media(max-width:400px) { .profit-range-form { grid-template-columns:minmax(0,1fr); } .profit-tabs { width:100%; flex-wrap:nowrap; } .profit-tabs button { flex:1; padding:8px; } }
+@media(max-width:400px) { .profit-range-form { grid-template-columns:minmax(0,1fr); } .profit-tabs { width:100%; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); } .profit-tabs button { padding:8px; } }
