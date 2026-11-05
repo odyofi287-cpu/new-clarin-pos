@@ -8,6 +8,7 @@ import { getBusinessDate } from './businessDate.js';
 import { SUPPORTED_ROLES, migrateAdminRoleInMemory, migrateAdminRoleSqlite, migrateAdminRolePostgres } from './roleMigration.js';
 import { ensureProductDeletionSchema } from './productDeletionSchema.js';
 import { ensureProductEconomicsSchema } from './productEconomics.js';
+import { ensureLegacyProfitCostSchema } from './legacyProfitCosts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = path.join(__dirname, "data");
@@ -700,6 +701,7 @@ class PostgresDB {
     await this.pool.query(schema);
     await ensureProductDeletionSchema(this);
     await ensureProductEconomicsSchema(this);
+    await ensureLegacyProfitCostSchema(this);
     await this.pool.query("ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS delivery_time TEXT");
     await this.pool.query("ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS payment_status TEXT NOT NULL DEFAULT 'UNPAID'");
     await this.pool.query("ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS payment_confirmed_at TIMESTAMPTZ");
@@ -871,6 +873,7 @@ function migrateSchema(db) {
   ensureProductDeletionSchema(db);
   // SQLite additions are synchronous; the helper executes them before returning.
   ensureProductEconomicsSchema(db);
+  ensureLegacyProfitCostSchema(db);
 
   const deliveryColumns = db.prepare("PRAGMA table_info(deliveries)").all();
   if (!deliveryColumns.some((column) => column.name === "delivery_time")) {

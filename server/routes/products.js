@@ -3,11 +3,12 @@ import { requireRole } from "../middleware/auth.js";
 import { publishDataChange } from "../events.js";
 import { dbAll, dbGet, dbRun, withTransaction } from "./dbCompat.js";
 import { productEconomicsInput } from "../productEconomics.js";
+import { captureLegacyProfitCost } from "../legacyProfitCosts.js";
 
 const PRODUCT_FIELDS = "id, name, category, selling_price, current_stock, minimum_stock, unit, image_url, active, deleted_at, volume_ml, quantity_per_case, base_price, markup_price";
 function productForRole(product, role) {
   if (!product || role !== "VENDOR") return product;
-  const { base_price, markup_price, ...publicProduct } = product;
+  const { base_price, markup_price, legacy_base_price, legacy_base_price_set_at, ...publicProduct } = product;
   return publicProduct;
 }
 
@@ -74,6 +75,7 @@ router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
         [name.trim(), category || null, economics.selling_price, Number(initial_stock), minimum_stock, unit, normalizedImageUrl, economics.volume_ml, economics.quantity_per_case, economics.base_price, economics.markup_price],
         "INSERT INTO products (name, category, selling_price, current_stock, minimum_stock, unit, image_url, volume_ml, quantity_per_case, base_price, markup_price, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)"
       );
+      await captureLegacyProfitCost(req.db, created.lastInsertRowid);
       if (initial_stock > 0) {
         await dbRun(
           req.db,
@@ -114,8 +116,12 @@ router.put('/:id', requireRole('ADMIN','STAFF'), async (req,res) => {
     try { economics = productEconomicsInput(req.body, prod); } catch (error) { return res.status(400).json({ error: error.message }); }
     if (!String(name || '').trim()) return res.status(400).json({ error: 'Product name is required' });
     await withTransaction(req.db, async () => {
+      // Lock/capture an already-configured cost before changing its price.
+      await captureLegacyProfitCost(req.db, id);
       const changed = await dbRun(req.db, 'UPDATE products SET name = $1, category = $2, selling_price = $3, unit = $4, minimum_stock = $5, image_url = $6, volume_ml = $7, quantity_per_case = $8, base_price = $9, markup_price = $10 WHERE id = $11 AND deleted_at IS NULL RETURNING id', [name.trim(), category ?? prod.category, economics.selling_price, unit || prod.unit, minimum_stock ?? prod.minimum_stock, normalizedImageUrl, economics.volume_ml, economics.quantity_per_case, economics.base_price, economics.markup_price, id], 'UPDATE products SET name = ?, category = ?, selling_price = ?, unit = ?, minimum_stock = ?, image_url = ?, volume_ml = ?, quantity_per_case = ?, base_price = ?, markup_price = ? WHERE id = ? AND deleted_at IS NULL');
       if (!changed.changes) throw new Error('Product is no longer available for editing');
+      // If this is the first base-price input, it also fills historical gaps.
+      await captureLegacyProfitCost(req.db, id);
       if (stockValue !== null) {
         await dbRun(req.db, 'UPDATE products SET current_stock = $1 WHERE id = $2 RETURNING id', [stockValue, id], 'UPDATE products SET current_stock = ? WHERE id = ?');
         const delta = stockValue - Number(prod.current_stock || 0);

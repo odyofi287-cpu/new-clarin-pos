@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS products (
   quantity_per_case INTEGER,
   base_price NUMERIC,
   markup_price NUMERIC,
+  legacy_base_price NUMERIC,
+  legacy_base_price_set_at TIMESTAMPTZ,
   current_stock INTEGER NOT NULL DEFAULT 0,
   minimum_stock INTEGER NOT NULL DEFAULT 0,
   unit TEXT NOT NULL DEFAULT 'item',

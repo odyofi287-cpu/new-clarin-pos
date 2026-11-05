@@ -9,6 +9,9 @@
 .profit-help { color:#657c99; font-size:.79rem; line-height:1.65; margin:12px 0 0; }
 .profit-coverage { padding:18px 22px; background:#fff8ea; border:1px solid #ebd49e; border-radius:12px; color:#815d21; }
 .profit-coverage p { margin:8px 0 0; font-size:.8rem; line-height:1.6; }
+.profit-cost-completed { padding:18px 22px; background:#edf7ff; border:1px solid #c2def5; border-radius:12px; color:#315e88; }
+.profit-cost-completed p { margin:8px 0 0; font-size:.8rem; line-height:1.6; }
+.profit-product-name .profit-estimate-note { display:block; color:#587b9d; line-height:1.5; }
 .profit-breakdown { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
 .profit-breakdown>div { padding:20px; background:#fff; border:1px solid #dce7f5; border-radius:12px; display:grid; gap:8px; }
 .profit-breakdown span { color:#657c99; font-size:.8rem; }

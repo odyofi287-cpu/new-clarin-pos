@@ -494,7 +494,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
             <button type="button" className="metric-card total-sales-launch profit-launch" onClick={() => onNavigate?.("profits")}>
               <span className="metric-label">Today's profit</span>
               <strong>{formatCurrency(data.todays_profit)}</strong>
-              <span className="total-sales-launch-footer"><b>{data.profit_missing_cost_items ? "Some Items have no saved cost · View details →" : "View profit analytics →"}</b></span>
+              <span className="total-sales-launch-footer"><b>{data.profit_missing_cost_items ? "Some Items need a base price · View details →" : data.profit_estimated_cost_items ? "Includes estimated historical costs · View details →" : "View profit analytics →"}</b></span>
             </button>
             <div className="metric-card">
               <span className="metric-label">Today's delivery value</span>

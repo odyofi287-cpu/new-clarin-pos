@@ -123,7 +123,7 @@ test("returns reverse original margin, edits preserve historical costs, and paid
   assert.equal((await request("/dashboard")).body.data.todays_profit, 50);
 });
 
-test("recorded sales snapshot costs; later edits never manufacture profit for legacy records", async (t) => {
+test("legacy sales use the captured base-price reference; later edits preserve saved transaction costs", async (t) => {
   const { db, create, request } = await fixture(t);
   await create();
   assert.equal((await request("/sales", "POST", { items: [{ product_id: 1, quantity: 2 }] })).status, 201);
@@ -132,11 +132,12 @@ test("recorded sales snapshot costs; later edits never manufacture profit for le
   db.sale_items.push({ sale_id: 2, product_id: 1, quantity: 1, unit_price: 25 });
   await request("/products/1", "PUT", { ...productBody, base_price: 5, markup_price: 45 });
   const totals = summarizeProfit(await getProfitEvents(db, today, today));
-  assert.equal(totals.gross_profit, 10);
+  assert.equal(totals.gross_profit, 15);
   assert.equal(totals.net_sales, 75);
-  assert.equal(totals.known_revenue, 50);
-  assert.equal(totals.missing_cost_items, 1);
-  assert.equal(totals.missing_cost_lines, 1);
+  assert.equal(totals.known_revenue, 75);
+  assert.equal(totals.missing_cost_items, 0);
+  assert.equal(totals.missing_cost_lines, 0);
+  assert.equal(totals.estimated_cost_items, 1);
 });
 
 test("profit grouping includes both endpoints, historical product names/images, negative profit and calendar years", async (t) => {

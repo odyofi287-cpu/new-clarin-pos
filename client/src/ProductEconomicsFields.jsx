@@ -15,6 +15,6 @@ export default function ProductEconomicsFields({ form, onChange }) {
       {field("markup_price", "Mark-up per Item (PHP)", "0.01", "0")}
     </div>
     <div className="product-price-preview"><span>Selling price per Item <small>Base price + mark-up</small></span><strong>{configured ? currency(Number(form.base_price) + Number(form.markup_price)) : "Enter pricing"}</strong></div>
-    <p>Stock is counted in Items. An even case size enables half-case deliveries. Pricing changes apply to new transactions only.</p>
+    <p>Stock is counted in Items. An even case size enables half-case deliveries. The first base-price input also supplies missing historical costs; later pricing changes apply to new transactions only.</p>
   </fieldset>;
 }

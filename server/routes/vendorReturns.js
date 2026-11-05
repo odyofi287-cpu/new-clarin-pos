@@ -323,7 +323,7 @@ router.get("/eligible-products", requireRole("ADMIN", "STAFF", "VENDOR"), async 
 
     const products = await getVendorReturnableProducts(req.db, vendorId, deliveryId, businessDate);
     // Return entry needs the original selling price, never confidential costs.
-    res.json({ data: products.map(({ base_price, markup_price, ...product }) => product), business_date: businessDate, delivery_id: deliveryId });
+    res.json({ data: products.map(({ base_price, markup_price, legacy_base_price, legacy_base_price_set_at, ...product }) => product), business_date: businessDate, delivery_id: deliveryId });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to load delivered products for this vendor" });
