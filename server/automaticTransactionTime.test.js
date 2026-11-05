@@ -126,7 +126,7 @@ test("date and time are captured at saving, not at form opening or before stock 
 
 test("legacy SQLite UTC timestamps display in Manila, missing or malformed times are not fabricated", async (t) => {
   const db = fixture();
-  db.sales = [{ id: 1, sale_date: "2026-11-06", created_at: "2026-11-05 16:05:00" }, { id: 2, sale_date: "2026-11-06" }, { id: 3, sale_date: "2026-11-06", created_at: "invalid" }];
+  db.sales = [{ id: 1, user_id: 3, sale_date: "2026-11-06", created_at: "2026-11-05 16:05:00" }, { id: 2, user_id: 3, sale_date: "2026-11-06" }, { id: 3, user_id: 3, sale_date: "2026-11-06", created_at: "invalid" }];
   const request = await api(t, db); const response = await request("/sales");
   assert.equal(response.status, 200);
   assert.equal(response.body.data.find((row) => row.id === 1).sale_time, "00:05");

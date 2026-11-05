@@ -15,7 +15,7 @@ async function fixture(t) {
   db.products.forEach((product) => { product.current_stock = 5; });
   db.deliveries = [{
     id: 1, vendor_id: 1, delivery_date: getBusinessDate(), delivery_time: "09:00",
-    payment_status: "UNPAID", total_amount: 190, created_at: new Date().toISOString(),
+    payment_status: "UNPAID", total_amount: 190, created_by: 3, created_at: new Date().toISOString(),
   }];
   db.delivery_items = [
     { id: 1, delivery_id: 1, product_id: 1, quantity: 4, unit_cost: 35 },
@@ -108,7 +108,7 @@ test("Removing a batch cannot make stock negative or partially reverse the batch
 
 test("Removing an old return without a restock movement leaves stock unchanged", async (t) => {
   const { db, request, stocks } = await fixture(t);
-  db.vendor_returns.push({ id: 99, vendor_id: 1, product_id: 1, quantity: 2 });
+  db.vendor_returns.push({ id: 99, delivery_id: 1, vendor_id: 1, product_id: 1, quantity: 2 });
   assert.equal((await request("/returns/99", "DELETE")).status, 200);
   assert.deepEqual(stocks(), [5, 5]);
   assert.equal(db.inventory_movements.length, 0);

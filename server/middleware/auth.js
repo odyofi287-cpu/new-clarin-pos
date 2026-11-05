@@ -26,14 +26,15 @@ export async function authMiddleware(req, res, next) {
   }
   try {
     req.user = { ...payload, role: normalizeSessionRole(payload.role) };
-    if (["ADMIN", "SUPERADMIN"].includes(payload.role)) {
+    if (["ADMIN", "SUPERADMIN", "STAFF", "VENDOR"].includes(payload.role)) {
       // ADMIN used to mean Staff. Do not let an old signed token inherit the
       // renamed owner's privileges; resolve the current role from the account.
+      // Refresh every role so reassignment or deactivation cannot retain access.
       const account = await dbGet(req.db,
         "SELECT u.id, u.active, u.vendor_id, r.name AS role FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = $1 AND u.active = 1",
         [Number(payload.user_id)],
         "SELECT u.id, u.active, u.vendor_id, r.name AS role FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = ? AND u.active = 1");
-      if (!account || account.active === 0) return res.status(401).json({ error: "Account is unavailable" });
+      if (!account || Number(account.active) !== 1) return res.status(401).json({ error: "Account is unavailable" });
       req.user.role = normalizeSessionRole(account.role);
       req.user.vendor_id = account.vendor_id || null;
     }

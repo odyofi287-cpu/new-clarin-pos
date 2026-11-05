@@ -24,9 +24,11 @@ for (const [mode, load] of Object.entries(loaders)) {
         const account = isInMemoryDb(req.db) ? req.db.users.find((u) => u.id === req.user.user_id)
           : await dbGet(req.db, "SELECT name FROM users WHERE id = $1", [req.user.user_id]);
         const report = buildReportDocument(mode, data, range, { ...req.user, name: account?.name || req.user.name });
-        if (req.user.role === "STAFF" && mode !== "inventory") {
+        if (req.user.role === "STAFF") {
           report.title = `My ${report.title}`;
-          report.note = `Signed-in account only. Returns deduct from the original delivery owner's sales. ${report.note}`;
+          report.note = mode === "inventory"
+            ? `Only your account's stock movements in this period are included. Stock levels are shared arena inventory, not account-owned balances. ${report.note}`
+            : `Signed-in account only. Returns deduct from the original delivery owner's sales. ${report.note}`;
         }
         if (allTime) report.period.scope = "all-time";
         res.setHeader("Cache-Control", "no-store");

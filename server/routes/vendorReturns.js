@@ -5,8 +5,10 @@ import { publishDataChange } from "../events.js";
 import { dbAll, dbGet, dbRun, isInMemoryDb, withTransaction } from "./dbCompat.js";
 import { getBusinessDate } from "../businessDate.js";
 import { restockVendorReturn, reverseVendorReturnStock } from "./returnInventory.js";
+import { requireSalesIdentity, requireStaffDeliveryOwnership, staffOwnsDelivery } from "../salesScope.js";
 
 const router = express.Router();
+router.use(requireSalesIdentity);
 
 function groupReturnRows(rows) {
   const groups = new Map();
@@ -48,10 +50,11 @@ function getDateKey(value) {
   return match ? match[1] : "";
 }
 
-async function getVendorDeliveryOptions(db, vendorId, businessDate = getBusinessDate()) {
+async function getVendorDeliveryOptions(db, vendorId, businessDate = getBusinessDate(), ownerId = null) {
   if (isInMemoryDb(db)) {
     return db.deliveries
       .filter((delivery) => Number(delivery.vendor_id) === Number(vendorId)
+        && (ownerId == null || Number(delivery.created_by) === Number(ownerId))
         && getDateKey(delivery.delivery_date) === businessDate)
       .map((delivery) => {
         const deliveryItems = db.delivery_items.filter((item) => Number(item.delivery_id) === Number(delivery.id));
@@ -90,9 +93,9 @@ async function getVendorDeliveryOptions(db, vendorId, businessDate = getBusiness
        FROM delivery_items di JOIN products p ON p.id = di.product_id
        GROUP BY di.delivery_id
      ) i ON i.delivery_id = d.id
-     WHERE d.vendor_id = $1 AND d.delivery_date = $2
+     WHERE d.vendor_id = $1 AND d.delivery_date = $2${ownerId == null ? "" : " AND d.created_by = $3"}
      ORDER BY d.delivery_time DESC NULLS LAST, d.id DESC`,
-    [vendorId, businessDate],
+    ownerId == null ? [vendorId, businessDate] : [vendorId, businessDate, ownerId],
     `SELECT d.id, d.vendor_id, d.delivery_date, d.delivery_time, d.total_amount AS original_amount,
             COALESCE(d.payment_status, 'UNPAID') AS payment_status,
             COALESCE(r.return_deduction, 0) AS return_deduction,
@@ -109,7 +112,7 @@ async function getVendorDeliveryOptions(db, vendorId, businessDate = getBusiness
        FROM delivery_items di JOIN products p ON p.id = di.product_id
        GROUP BY di.delivery_id
      ) i ON i.delivery_id = d.id
-     WHERE d.vendor_id = ? AND d.delivery_date = ?
+     WHERE d.vendor_id = ? AND d.delivery_date = ?${ownerId == null ? "" : " AND d.created_by = ?"}
      ORDER BY d.delivery_time DESC, d.id DESC`
   );
 
@@ -235,14 +238,22 @@ async function getVendorReturnableProducts(db, vendorId, deliveryId, businessDat
 
 router.get("/", requireRole("ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   try {
+    if (isInMemoryDb(req.db)) {
+      const owned = new Set(req.db.deliveries.filter((row) => Number(row.created_by) === Number(req.user.user_id)).map((row) => Number(row.id)));
+      const rows = req.db.vendor_returns.filter((row) => req.user.role === "STAFF" ? row.delivery_id != null && owned.has(Number(row.delivery_id)) : req.user.role !== "VENDOR" || Number(row.vendor_id) === Number(req.user.vendor_id))
+        .map((row) => ({ ...row, vendor_name: req.db.vendors.find((v) => Number(v.id) === Number(row.vendor_id))?.name, product_name: req.db.products.find((p) => Number(p.id) === Number(row.product_id))?.name }));
+      return res.json({ data: groupReturnRows(rows).sort((a, b) => `${b.return_date} ${b.return_time}`.localeCompare(`${a.return_date} ${a.return_time}`)) });
+    }
     let sql = `
       SELECT vr.id, vr.return_batch_id, vr.delivery_id, vr.vendor_id, v.name AS vendor_name, vr.product_id, p.name AS product_name,
              vr.return_date, vr.return_time, vr.quantity, vr.total_product_price_returned
       FROM vendor_returns vr
       JOIN vendors v ON v.id = vr.vendor_id
       JOIN products p ON p.id = vr.product_id
+      LEFT JOIN deliveries d ON d.id = vr.delivery_id
     `;
     const params = [];
+    if (req.user.role === "STAFF") { sql += " WHERE d.created_by = $1"; params.push(Number(req.user.user_id)); }
 
     if (req.user.role === "VENDOR") {
       sql += ` WHERE vr.vendor_id = $${params.length + 1}`;
@@ -256,7 +267,8 @@ router.get("/", requireRole("ADMIN", "STAFF", "VENDOR"), async (req, res) => {
       FROM vendor_returns vr
       JOIN vendors v ON v.id = vr.vendor_id
       JOIN products p ON p.id = vr.product_id
-      ${req.user.role === "VENDOR" ? "WHERE vr.vendor_id = ?" : ""}
+      LEFT JOIN deliveries d ON d.id = vr.delivery_id
+      ${req.user.role === "VENDOR" ? "WHERE vr.vendor_id = ?" : req.user.role === "STAFF" ? "WHERE d.created_by = ?" : ""}
       ORDER BY vr.return_date DESC, vr.return_time DESC
     `);
     res.json({ data: groupReturnRows(rows) });
@@ -280,7 +292,7 @@ router.get("/eligible-deliveries", requireRole("ADMIN", "STAFF", "VENDOR"), asyn
     if (!vendor) return res.status(404).json({ error: "Vendor not found" });
 
     const businessDate = getBusinessDate();
-    const deliveries = await getVendorDeliveryOptions(req.db, vendorId, businessDate);
+    const deliveries = await getVendorDeliveryOptions(req.db, vendorId, businessDate, req.user.role === "STAFF" ? Number(req.user.user_id) : null);
     res.json({ data: deliveries, business_date: businessDate });
   } catch (error) {
     console.error(error);
@@ -288,7 +300,7 @@ router.get("/eligible-deliveries", requireRole("ADMIN", "STAFF", "VENDOR"), asyn
   }
 });
 
-router.get("/eligible-products", requireRole("ADMIN", "STAFF", "VENDOR"), async (req, res) => {
+router.get("/eligible-products", requireRole("ADMIN", "STAFF", "VENDOR"), requireStaffDeliveryOwnership((req) => req.query.delivery_id), async (req, res) => {
   try {
     const vendorId = Number(req.query.vendor_id);
     const deliveryId = Number(req.query.delivery_id);
@@ -330,7 +342,7 @@ router.get("/eligible-products", requireRole("ADMIN", "STAFF", "VENDOR"), async 
   }
 });
 
-router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
+router.post("/", requireRole("ADMIN", "STAFF"), requireStaffDeliveryOwnership((req) => req.body.delivery_id), async (req, res) => {
   try {
     const {
       vendor_id,
@@ -496,24 +508,29 @@ router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
   }
 });
 
-async function removeReturns(db, field, value, userId) {
+async function removeReturns(db, field, value, user) {
   return await withTransaction(db, async () => {
     // Lock the return rows so concurrent removal requests cannot reverse the
     // same stock-in twice. The caller selects only fixed, internal field names.
     const entries = isInMemoryDb(db)
       ? db.vendor_returns.filter((entry) => entry[field] === value)
       : await dbAll(db,
-          `SELECT id, product_id, quantity FROM vendor_returns WHERE ${field} = $1 ORDER BY id FOR UPDATE`,
+          `SELECT id, delivery_id, product_id, quantity FROM vendor_returns WHERE ${field} = $1 ORDER BY id FOR UPDATE`,
           [value],
-          `SELECT id, product_id, quantity FROM vendor_returns WHERE ${field} = ? ORDER BY id`
+          `SELECT id, delivery_id, product_id, quantity FROM vendor_returns WHERE ${field} = ? ORDER BY id`
         );
     if (!entries.length) {
       const error = new Error("Vendor return not found");
       error.status = 404;
       throw error;
     }
+    for (const entry of entries) {
+      if (!await staffOwnsDelivery(db, user, entry.delivery_id)) {
+        const error = new Error("Return not found in your account"); error.status = 404; throw error;
+      }
+    }
     for (const entry of [...entries].sort((a, b) => Number(a.product_id) - Number(b.product_id) || Number(a.id) - Number(b.id))) {
-      await reverseVendorReturnStock(db, entry, userId);
+      await reverseVendorReturnStock(db, entry, user.user_id || user.id);
     }
     return await dbRun(db,
       `DELETE FROM vendor_returns WHERE ${field} = $1 RETURNING id`,
@@ -530,7 +547,7 @@ router.delete("/batch/:batchId", requireRole("ADMIN", "STAFF"), async (req, res)
       return res.status(400).json({ error: "Return batch ID is required" });
     }
 
-    const result = await removeReturns(req.db, "return_batch_id", batchId, req.user.user_id || req.user.id);
+    const result = await removeReturns(req.db, "return_batch_id", batchId, req.user);
     publishDataChange("vendor-return");
     res.json({ data: { deleted: true, return_batch_id: batchId, count: result.changes } });
   } catch (error) {
@@ -542,7 +559,7 @@ router.delete("/batch/:batchId", requireRole("ADMIN", "STAFF"), async (req, res)
 router.delete("/:id", requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
     const id = Number(req.params.id);
-    await removeReturns(req.db, "id", id, req.user.user_id || req.user.id);
+    await removeReturns(req.db, "id", id, req.user);
 
     publishDataChange("vendor-return");
     res.json({ data: { deleted: true, id } });

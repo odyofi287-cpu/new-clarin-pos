@@ -5,8 +5,10 @@ import { dbAll, dbGet, dbRun, isInMemoryDb, isPostgresDb, withTransaction } from
 import { getBusinessTimestamp, getBusinessTime } from "../businessDate.js";
 import { money } from "../productEconomics.js";
 import { productReferences } from "../historyMetadata.js";
+import { requireSalesIdentity } from "../salesScope.js";
 
 const router = express.Router();
+router.use(requireSalesIdentity);
 function recordedSaleTime(value) {
   if (!value) return null;
   // SQLite's default timestamps are UTC but do not include a timezone suffix.
@@ -20,6 +22,7 @@ router.get("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
     if (isInMemoryDb(req.db)) {
       const sales = req.db.sales
+        .filter((sale) => req.user.role !== "STAFF" || Number(sale.user_id) === Number(req.user.user_id))
         .slice()
         .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
         .map((sale) => {
@@ -56,9 +59,10 @@ router.get("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
          LEFT JOIN users u ON u.id = s.user_id
          LEFT JOIN sale_items si ON si.sale_id = s.id
          LEFT JOIN products p ON p.id = si.product_id
+        ${req.user.role === "STAFF" ? "WHERE s.user_id = $1" : ""}
         GROUP BY s.id, s.sale_date, s.total_amount, s.created_at, u.id
         ORDER BY s.sale_date DESC, s.created_at DESC`,
-      [],
+      req.user.role === "STAFF" ? [Number(req.user.user_id)] : [],
       `SELECT s.id, s.sale_date, s.created_at, s.total_amount, u.name AS sold_by, s.user_id AS actor_id, u.name AS actor_name, u.username AS actor_username,
               JSON_GROUP_ARRAY(JSON_OBJECT('id', si.product_id, 'name', p.name)) AS product_refs,
               COALESCE(SUM(si.quantity), 0) AS item_count,
@@ -67,6 +71,7 @@ router.get("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
          LEFT JOIN users u ON u.id = s.user_id
          LEFT JOIN sale_items si ON si.sale_id = s.id
          LEFT JOIN products p ON p.id = si.product_id
+        ${req.user.role === "STAFF" ? "WHERE s.user_id = ?" : ""}
         GROUP BY s.id
         ORDER BY s.sale_date DESC, s.created_at DESC`
     );

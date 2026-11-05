@@ -1,7 +1,8 @@
 import express from "express";
 import { requireRole } from "../middleware/auth.js";
 import { publishDataChange } from "../events.js";
-import { dbAll, dbGet, dbRun, withTransaction } from "./dbCompat.js";
+import { dbAll, dbGet, dbRun, isInMemoryDb, withTransaction } from "./dbCompat.js";
+import { requireSalesIdentity } from "../salesScope.js";
 import { productEconomicsInput } from "../productEconomics.js";
 import { captureLegacyProfitCost } from "../legacyProfitCosts.js";
 
@@ -203,14 +204,17 @@ router.post('/:id/stock-movements', requireRole('ADMIN','STAFF'), async (req,res
 });
 
 // Movement history
-router.get('/:id/movements', requireRole('ADMIN','STAFF','VENDOR'), async (req,res)=>{
+router.get('/:id/movements', requireRole('ADMIN','STAFF'), requireSalesIdentity, async (req,res)=>{
   try {
     const id = Number(req.params.id);
     const limit = Number(req.query.limit || 50);
     const offset = Number(req.query.offset || 0);
-    const rows = await dbAll(req.db, 'SELECT id, product_id, movement_type, quantity, reference_type, reference_id, user_id, created_at FROM inventory_movements WHERE product_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3', [id, limit, offset], 'SELECT id, product_id, movement_type, quantity, reference_type, reference_id, user_id, created_at FROM inventory_movements WHERE product_id = ? ORDER BY created_at DESC');
-    const pagedRows = Array.isArray(rows) && rows.length > limit && !req.db?.pool ? rows.slice(offset, offset + limit) : rows;
-    res.json({ data: pagedRows });
+    if (!Number.isInteger(limit) || limit < 1 || limit > 500 || !Number.isInteger(offset) || offset < 0) return res.status(400).json({ error: 'Choose a valid movement-history page' });
+    const own = req.user.role === 'STAFF';
+    const rows = isInMemoryDb(req.db)
+      ? req.db.inventory_movements.filter((row) => Number(row.product_id) === id && (!own || Number(row.user_id) === Number(req.user.user_id))).sort((a,b) => String(b.created_at).localeCompare(String(a.created_at))).slice(offset, offset + limit)
+      : await dbAll(req.db, `SELECT id, product_id, movement_type, quantity, reference_type, reference_id, user_id, created_at FROM inventory_movements WHERE product_id = $1${own ? ' AND user_id = $2' : ''} ORDER BY created_at DESC LIMIT $${own ? 3 : 2} OFFSET $${own ? 4 : 3}`, own ? [id, Number(req.user.user_id), limit, offset] : [id, limit, offset]);
+    res.json({ data: rows });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Failed to load movements' }); }
 });
 

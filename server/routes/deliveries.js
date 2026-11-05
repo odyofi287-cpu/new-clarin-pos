@@ -5,8 +5,10 @@ import { dbAll, dbGet, dbRun, isInMemoryDb, isPostgresDb, withTransaction } from
 import { getBusinessTimestamp } from "../businessDate.js";
 import { deliveryQuantity, money } from "../productEconomics.js";
 import { productReferences } from "../historyMetadata.js";
+import { requireSalesIdentity, requireStaffDeliveryOwnership } from "../salesScope.js";
 
 const router = express.Router();
+router.use(requireSalesIdentity);
 
 async function getDeliveryReturns(db, deliveryId) {
   if (isInMemoryDb(db)) {
@@ -63,6 +65,10 @@ router.get("/", requireRole("ADMIN", "STAFF", "VENDOR"), async (req, res) => {
     const pgFilters = [];
     const sqliteFilters = [];
     const params = [];
+    if (req.user.role === "STAFF") {
+      pgFilters.push("d.created_by = $1"); sqliteFilters.push("d.created_by = ?");
+      params.push(Number(req.user.user_id));
+    }
     if (req.user.role === "VENDOR") {
       pgFilters.push(`d.vendor_id = $${params.length + 1}`);
       sqliteFilters.push("d.vendor_id = ?");
@@ -124,7 +130,7 @@ router.get("/", requireRole("ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   }
 });
 
-router.get("/:id", requireRole("ADMIN", "STAFF", "VENDOR"), async (req, res) => {
+router.get("/:id", requireRole("ADMIN", "STAFF", "VENDOR"), requireStaffDeliveryOwnership(), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const params = [id];
@@ -287,7 +293,7 @@ router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
   }
 });
 
-router.put("/:id", requireCurrentStaff, async (req, res) => {
+router.put("/:id", requireCurrentStaff, requireStaffDeliveryOwnership(), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const existing = await dbGet(req.db, "SELECT id, vendor_id, delivery_date, delivery_time, total_amount, payment_status FROM deliveries WHERE id = $1", [id], "SELECT id, vendor_id, delivery_date, delivery_time, total_amount, payment_status FROM deliveries WHERE id = ?");
@@ -470,7 +476,7 @@ router.put("/:id", requireCurrentStaff, async (req, res) => {
   }
 });
 
-router.post("/:id/confirm-payment", requireRole("ADMIN", "STAFF"), async (req, res) => {
+router.post("/:id/confirm-payment", requireRole("ADMIN", "STAFF"), requireStaffDeliveryOwnership(), async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) {
@@ -528,7 +534,7 @@ router.post("/:id/confirm-payment", requireRole("ADMIN", "STAFF"), async (req, r
   }
 });
 
-router.delete("/:id", requireCurrentStaff, async (req, res) => {
+router.delete("/:id", requireCurrentStaff, requireStaffDeliveryOwnership(), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const delivery = await dbGet(req.db, "SELECT id, vendor_id, total_amount FROM deliveries WHERE id = $1", [id], "SELECT id, vendor_id, total_amount FROM deliveries WHERE id = ?");

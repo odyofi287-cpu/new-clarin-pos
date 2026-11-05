@@ -373,6 +373,10 @@ class InMemoryDB {
           }
           const vendorId = params[0];
           let paramIndex = 0;
+          if (normalized.includes("D.CREATED_BY = ?")) {
+            const ownerId = Number(params[paramIndex++]);
+            rows = rows.filter((d) => Number(d.created_by) === ownerId);
+          }
           if (normalized.includes("D.VENDOR_ID = ?")) {
             rows = rows.filter((d) => d.vendor_id === vendorId);
             paramIndex = 1;

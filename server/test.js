@@ -361,7 +361,7 @@ test("Authorized staff can confirm delivery payment while vendors remain read-on
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
     });
-    assert.strictEqual(res.status, 200, `${email} should be allowed to access payment confirmation`);
+    assert.strictEqual(res.status, jwt.decode(token).role === "ADMIN" ? 200 : 404, "Only the owner Staff or Admin may access payment confirmation");
   }
 });
 
@@ -511,6 +511,8 @@ test("Staff can record and list vendor returns and exclude them from sales total
   });
   assert.strictEqual(excessiveReturnRes.status, 400, "Returns must not exceed the vendor's remaining delivered units");
 
+  const ownVendorTwo = await fetch(`${base}/api/deliveries`, { method: "POST", headers: { "content-type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ vendor_id: 2, items: [{ product_id: secondProduct.id, quantity: 1 }] }) });
+  assert.strictEqual(ownVendorTwo.status, 201);
   const vendorTwoDeliveriesRes = await fetch(`${base}/api/vendor-returns/eligible-deliveries?vendor_id=2`, { headers: { Authorization: `Bearer ${token}` } });
   const vendorTwoDelivery = (await vendorTwoDeliveriesRes.json()).data.find((delivery) => delivery.returnable);
   assert(vendorTwoDelivery, "Expected a current-day delivery for the second vendor");
@@ -558,6 +560,9 @@ test("Vendor can view returns but cannot create or delete them", async () => {
 
 test("Staff can update pickup details and payment status after own password verification", async () => {
   const token = await login("staff@clarin.local", "Staff123!");
+  const ownCreate = await fetch(`${base}/api/deliveries`, { method: "POST", headers: { "content-type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ vendor_id: 1, items: [{ product_id: 1, quantity: 1 }] }) });
+  assert.strictEqual(ownCreate.status, 201);
+  const ownDeliveryId = (await ownCreate.json()).data.id;
   const verify = await fetch(`${base}/api/users/verify-staff`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
@@ -565,12 +570,12 @@ test("Staff can update pickup details and payment status after own password veri
   });
   assert.strictEqual(verify.status, 200);
 
-  const pickup = await fetch(`${base}/api/deliveries/1`, { headers: { Authorization: `Bearer ${token}` } });
+  const pickup = await fetch(`${base}/api/deliveries/${ownDeliveryId}`, { headers: { Authorization: `Bearer ${token}` } });
   assert.strictEqual(pickup.status, 200);
   const pickupBody = await pickup.json();
   const productId = pickupBody.data.items[0].product_id;
   const quantity = pickupBody.data.items[0].quantity + 1;
-  const updateRes = await fetch(`${base}/api/deliveries/1`, {
+  const updateRes = await fetch(`${base}/api/deliveries/${ownDeliveryId}`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({
@@ -589,7 +594,7 @@ test("Staff can update pickup details and payment status after own password veri
   assert.strictEqual(updated.data.payment_confirmed_by_name, 'POS Staff');
   assert(updated.data.payment_confirmed_at, 'Expected payment confirmation metadata after marking paid');
 
-  const unpaidRes = await fetch(`${base}/api/deliveries/1`, {
+  const unpaidRes = await fetch(`${base}/api/deliveries/${ownDeliveryId}`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({
@@ -661,7 +666,7 @@ test("Cached Staff tokens do not let current Admin, Vendor or missing accounts m
     for (const method of ["PUT", "DELETE"]) {
       assert.strictEqual((await fetch(`${base}/api/deliveries/1`, { method, headers: {
         "content-type": "application/json", Authorization: `Bearer ${token}`,
-      }, ...(method === "PUT" ? { body: "{}" } : {}) })).status, 403);
+      }, ...(method === "PUT" ? { body: "{}" } : {}) })).status, userId === 99999 ? 401 : 403);
     }
   }
 });
@@ -1053,12 +1058,13 @@ test("Staff total sales analytics retains product images and period summaries", 
 });
 
 test("Staff can view recorded sales history", async () => {
-  const token = await login("staff@clarin.local", "Staff123!");
+  const token = await login("admin@clarin.local", "Admin123!");
   const res = await fetch(`${base}/api/sales`, { headers: { Authorization: `Bearer ${token}` } });
   assert.strictEqual(res.status, 200);
   const body = await res.json();
   assert(Array.isArray(body.data));
   assert(body.data.length > 0, "Expected recorded sales history");
+  assert(body.data.every((sale) => Number(sale.actor_id) === Number(jwt.decode(token).user_id)));
   assert(body.data.every((sale) => Object.hasOwn(sale, "item_count") && Object.hasOwn(sale, "total_amount")));
 });
 

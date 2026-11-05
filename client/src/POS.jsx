@@ -637,11 +637,11 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     const isPickupHistory = historyMode === 'pickups';
     const isPaymentHistory = historyMode === 'payments';
     const title = isPaymentHistory ? 'Delivery Payment Status' : isPickupHistory ? 'Vendor Pickup List' : 'Vendor Return History';
-    const description = isPaymentHistory
+    const description = (role === "STAFF" ? "Your account's deliveries only. " : "") + (isPaymentHistory
       ? 'Confirm vendor delivery payments and review who completed each confirmation.'
       : isPickupHistory
         ? 'Review every vendor pickup and the products included in each delivery.'
-        : 'Review grouped return records and every product included in each return.';
+        : 'Review grouped return records and every product included in each return.');
     const paymentVendorOptions = [...new Map(pickupEntries.map((entry) => [String(entry.vendor_id), {
       id: entry.vendor_id,
       name: entry.vendor_name || `Vendor ${entry.vendor_id}`,
@@ -1341,19 +1341,19 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                 <option value="">All products</option>
                 {transactionOptions.products.map((product) => <option key={product.id} value={product.id}>{product.name} · #{product.id}</option>)}
               </select></label>
-              <label>Sold / delivered by<select value={transactionFilters.account} onChange={(event) => setTransactionFilters((current) => ({ ...current, account: event.target.value }))}>
-                <option value="">All accounts</option>
+              <label>Sold / delivered by<select value={transactionFilters.account} disabled={role === "STAFF"} onChange={(event) => setTransactionFilters((current) => ({ ...current, account: event.target.value }))}>
+                <option value="">{role === "STAFF" ? "My account only" : "All accounts"}</option>
                 {transactionOptions.accounts.map((account) => <option key={account.id} value={account.id}>{account.name}{account.username ? ` (@${account.username})` : ""}{account.id !== "unattributed" ? ` · #${account.id}` : ""}</option>)}
               </select></label>
               {(transactionFilters.product || transactionFilters.account) && <button type="button" className="small-button" onClick={() => setTransactionFilters({ product: "", account: "" })}>Clear filters</button>}
-              <p>Filters match whole transactions, including bulk records. Delivery accounts identify the user who recorded the pickup.</p>
+              <p>{role === "STAFF" ? "Only your account's sales and deliveries are included. Product filters retain complete bulk records." : "Filters match whole transactions, including bulk records. Delivery accounts identify the user who recorded the pickup."}</p>
             </section>
             <HistoryCalendar selection={historySelection} onChange={updateHistorySelection}
               dateCounts={countHistoryDates([...filteredRecordedHistory.map((entry) => ({ date: entry.sale_date })), ...filteredPickupHistory.map((entry) => ({ date: entry.delivery_date }))], 'date')}
               recordCount={visibleSalesHistory.length + visiblePickupEntries.length} />
             <section className="history-section history-section-sales">
               <header className="history-section-header">
-                <div><span className="history-section-kicker">Classification</span><h3>Recorded Sales</h3><p>Completed POS transactions.</p></div>
+                <div><span className="history-section-kicker">Classification</span><h3>Recorded Sales</h3><p>{role === "STAFF" ? "Only completed POS transactions recorded by your account." : "Completed POS transactions."}</p></div>
                 <span className="history-section-count">{visibleSalesHistory.length} records</span>
               </header>
               <div className="history-table-wrap">

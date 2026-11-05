@@ -1,4 +1,23 @@
-import { dbAll, isInMemoryDb } from "./routes/dbCompat.js";
+import { dbAll, dbGet, isInMemoryDb } from "./routes/dbCompat.js";
+
+export async function staffOwnsDelivery(db, user, deliveryId) {
+  if (user.role !== "STAFF") return true;
+  if (!Number.isSafeInteger(Number(user.user_id)) || Number(user.user_id) <= 0) return false;
+  if (isInMemoryDb(db)) return db.deliveries.some((row) => Number(row.id) === Number(deliveryId) && Number(row.created_by) === Number(user.user_id));
+  return Boolean(await dbGet(db, "SELECT id FROM deliveries WHERE id = $1 AND created_by = $2", [Number(deliveryId), Number(user.user_id)]));
+}
+
+export function requireStaffDeliveryOwnership(idFor = (req) => req.params.id) {
+  return async (req, res, next) => {
+    try {
+      const id = Number(idFor(req));
+      if (req.user.role === "STAFF" && Number.isSafeInteger(id) && id > 0 && !await staffOwnsDelivery(req.db, req.user, id)) {
+        return res.status(404).json({ error: "Delivery not found in your account" });
+      }
+      next();
+    } catch (error) { next(error); }
+  };
+}
 
 // Identity comes only from the verified session, never a report query parameter.
 export function requireSalesIdentity(req, res, next) {

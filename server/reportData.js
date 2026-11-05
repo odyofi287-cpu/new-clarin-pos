@@ -68,14 +68,17 @@ export async function salesReport(db, start, end) {
   return rows.map((row) => ({ ...row, sale_date: reportDate(row.sale_date), quantity: n(row.quantity), total_amount: n(row.total_amount) }));
 }
 
-export async function inventoryReport(db, start, end) {
+export async function inventoryReport(db, start, end, user) {
+  const own = user?.role === "STAFF";
+  const ownerId = Number(user?.user_id) || -1;
   let rows;
   if (isInMemoryDb(db)) {
     rows = db.products.filter((p) => n(p.active ?? 1) === 1).map((p) => {
-      const movements = db.inventory_movements.filter((m) => m.product_id === p.id && inRange(getBusinessDate(new Date(m.created_at)), start, end));
+      const movements = db.inventory_movements.filter((m) => m.product_id === p.id && (!own || Number(m.user_id) === ownerId) && inRange(getBusinessDate(new Date(m.created_at)), start, end));
+      if (own && !movements.length) return null;
       return { product: p.name, stock_in: total(movements.filter((m) => m.movement_type === "STOCK_IN"), "quantity"),
         stock_out: total(movements.filter((m) => m.movement_type === "STOCK_OUT"), "quantity"), current_stock: n(p.current_stock), minimum_stock: n(p.minimum_stock) };
-    });
+    }).filter(Boolean);
   } else {
     // UTC timestamps are compared against Manila midnight boundaries, without
     // casting the indexed created_at column to a date.
@@ -83,17 +86,19 @@ export async function inventoryReport(db, start, end) {
       COALESCE(SUM(CASE WHEN im.movement_type = 'STOCK_IN' THEN im.quantity ELSE 0 END), 0) AS stock_in,
       COALESCE(SUM(CASE WHEN im.movement_type = 'STOCK_OUT' THEN im.quantity ELSE 0 END), 0) AS stock_out,
       p.current_stock, p.minimum_stock FROM products p
-      LEFT JOIN inventory_movements im ON im.product_id = p.id
+      ${own ? "JOIN" : "LEFT JOIN"} inventory_movements im ON im.product_id = p.id
         AND im.created_at >= ($1::date::timestamp AT TIME ZONE '${BUSINESS_TIME_ZONE}')
         AND im.created_at < (($2::date + 1)::timestamp AT TIME ZONE '${BUSINESS_TIME_ZONE}')
-      WHERE p.active = 1 GROUP BY p.id, p.name, p.current_stock, p.minimum_stock ORDER BY p.name`, [start, end],
+        ${own ? "AND im.user_id = $3" : ""}
+      WHERE p.active = 1 GROUP BY p.id, p.name, p.current_stock, p.minimum_stock ORDER BY p.name`, own ? [start, end, ownerId] : [start, end],
       `SELECT p.name AS product,
       COALESCE(SUM(CASE WHEN im.movement_type = 'STOCK_IN' THEN im.quantity ELSE 0 END), 0) AS stock_in,
       COALESCE(SUM(CASE WHEN im.movement_type = 'STOCK_OUT' THEN im.quantity ELSE 0 END), 0) AS stock_out,
       p.current_stock, p.minimum_stock FROM products p
-      LEFT JOIN inventory_movements im ON im.product_id = p.id
+      ${own ? "JOIN" : "LEFT JOIN"} inventory_movements im ON im.product_id = p.id
         AND datetime(im.created_at) >= datetime(?, '-8 hours')
         AND datetime(im.created_at) < datetime(?, '+1 day', '-8 hours')
+        ${own ? "AND im.user_id = ?" : ""}
       WHERE p.active = 1 GROUP BY p.id ORDER BY p.name`);
   }
   return rows.map((row) => ({ ...row, stock_in: n(row.stock_in), stock_out: n(row.stock_out), current_stock: n(row.current_stock), minimum_stock: n(row.minimum_stock),

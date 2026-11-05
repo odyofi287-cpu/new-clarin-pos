@@ -94,6 +94,7 @@ test("deleted product stays hidden after a real return, while old records and fi
   db.vendor_returns = [];
   db.deliveries[0].delivery_date = getBusinessDate();
   db.deliveries[0].payment_status = "UNPAID";
+  db.deliveries[0].created_by = 3;
   const request = await api(t, db, true);
   const originalSales = JSON.stringify(db.sales);
   const originalSaleItems = JSON.stringify(db.sale_items);

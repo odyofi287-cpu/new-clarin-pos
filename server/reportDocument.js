@@ -21,6 +21,11 @@ export function buildReportDocument(mode, data, range, user, generatedAt = new D
     report.summary = [metric("Active products", data.length), metric("Stock-in items", sum(data, "stock_in")), metric("Stock-out items", sum(data, "stock_out")), metric("Low-stock products", data.filter((r) => r.stock_status === "LOW_STOCK").length), metric("Out-of-stock products", data.filter((r) => r.stock_status === "OUT_OF_STOCK").length)];
     report.sections = [{ title: "Stock movement and current inventory", columns: [column("product", "Product"), column("stock_in", "Stock in", "number"), column("stock_out", "Stock out", "number"), column("current_stock", "Current stock", "number"), column("minimum_stock", "Minimum stock", "number"), column("stock_status", "Status", "status")], rows: data }];
     report.note = "Stock-in and stock-out movements are filtered by the selected business dates. Current stock, minimum stock, and stock status are live values at report generation, not historical closing balances. Adjustments and returns may also change current stock.";
+    if (user.role === "STAFF") {
+      report.summary[0].label = "Products with my activity";
+      report.sections[0].title = "My stock movements and shared stock levels";
+      report.sections[0].columns.find((column) => column.key === "current_stock").label = "Shared current stock";
+    }
   } else if (mode === "vendor-deliveries") {
     report.summary = [metric("Original delivery value", sum(data, "amount"), "money"), metric("Deliveries", data.length), metric("Items delivered", sum(data, "quantity"))];
     report.sections = [{ title: "Delivery records", columns: [column("delivery_id", "Delivery ID"), column("vendor", "Vendor"), column("delivery_date", "Delivery Date", "date"), column("products", "Products"), column("quantity", "Items", "number"), column("amount", "Amount (PHP)", "money")], rows: data }];

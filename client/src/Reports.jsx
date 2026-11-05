@@ -10,7 +10,7 @@ const REPORTS = {
   inventory: { title: "Inventory", description: "Stock movement and current levels" },
   "vendor-deliveries": { title: "Deliveries", description: "Grouped pickups and delivery value" },
 };
-const reportDetails = (id, role) => role === "STAFF" && id !== "inventory" && REPORTS[id]
+const reportDetails = (id, role) => role === "STAFF" && REPORTS[id]
   ? { title: id === "total-sales" ? "My Sales" : `My ${REPORTS[id].title}`, description: `Your account only · ${REPORTS[id].description}` }
   : REPORTS[id];
 
@@ -83,7 +83,7 @@ function Reports({ token, role, initialMode }) {
 
   return <div className="reports-page">
     <section className="reports-hero">
-      <div><span className="reports-kicker">Data center</span><h2>Reports & exports</h2><p>Choose a report and calendar dates. Export a CSV or print a professional report.</p></div>
+      <div><span className="reports-kicker">Data center</span><h2>Reports & exports</h2><p>{role === "STAFF" ? "Your account's records only. Choose dates to preview, export, or print your reports. Inventory stock levels remain shared." : "Choose a report and calendar dates. Export a CSV or print a professional report."}</p></div>
       <div className="reports-summary"><strong>{report?.sections[0]?.rows.length || 0}</strong><span>Records in preview</span></div>
     </section>
 
