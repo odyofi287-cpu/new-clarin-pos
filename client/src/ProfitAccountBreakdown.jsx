@@ -23,7 +23,7 @@ export default function ProfitAccountBreakdown({ data }) {
         <span className="profit-account-chevron" aria-hidden="true">⌄</span>
       </summary>
       <div className="profit-account-expanded">
-        <p className="profit-account-sales">Sales with capital <strong>{cash(account.known_revenue)}</strong><span>{account.net_quantity} net Items</span></p>
+        <p className="profit-account-sales">Sales <strong>{cash(account.known_revenue)}</strong><span>{account.net_quantity} net Items</span></p>
         <div className="profit-account-sources">{[["Recorded sales profit", "recorded_profit"], ["Delivery profit", "delivery_profit"], ["Return margin adjustment", "return_profit"]].map(([label, key]) => <div key={key}><span>{label}</span><strong className={account[key] < 0 ? "profit-negative" : ""}>{cash(account[key])}</strong></div>)}</div>
         {account.missing_cost_items > 0 && <p className="profit-account-warning">{account.missing_cost_items} Items have no usable base cost and are excluded from capital and profit.</p>}
         {account.estimated_cost_items > 0 && <p className="profit-account-warning">{account.estimated_cost_items} Item entries use estimated historical costs.</p>}
