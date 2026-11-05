@@ -312,7 +312,7 @@ class InMemoryDB {
 
     if (normalized.startsWith("INSERT INTO DELIVERIES")) {
       return {
-        run: (vendor_id, delivery_date, delivery_time, total_amount, created_by) => {
+        run: (vendor_id, delivery_date, delivery_time, total_amount, created_by, created_at) => {
           const id = this.deliveries.length + 1;
           const row = {
             id,
@@ -324,7 +324,7 @@ class InMemoryDB {
             payment_confirmed_at: null,
             payment_confirmed_by: null,
             created_by,
-            created_at: new Date().toISOString(),
+            created_at: created_at || new Date().toISOString(),
           };
           this.deliveries.push(row);
           return { lastInsertRowid: id };
@@ -440,6 +440,17 @@ class InMemoryDB {
             delivery.payment_status = "PAID";
             delivery.payment_confirmed_at = new Date().toISOString();
             delivery.payment_confirmed_by = Number(paymentConfirmedBy);
+            return { changes: 1, id: delivery.id };
+          },
+        };
+      }
+
+      if (!normalized.includes("DELIVERY_DATE")) {
+        return {
+          run: (vendor_id, total_amount, id) => {
+            const delivery = this.deliveries.find((row) => row.id === Number(id));
+            if (!delivery) return { changes: 0 };
+            Object.assign(delivery, { vendor_id, total_amount });
             return { changes: 1, id: delivery.id };
           },
         };

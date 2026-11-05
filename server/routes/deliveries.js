@@ -2,20 +2,11 @@ import express from "express";
 import { requireRole, requireCurrentStaff } from "../middleware/auth.js";
 import { publishDataChange } from "../events.js";
 import { dbAll, dbGet, dbRun, isInMemoryDb, isPostgresDb, withTransaction } from "./dbCompat.js";
-import { getBusinessDate } from "../businessDate.js";
+import { getBusinessTimestamp } from "../businessDate.js";
 import { deliveryQuantity, money } from "../productEconomics.js";
 import { productReferences } from "../historyMetadata.js";
 
 const router = express.Router();
-
-function normalizeDeliveryDate(value) {
-  const text = String(value || "").trim();
-  const isoDate = text.match(/^\d{4}-\d{2}-\d{2}/);
-  if (isoDate) return isoDate[0];
-
-  const parsed = new Date(text);
-  return Number.isNaN(parsed.getTime()) ? getBusinessDate() : parsed.toISOString().slice(0, 10);
-}
 
 async function getDeliveryReturns(db, deliveryId) {
   if (isInMemoryDb(db)) {
@@ -196,17 +187,13 @@ router.get("/:id", requireRole("ADMIN", "STAFF", "VENDOR"), async (req, res) => 
 
 router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
-    const { vendor_id, pickup_datetime, delivery_date, delivery_time, items } = req.body;
+    const { vendor_id, items } = req.body;
     const vendorId = Number(vendor_id);
     const normalizedItems = Array.isArray(items) ? items : [{ product_id: req.body.product_id, quantity: req.body.quantity, unit_cost: req.body.unit_price }];
 
     if (!vendorId || !normalizedItems.length) {
       return res.status(400).json({ error: "Vendor and at least one item are required" });
     }
-
-    const computedDate = delivery_date || (pickup_datetime ? pickup_datetime.split("T")[0] : "") || getBusinessDate();
-    const deliveryDate = normalizeDeliveryDate(computedDate);
-    const deliveryTime = String(delivery_time || (pickup_datetime ? pickup_datetime.split("T")[1]?.slice(0, 5) : "") || "").slice(0, 5) || null;
 
     const vendor = await dbGet(req.db, "SELECT id FROM vendors WHERE id = $1", [vendorId], "SELECT id FROM vendors WHERE id = ?");
     if (!vendor) {
@@ -229,6 +216,7 @@ router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
     }
 
     let totalAmount;
+    let recordedAt;
     const deliveryResult = await withTransaction(req.db, async () => {
       for (const item of [...itemPayloads].sort((a, b) => a.productId - b.productId)) {
         const product = await dbGet(req.db, "SELECT id, selling_price, base_price, quantity_per_case, active, deleted_at FROM products WHERE id = $1 FOR UPDATE", [item.productId], "SELECT id, selling_price, base_price, quantity_per_case, active, deleted_at FROM products WHERE id = ?");
@@ -244,11 +232,12 @@ router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
       }
       totalAmount = money(itemPayloads.reduce((sum, item) => sum + item.quantity * item.unitCost, 0));
 
+      recordedAt = getBusinessTimestamp();
       const result = await dbRun(
         req.db,
-        "INSERT INTO deliveries (vendor_id, delivery_date, delivery_time, total_amount, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-        [vendorId, deliveryDate, deliveryTime, totalAmount, req.user.user_id],
-        "INSERT INTO deliveries (vendor_id, delivery_date, delivery_time, total_amount, created_by) VALUES (?, ?, ?, ?, ?)"
+        "INSERT INTO deliveries (vendor_id, delivery_date, delivery_time, total_amount, created_by, created_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+        [vendorId, recordedAt.date, recordedAt.time, totalAmount, req.user.user_id, recordedAt.created_at],
+        "INSERT INTO deliveries (vendor_id, delivery_date, delivery_time, total_amount, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)"
       );
 
       for (const item of itemPayloads) {
@@ -274,8 +263,9 @@ router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
       data: {
         id: deliveryResult.lastInsertRowid,
         vendor_id: vendorId,
-        delivery_date: deliveryDate,
-        delivery_time: deliveryTime,
+        delivery_date: recordedAt.date,
+        delivery_time: recordedAt.time,
+        created_at: recordedAt.created_at,
         total_amount: totalAmount,
         payment_status: "UNPAID",
         payment_confirmed_at: null,
@@ -305,13 +295,10 @@ router.put("/:id", requireCurrentStaff, async (req, res) => {
       return res.status(404).json({ error: "Pickup not found" });
     }
 
-    const { vendor_id, pickup_datetime, delivery_date, delivery_time, items, payment_status } = req.body;
+    const { vendor_id, items, payment_status } = req.body;
     const safeVendorId = Number(vendor_id ?? existing.vendor_id);
     const safePaymentStatus = String(payment_status ?? existing.payment_status ?? "UNPAID").trim().toUpperCase();
     const normalizedItems = Array.isArray(items) && items.length ? items : [{ product_id: req.body.product_id, quantity: req.body.quantity, unit_cost: req.body.unit_price }];
-    const computedDate = (delivery_date || (pickup_datetime ? pickup_datetime.split("T")[0] : "") || (delivery_time ? req.body.delivery_date : "") || existing.delivery_date || getBusinessDate());
-    const safeDeliveryDate = normalizeDeliveryDate(computedDate);
-    const safeDeliveryTime = String(delivery_time || (pickup_datetime ? pickup_datetime.split("T")[1]?.slice(0, 5) : "") || existing.delivery_time || "").slice(0, 5) || null;
 
     if (!safeVendorId || !normalizedItems.length) {
       return res.status(400).json({ error: "Vendor and at least one item are required" });
@@ -412,7 +399,8 @@ router.put("/:id", requireCurrentStaff, async (req, res) => {
       }
 
       await dbRun(req.db, "DELETE FROM delivery_items WHERE delivery_id = $1 RETURNING id", [id], "DELETE FROM delivery_items WHERE delivery_id = ?");
-      await dbRun(req.db, "UPDATE deliveries SET vendor_id = $1, delivery_date = $2, delivery_time = $3, total_amount = $4 WHERE id = $5 RETURNING id", [safeVendorId, safeDeliveryDate, safeDeliveryTime, totalAmount, id], "UPDATE deliveries SET vendor_id = ?, delivery_date = ?, delivery_time = ?, total_amount = ? WHERE id = ?");
+      // An edit changes delivery contents, never the original recording time.
+      await dbRun(req.db, "UPDATE deliveries SET vendor_id = $1, total_amount = $2 WHERE id = $3 RETURNING id", [safeVendorId, totalAmount, id], "UPDATE deliveries SET vendor_id = ?, total_amount = ? WHERE id = ?");
 
       if (safePaymentStatus !== String(existing.payment_status || "UNPAID").toUpperCase()) {
         if (safePaymentStatus === "PAID") {

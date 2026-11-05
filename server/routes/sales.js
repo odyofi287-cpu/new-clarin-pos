@@ -2,11 +2,19 @@ import express from "express";
 import { requireRole } from "../middleware/auth.js";
 import { publishDataChange } from "../events.js";
 import { dbAll, dbGet, dbRun, isInMemoryDb, isPostgresDb, withTransaction } from "./dbCompat.js";
-import { getBusinessDate } from "../businessDate.js";
+import { getBusinessTimestamp, getBusinessTime } from "../businessDate.js";
 import { money } from "../productEconomics.js";
 import { productReferences } from "../historyMetadata.js";
 
 const router = express.Router();
+function recordedSaleTime(value) {
+  if (!value) return null;
+  // SQLite's default timestamps are UTC but do not include a timezone suffix.
+  const normalized = typeof value === "string" && /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(value)
+    ? `${value.replace(" ", "T")}Z` : value;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : getBusinessTime(date);
+}
 
 router.get("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
@@ -20,6 +28,8 @@ router.get("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
           return {
             id: sale.id,
             sale_date: sale.sale_date,
+            sale_time: recordedSaleTime(sale.created_at),
+            created_at: sale.created_at || null,
             sold_by: user?.name || "Unknown",
             actor_id: sale.user_id ?? null,
             actor_name: user?.name || "Unattributed account",
@@ -38,7 +48,7 @@ router.get("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
 
     const sales = await dbAll(
       req.db,
-      `SELECT s.id, s.sale_date, s.total_amount, u.name AS sold_by, s.user_id AS actor_id, u.name AS actor_name, u.username AS actor_username,
+      `SELECT s.id, s.sale_date, s.created_at, s.total_amount, u.name AS sold_by, s.user_id AS actor_id, u.name AS actor_name, u.username AS actor_username,
               JSON_AGG(JSON_BUILD_OBJECT('id', si.product_id, 'name', p.name)) AS product_refs,
               COALESCE(SUM(si.quantity), 0) AS item_count,
               COALESCE(STRING_AGG(p.name || ' (' || si.quantity || ')', ', '), '') AS items
@@ -49,7 +59,7 @@ router.get("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
         GROUP BY s.id, s.sale_date, s.total_amount, s.created_at, u.id
         ORDER BY s.sale_date DESC, s.created_at DESC`,
       [],
-      `SELECT s.id, s.sale_date, s.total_amount, u.name AS sold_by, s.user_id AS actor_id, u.name AS actor_name, u.username AS actor_username,
+      `SELECT s.id, s.sale_date, s.created_at, s.total_amount, u.name AS sold_by, s.user_id AS actor_id, u.name AS actor_name, u.username AS actor_username,
               JSON_GROUP_ARRAY(JSON_OBJECT('id', si.product_id, 'name', p.name)) AS product_refs,
               COALESCE(SUM(si.quantity), 0) AS item_count,
               COALESCE(GROUP_CONCAT(p.name || ' (' || si.quantity || ')', ', '), '') AS items
@@ -60,7 +70,7 @@ router.get("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
         GROUP BY s.id
         ORDER BY s.sale_date DESC, s.created_at DESC`
     );
-    res.json({ data: sales.map((sale) => ({ ...sale, product_refs: productReferences(sale.product_refs) })) });
+    res.json({ data: sales.map((sale) => ({ ...sale, sale_time: recordedSaleTime(sale.created_at), product_refs: productReferences(sale.product_refs) })) });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to load sales history" });
@@ -105,7 +115,7 @@ router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
     }
 
     let totalAmount;
-    const saleDate = getBusinessDate();
+    let recordedAt;
 
     const saleResult = await withTransaction(req.db, async () => {
       for (const product of [...products].sort((a, b) => a.id - b.id)) {
@@ -119,7 +129,8 @@ router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
       }
       totalAmount = money(products.reduce((sum, product) => sum + Number(product.selling_price) * product.sellQuantity, 0));
 
-      const saleInsert = await dbRun(req.db, "INSERT INTO sales (sale_date, total_amount, user_id) VALUES ($1, $2, $3) RETURNING id", [saleDate, totalAmount, req.user.user_id || null], "INSERT INTO sales (sale_date, total_amount, user_id) VALUES (?, ?, ?)");
+      recordedAt = getBusinessTimestamp();
+      const saleInsert = await dbRun(req.db, "INSERT INTO sales (sale_date, total_amount, user_id, created_at) VALUES ($1, $2, $3, $4) RETURNING id", [recordedAt.date, totalAmount, req.user.user_id || null, recordedAt.created_at], "INSERT INTO sales (sale_date, total_amount, user_id, created_at) VALUES (?, ?, ?, ?)");
       const saleId = saleInsert.lastInsertRowid;
 
       for (const product of products) {
@@ -132,7 +143,7 @@ router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
     });
 
     publishDataChange("sale");
-    res.status(201).json({ data: { sale_id: saleResult.saleId, total_amount: saleResult.totalAmount } });
+    res.status(201).json({ data: { sale_id: saleResult.saleId, total_amount: saleResult.totalAmount, sale_date: recordedAt.date, sale_time: recordedAt.time, created_at: recordedAt.created_at } });
   } catch (error) {
     console.error(error);
     if (error.message && (error.message.startsWith("Product not found") || error.message.startsWith("Insufficient stock"))) {

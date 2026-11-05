@@ -66,6 +66,14 @@ function getVendorOptionLabel(vendor) {
   return `${vendor.name} (${username}) · ${vendorCode}`;
 }
 
+function RecordingTimestamp({ editing = false, date, time }) {
+  return <section className="transaction-recording-time" aria-label={editing ? "Original recording time" : "Automatic recording time"}>
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.7" /><path d="M12 7v5l3 2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>
+    <div><strong>{editing ? `${formatDeliveryDate(date) || "Date unavailable"} · ${time || "No time recorded"}` : "Automatic date & time"}</strong><p>{editing ? "The original recording date and time are preserved when you save changes." : "The server records the date and time when you save. No manual entry is needed."}</p></div>
+    <span>Philippine time · Asia/Manila</span>
+  </section>;
+}
+
 function POS({ token, role, vendorId, viewMode = "pos" }) {
   const REFRESH_INTERVAL_MS = 6000;
   const isPosEntryView = viewMode === "pos";
@@ -804,7 +812,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       setSaleQuantities({});
       setProductSearch("");
       setSaleForm({ product_id: "", quantity: "1" });
-      setStatus(`Sale recorded with ${transactionItems.length} product${transactionItems.length === 1 ? '' : 's'} and ${formatItemQuantity(transactionQuantityTotal)} in total.`);
+      setStatus(`Sale recorded with ${transactionItems.length} product${transactionItems.length === 1 ? '' : 's'} and ${formatItemQuantity(transactionQuantityTotal)} in total. Recorded ${formatDeliveryDate(body.data.sale_date)} at ${body.data.sale_time} (Philippine time).`);
       window.dispatchEvent(new Event('productsUpdated'));
     } catch (err) {
       setError(err.message || 'Unable to record sale');
@@ -841,7 +849,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       setPickupMode("edit");
       setPickupForm({
         pickup_date: String(detailBody.data?.delivery_date || record.delivery_date || "").slice(0, 10),
-        pickup_time: detailBody.data?.delivery_time || record.delivery_time || "09:00",
+        pickup_time: detailBody.data?.delivery_time || record.delivery_time || "",
         vendor_id: String(detailBody.data?.vendor_id ?? record.vendor_id ?? ""),
         payment_status: String(detailBody.data?.payment_status || record.payment_status || "UNPAID").toUpperCase(),
         product_id: "",
@@ -983,10 +991,6 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
     setError(null);
     setStatus(null);
 
-    if (!pickupForm.pickup_date || !pickupForm.pickup_time) {
-      setError("Pick-up date and time are required.");
-      return;
-    }
     if (!pickupForm.vendor_id) {
       setError("Please select a vendor.");
       return;
@@ -1028,8 +1032,6 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
           headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({
             vendor_id: Number(pickupForm.vendor_id),
-            pickup_datetime: `${pickupForm.pickup_date}T${pickupForm.pickup_time}`,
-            delivery_date: pickupForm.pickup_date,
             payment_status: pickupForm.payment_status,
             items: deliveryItems,
           }),
@@ -1050,7 +1052,6 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
           headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({
             vendor_id: Number(pickupForm.vendor_id),
-            pickup_datetime: `${pickupForm.pickup_date}T${pickupForm.pickup_time}`,
             items: deliveryItems,
           }),
         });
@@ -1058,7 +1059,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
         if (!res.ok) {
           throw new Error(body.error || 'Unable to record vendor pickup');
         }
-        setStatus(`Vendor pickup recorded with ${transactionItems.length} product${transactionItems.length === 1 ? '' : 's'} — total ${formatCurrency(transactionTotal)}.`);
+        setStatus(`Vendor pickup recorded with ${transactionItems.length} product${transactionItems.length === 1 ? '' : 's'} — total ${formatCurrency(transactionTotal)}. Recorded ${formatDeliveryDate(body.data.delivery_date)} at ${body.data.delivery_time} (Philippine time).`);
       }
       setEntryMode(null);
       setProductSearch("");
@@ -1089,23 +1090,21 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                 <button type="button" className="transaction-back" onClick={closeTransactionEntry}>← Back to POS</button>
                 <span className="transaction-eyebrow">{isPickupEntry ? "Vendor fulfillment" : isReturnEntry ? "Vendor returns" : "Point-of-sale checkout"}</span>
                 <h2>{isPickupEntry ? (pickupMode === "edit" ? "Edit Vendor Pickup" : "Add Vendor Pickup") : isReturnEntry ? "Record Vendor Return" : "Record Sale"}</h2>
-                <p>{isPickupEntry ? "Choose the vendor, pickup schedule, and every product included in this delivery." : isReturnEntry ? "Choose a vendor, select one of today's deliveries, then record its returned products." : "Add products and quantities to create one complete recorded sale."}</p>
+                <p>{isPickupEntry ? "Choose the vendor and every product included in this delivery. Recording time is assigned automatically." : isReturnEntry ? "Choose a vendor, select one of today's deliveries, then record its returned products." : "Add products and quantities to create one complete recorded sale."}</p>
               </div>
               <button type="button" className="small-button" onClick={closeTransactionEntry}>Cancel</button>
             </header>
 
             {error && <p className="error-message">{error}</p>}
 
+            {!isReturnEntry && <RecordingTimestamp editing={isPickupEntry && pickupMode === "edit"} date={pickupForm.pickup_date} time={pickupForm.pickup_time} />}
+
             {(isPickupEntry || isReturnEntry) && (
-              <section className={`transaction-details ${isPickupEntry && pickupMode === "edit" ? "has-payment-status" : ""} ${isReturnEntry ? "is-return-details" : ""}`} aria-label={isReturnEntry ? "Return details" : "Pickup details"}>
-                <label>
-                  {isReturnEntry ? "Return date" : "Pickup date"}
-                  <input type="date" value={isReturnEntry ? returnForm.return_date : pickupForm.pickup_date} onChange={(event) => isReturnEntry ? setReturnForm({ ...returnForm, return_date: event.target.value }) : setPickupForm({ ...pickupForm, pickup_date: event.target.value })} readOnly={isReturnEntry} min={isReturnEntry ? returnForm.return_date : undefined} max={isReturnEntry ? returnForm.return_date : undefined} required />
-                </label>
-                <label>
-                  {isReturnEntry ? "Return time" : "Pickup time"}
-                  <input type="time" value={isReturnEntry ? returnForm.return_time : pickupForm.pickup_time} onChange={(event) => isReturnEntry ? setReturnForm({ ...returnForm, return_time: event.target.value }) : setPickupForm({ ...pickupForm, pickup_time: event.target.value })} required />
-                </label>
+              <section className={`transaction-details ${isPickupEntry && pickupMode === "edit" ? "has-payment-status" : ""} ${isReturnEntry ? "is-return-details" : "is-pickup-details"}`} aria-label={isReturnEntry ? "Return details" : "Pickup details"}>
+                {isReturnEntry && <>
+                  <label>Return date<input type="date" value={returnForm.return_date} readOnly min={returnForm.return_date} max={returnForm.return_date} required /></label>
+                  <label>Return time<input type="time" value={returnForm.return_time} onChange={(event) => setReturnForm({ ...returnForm, return_time: event.target.value })} required /></label>
+                </>}
                 <label className="transaction-vendor-field">
                   Vendor
                   <select value={entryForm.vendor_id} onChange={(event) => handleTransactionVendorChange(event, isReturnEntry)} required>
@@ -1366,6 +1365,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                       <tr>
                         <th>Sale ID</th>
                         <th>Date</th>
+                        <th>Time</th>
                         <th>Sold By</th>
                         <th>Items</th>
                         <th>Quantity</th>
@@ -1377,6 +1377,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                         <tr key={`sales-history-${entry.id}`}>
                           <td data-label="Sale ID">{entry.id}</td>
                           <td data-label="Date">{formatDeliveryDate(entry.sale_date)}</td>
+                          <td data-label="Time">{entry.sale_time || "-"}</td>
                           <td data-label="Sold By"><span className="history-account-identity">{entry.actor_name || entry.sold_by || "Unattributed account"}{entry.actor_username && <small className="history-account-username">@{entry.actor_username}</small>}</span></td>
                           <td data-label="Items">{entry.items || "-"}</td>
                           <td data-label="Quantity">{entry.item_count}</td>
@@ -1518,16 +1519,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
               </div>
 
               <form onSubmit={submitPickup} className="pos-modal-form">
-                <div className="pos-modal-form-grid" style={{ gridColumn: '1 / -1' }}>
-                  <label>
-                    Pick-up date
-                    <input type="date" value={pickupForm.pickup_date} onChange={(event) => setPickupForm({ ...pickupForm, pickup_date: event.target.value })} required />
-                  </label>
-                  <label>
-                    Pick-up time
-                    <input type="time" value={pickupForm.pickup_time} onChange={(event) => setPickupForm({ ...pickupForm, pickup_time: event.target.value })} required />
-                  </label>
-                </div>
+                <RecordingTimestamp editing={pickupMode === "edit"} date={pickupForm.pickup_date} time={pickupForm.pickup_time} />
 
                 <div className="pos-modal-form-grid" style={{ gridColumn: '1 / -1' }}>
                   <label>

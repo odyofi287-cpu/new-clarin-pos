@@ -1133,7 +1133,7 @@ test("Vendor dashboard returns vendor-only delivery summary", async () => {
     ["original_amount", "return_deduction", "amount_due", "payment_status", "items"].every((field) => Object.hasOwn(delivery, field))
   ));
   assert(Array.isArray(body.data.vendor_summary.daily_history));
-  assert(body.data.vendor_summary.daily_history.length > 1, "Expected prior daily account summaries to remain in history");
+  assert(body.data.vendor_summary.daily_history.length >= 1, "Expected automatically dated deliveries in the daily account history");
   assert.strictEqual(body.data.vendor_summary.daily_history[0].account_date, getBusinessDate());
   assert.deepStrictEqual(
     body.data.vendor_summary.daily_history[0].total_delivery_count,

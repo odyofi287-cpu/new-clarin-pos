@@ -63,6 +63,24 @@
   text-transform: uppercase;
 }
 
+.transaction-recording-time {
+  align-items: center;
+  background: #f0f6ff;
+  border: 1px solid #d6e5f8;
+  border-radius: 12px;
+  color: #345d91;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  min-width: 0;
+  padding: 0.85rem 1rem;
+}
+.transaction-recording-time > svg { flex: 0 0 24px; height: 24px; width: 24px; }
+.transaction-recording-time > div { flex: 1 1 220px; min-width: 0; }
+.transaction-recording-time strong { color: #204570; font-size: 0.83rem; }
+.transaction-recording-time p { color: #607c9e; font-size: 0.75rem; line-height: 1.5; margin: 0.2rem 0 0; }
+.transaction-recording-time > span { color: #456b98; font-size: 0.7rem; font-weight: 700; }
+
 .transaction-details {
   background: #ffffff;
   border: 1px solid #dbe8f6;
@@ -71,6 +89,10 @@
   gap: 0.85rem;
   grid-template-columns: minmax(160px, 0.65fr) minmax(160px, 0.65fr) minmax(240px, 1fr);
   padding: 1rem;
+}
+
+.transaction-details.is-pickup-details:not(.has-payment-status) {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .transaction-details.has-payment-status {
