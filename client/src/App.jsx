@@ -595,7 +595,7 @@ function App() {
               >
                 {view === "dashboard" && <Dashboard key={`${token}:${role}`} token={token} role={role} vendorId={vendorId} viewMode="dashboard" onNavigate={navigate} />}
                 {view === "total-sales" && role !== "VENDOR" && <TotalSales key={`${token}:${role}`} token={token} role={role} onBack={() => navigate("dashboard")} />}
-                {view === "profits" && role !== "VENDOR" && <Profits key={`${token}:${role}`} token={token} onBack={() => navigate("dashboard")} />}
+                {view === "profits" && role !== "VENDOR" && <Profits key={`${token}:${role}`} token={token} role={role} onBack={() => navigate("dashboard")} />}
                 {view === "pos" && <POS key={`${token}:${role}:${vendorId}`} token={token} role={role} vendorId={vendorId} viewMode="pos" />}
                 {view === "products" && <Dashboard token={token} role={role} vendorId={vendorId} viewMode="products" />}
                 {view === "inventory" && <Dashboard token={token} role={role} vendorId={vendorId} viewMode="inventory" stockFilter={inventoryStockFilter} onStockFilterChange={setInventoryStockFilter} />}

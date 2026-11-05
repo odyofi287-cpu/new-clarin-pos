@@ -1,0 +1,49 @@
+.profit-accounts-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+.profit-accounts-heading h3 { margin:5px 0 8px; color:#23466e; }
+.profit-accounts-heading p,.profit-accounts-note { color:#6b819e; font-size:.78rem; line-height:1.65; margin:8px 0; }
+.profit-accounts-count { flex-shrink:0; background:#edf5ff; border:1px solid #d4e3f6; border-radius:20px; padding:7px 11px; font-size:.73rem; color:#3c6d9e; }
+.profit-accounts-context { display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:10px; border-top:1px solid #e3ecf7; padding-top:16px; margin:14px 0; font-size:.8rem; color:#6b819e; }
+.workspace-content .profit-accounts-context strong { font-size:.86rem; color:#34577e; }
+.profit-accounts-context b { color:#187d69; margin-left:6px; }
+.profit-accounts-search { display:grid; gap:7px; width:min(100%,350px); margin:18px 0; color:#456183; font-size:.8rem; font-weight:650; }
+.profit-accounts-search input { min-width:0; width:100%; min-height:44px; padding:10px; border:1px solid #d0def0; border-radius:8px; color:#294e78; background:#fff; }
+.profit-accounts-list { display:grid; gap:10px; }
+.profit-account-row { min-width:0; border:1px solid #dce7f5; border-radius:11px; background:#fff; overflow:hidden; }
+.profit-account-row.is-unattributed { border-color:#ebd7ae; background:#fffbf3; }
+.profit-account-row>summary { display:grid; grid-template-columns:40px minmax(0,1fr) minmax(110px,.65fr) minmax(110px,.65fr) 18px; align-items:center; gap:14px; padding:16px; cursor:pointer; list-style:none; }
+.profit-account-row>summary::-webkit-details-marker { display:none; }
+.profit-account-row>summary:focus-visible { outline:3px solid #92bcf2; outline-offset:-3px; border-radius:10px; }
+.profit-account-row[open]>summary { background:#f7faff; }
+.profit-account-avatar { width:40px; height:40px; display:grid; place-items:center; border-radius:11px; color:#3674bc; background:#eaf3ff; font-weight:800; }
+.profit-account-identity { min-width:0; }
+.profit-account-identity>strong,.profit-account-identity>span,.profit-account-identity small { display:block; overflow-wrap:anywhere; }
+.workspace-content .profit-account-identity>strong { font-size:.94rem; color:#294d77; }
+.profit-account-identity>span,.profit-account-identity small { color:#7185a0; font-size:.73rem; line-height:1.65; }
+.profit-account-capital,.profit-account-total { text-align:right; min-width:0; }
+.profit-account-capital small,.profit-account-total small { display:block; margin-bottom:6px; color:#7185a0; font-size:.72rem; }
+.workspace-content .profit-account-capital strong,.workspace-content .profit-account-total strong { display:block; overflow-wrap:anywhere; font-size:1.06rem; color:#33547e; }
+.profit-account-chevron { color:#6d88a8; text-align:center; transition:transform .15s; }
+.profit-account-row[open] .profit-account-chevron { transform:rotate(180deg); }
+.profit-account-expanded { padding:0 16px 16px; border-top:1px solid #e5edf8; }
+.profit-account-sales { display:flex; align-items:baseline; flex-wrap:wrap; gap:8px 14px; color:#6b819e; font-size:.76rem; }
+.workspace-content .profit-account-sales strong { font-size:.92rem; color:#35577e; }
+.profit-account-sales>span { margin-left:auto; }
+.profit-account-sources { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+.profit-account-sources>div { min-width:0; display:grid; gap:8px; }
+.profit-account-sources span { color:#7185a0; font-size:.73rem; line-height:1.5; }
+.workspace-content .profit-account-sources strong { font-size:.94rem; color:#35577e; overflow-wrap:anywhere; }
+.profit-account-warning { margin:12px 0 0; color:#916b2e; font-size:.74rem; line-height:1.6; }
+.profit-accounts-note { margin:18px 0 0; }
+@media(max-width:760px) {
+ .profit-accounts-heading { flex-wrap:wrap; }
+ .profit-accounts-search { width:100%; }
+ .profit-account-row>summary { grid-template-columns:36px minmax(0,1fr) minmax(0,1fr) 18px; gap:12px; padding:14px; }
+ .profit-account-avatar { width:36px; height:36px; }
+ .profit-account-identity { grid-column:2/4; }
+ .profit-account-chevron { grid-column:4; grid-row:1; }
+ .profit-account-capital { grid-column:1/3; text-align:left; border-top:1px solid #e6edf7; padding-top:12px; }
+ .profit-account-total { grid-column:3/5; grid-row:2; justify-self:end; border-top:1px solid #e6edf7; padding-top:12px; }
+ .profit-account-capital,.profit-account-total { grid-row:2; }
+ .profit-account-sources { grid-template-columns:1fr; gap:12px; }
+ .profit-account-sources>div { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
+}

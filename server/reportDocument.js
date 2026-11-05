@@ -44,8 +44,12 @@ export function buildReportDocument(mode, data, range, user, generatedAt = new D
       ] },
       ...["daily", "monthly", "yearly"].map((key) => ({ title: `${key[0].toUpperCase()}${key.slice(1)} Capital & Profit`, columns: periodColumns, rows: data[key] })),
     ];
+    if (user.role === "ADMIN" && data.account_breakdown) {
+      report.sections.splice(1, 0, { title: "Profit by Account", columns: [column("name", "Account"), column("username", "Username"), ...financialColumns], rows: data.account_breakdown.accounts });
+    }
     report.note = "Capital = the sum of each item's saved base price multiplied by its sold or delivered quantity, less base costs reversed by returns. Gross profit = sales with known capital minus capital. Returns follow the original delivery owner's account. Historical costs are preserved; saved one-time base-price estimates fill eligible legacy gaps. Missing-cost items are excluded from capital and profit, not treated as free. Period tables are separate views of the same selected activity; do not add them together. This is a transaction-value view, not collected cash: unpaid deliveries are included and operating expenses are not deducted. Unsold inventory is not included in transaction capital.";
     if (totals.estimated_cost_items > 0) report.note += ` ${totals.estimated_cost_items} Item entries use estimated historical costs.`;
+    if (data.account_breakdown && Object.values(data.account_breakdown.rounding_difference).some((amount) => amount !== 0)) report.note += " Account figures are rounded individually to centavos; small rounding differences can occur against the combined total.";
   } else {
     report.summary = [metric("Recorded sales", data.totals.recorded_sales, "money"), metric("Delivery value", data.totals.delivery_total, "money"), metric("Return deductions", data.totals.return_total, "money"), metric("Net sales", data.totals.total, "money"), metric("Transactions", data.totals.transactions), metric("Products with activity", data.products.length)];
     const periodColumns = [column("period", "Period"), column("recorded_sales", "Recorded (PHP)", "money"), column("delivery_total", "Deliveries (PHP)", "money"), column("return_total", "Returns (PHP)", "money"), column("total", "Net sales (PHP)", "money"), column("transactions", "Transactions", "number")];

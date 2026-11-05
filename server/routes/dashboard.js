@@ -364,7 +364,7 @@ router.get("/profits", requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
     const reportingDb = await salesReportingDb(req.db, req.user);
     if (allTime) range = await allTimeSalesRange(reportingDb);
-    res.json({ data: { ...await profitReport(reportingDb, range.start, range.end, getTodayString()), period_scope: allTime ? "all-time" : "range", ...salesScope(req.user) } });
+    res.json({ data: { ...await profitReport(reportingDb, range.start, range.end, getTodayString(), { includeAccounts: req.user.role === "ADMIN" }), period_scope: allTime ? "all-time" : "range", ...salesScope(req.user) } });
   }
   catch (error) { console.error(error); res.status(500).json({ error: "Unable to load profit analytics" }); }
 });

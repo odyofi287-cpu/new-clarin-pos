@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { apiUrl } from "./api";
 import { manilaToday, rangeError, formatReportValue } from "./reportFormat";
 import { formatItemQuantity } from "./productQuantity";
+import AnalyticsNavigation from "./AnalyticsNavigation";
+import ProfitAccountBreakdown from "./ProfitAccountBreakdown";
 import "./profits.css";
 
 const cash = (value) => formatReportValue(value, "money");
@@ -12,7 +14,7 @@ function ProductImage({ product }) {
   return product.image_url && !failed ? <img src={product.image_url} alt={product.name} onError={() => setFailed(true)} /> : <span className="total-sales-product-fallback" aria-hidden="true">{product.name.slice(0, 1)}</span>;
 }
 
-export default function Profits({ token, onBack }) {
+export default function Profits({ token, role, onBack }) {
   const today = manilaToday();
   const [range, setRange] = useState({ start_date: `${today.slice(0, 4)}-01-01`, end_date: today });
   const [draft, setDraft] = useState(range);
@@ -22,6 +24,7 @@ export default function Profits({ token, onBack }) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [period, setPeriod] = useState("daily");
+  const [section, setSection] = useState(role === "ADMIN" ? "accounts" : "products");
   const allTime = range.scope === "all-time";
 
   useEffect(() => {
@@ -90,14 +93,24 @@ export default function Profits({ token, onBack }) {
       </section>
       {rangeSummary.reconstructed_cost_items > 0 && <aside className="profit-cost-completed" role="note"><strong>Historical costs completed</strong><p>Costs for {rangeSummary.reconstructed_cost_items} Item entries were filled from saved delivery costs or a one-time product base-price reference. {rangeSummary.estimated_cost_items > 0 ? `${rangeSummary.estimated_cost_items} of these Item entries use estimated costs, not verified historical purchase costs. ` : ""}Original sale prices and transaction amounts are unchanged.</p></aside>}
       {rangeSummary.missing_cost_lines > 0 && <aside className="profit-coverage" role="note"><strong>Base price still needed</strong><p>{rangeSummary.missing_cost_items} Items across {rangeSummary.missing_cost_lines} transaction lines still have no usable base cost and are excluded from profit. Enter the product's base price in Products to complete its missing historical costs. Selling price alone is not a purchase cost.</p></aside>}
+      <details className="profit-source-details"><summary>Sales, deliveries & returns<span>Expand calculation details</span></summary>
       <section className="profit-breakdown" aria-label="Capital and profit by source">
         <div><span>Recorded sales profit</span><strong>{cash(rangeSummary.recorded_profit)}</strong><small>Capital {cash(rangeSummary.recorded_capital)} · {formatItemQuantity(rangeSummary.recorded_quantity)}</small></div><div><span>Delivery profit</span><strong>{cash(rangeSummary.delivery_profit)}</strong><small>Capital {cash(rangeSummary.delivery_capital)} · {formatItemQuantity(rangeSummary.delivered_quantity)}</small></div><div><span>Return margin adjustment</span><strong>{cash(rangeSummary.return_profit)}</strong><small>Capital reversal {cash(rangeSummary.return_capital)} · {formatItemQuantity(rangeSummary.returned_quantity)}</small></div>
       </section>
+      </details>
+      <AnalyticsNavigation prefix="profit-analysis" value={section} onChange={setSection} sections={[
+        ...(role === "ADMIN" && data.sales_scope === "all" ? [{ id: "accounts", label: "Accounts" }] : []),
+        { id: "history", label: "History" }, { id: "products", label: "Products" },
+      ]} />
+      {role === "ADMIN" && data.sales_scope === "all" && <div id="profit-analysis-accounts" className="analytics-panel" hidden={section !== "accounts"}><ProfitAccountBreakdown data={data.account_breakdown} /></div>}
+      <div id="profit-analysis-history" className="analytics-panel" hidden={section !== "history"}>
       <section className="dashboard-card profit-period-card">
         <div className="profit-range-heading"><div><span className="chart-kicker">Period performance</span><h3>Capital & profit history</h3><p className="profit-help">Daily, monthly, and yearly views group the applied range. All time includes your entire authorized history. Only dates with activity are listed.</p></div><div className="profit-tabs" role="group" aria-label="Profit grouping">{["daily", "monthly", "yearly", "all_time"].map((value) => <button type="button" aria-pressed={period === value} className={period === value ? "is-active" : ""} key={value} onClick={() => value === "all_time" ? applyRange({ scope: "all-time" }) : setPeriod(value)}>{value === "all_time" ? "All time" : value[0].toUpperCase() + value.slice(1)}</button>)}</div></div>
         <div className="profit-table-wrap"><table className="profit-table"><thead><tr><th>Period</th><th>Net items</th><th>Sales with capital</th><th>Capital</th><th>Gross profit</th></tr></thead><tbody>{(data[period] || []).map((row) => <tr key={row.period}><th scope="row">{period === "daily" ? date(row.period) : row.period}{row.missing_cost_items > 0 && <small>{row.missing_cost_items} Items missing cost</small>}</th><td data-label="Net items">{formatItemQuantity(row.net_quantity)}</td><td data-label="Sales with capital">{cash(row.known_revenue)}</td><td data-label="Capital">{cash(row.capital)}</td><td data-label="Gross profit" className={row.gross_profit < 0 ? "profit-negative" : "profit-positive"}>{cash(row.gross_profit)}</td></tr>)}</tbody></table></div>
         {!data[period]?.length && <p className="total-sales-empty">No transactions in this date range.</p>}
       </section>
+      </div>
+      <div id="profit-analysis-products" className="analytics-panel" hidden={section !== "products"}>
       <section className="dashboard-card total-sales-products">
         <div className="total-sales-products-heading"><div><span className="chart-kicker">Product performance</span><h3>Product Capital & Profit</h3><p className="profit-help">Capital is summed per product using historical base prices and net item quantities, including products removed from the catalog.</p></div><label className="total-sales-search"><span>Search products</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or category" /></label></div>
         <div className="profit-product-list">{products.map((product) => <article className="profit-product-row" key={product.product_id}>
@@ -105,6 +118,7 @@ export default function Profits({ token, onBack }) {
           <div><span>Sales with capital</span><strong>{cash(product.known_revenue)}</strong></div><div className="profit-product-capital"><span>Product capital</span><strong>{cash(product.capital)}</strong><small>{formatItemQuantity(product.net_quantity)} net</small></div><div><span>Gross profit</span><strong className={product.gross_profit < 0 ? "profit-negative" : "profit-positive"}>{cash(product.gross_profit)}</strong></div>
         </article>)}</div>{!products.length && <p className="total-sales-empty">{search ? "No products match your search." : "No product activity in this range."}</p>}
       </section>
+      </div>
     </>}
   </div>;
 }

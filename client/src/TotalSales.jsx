@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { apiUrl } from "./api";
 import { formatItemQuantity } from "./productQuantity";
 import SalesAccountBreakdown from "./SalesAccountBreakdown";
+import AnalyticsNavigation from "./AnalyticsNavigation";
 
 const REFRESH_INTERVAL_MS = 6000;
 
@@ -75,6 +76,7 @@ function TotalSales({ token, role, onBack }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
+  const [section, setSection] = useState(role === "ADMIN" ? "accounts" : "trends");
 
   useEffect(() => {
     if (!token) return undefined;
@@ -173,8 +175,12 @@ function TotalSales({ token, role, onBack }) {
         </article>
       </section>
 
-      {role === "ADMIN" && data.sales_scope === "all" && <SalesAccountBreakdown token={token} />}
-
+      <AnalyticsNavigation prefix="sales-analysis" value={section} onChange={setSection} sections={[
+        ...(role === "ADMIN" && data.sales_scope === "all" ? [{ id: "accounts", label: "Accounts" }] : []),
+        { id: "trends", label: "Trends" }, { id: "products", label: "Products" },
+      ]} />
+      {role === "ADMIN" && data.sales_scope === "all" && <div id="sales-analysis-accounts" className="analytics-panel" hidden={section !== "accounts"}><SalesAccountBreakdown token={token} /></div>}
+      <div id="sales-analysis-trends" className="analytics-panel" hidden={section !== "trends"}>
       <section className="total-sales-chart-grid">
         <SalesBarChart
           title="Daily Sales"
@@ -195,7 +201,8 @@ function TotalSales({ token, role, onBack }) {
           labelFor={(row) => formatDate(`${row.period}-01`, { month: "short" })}
         />
       </section>
-
+      </div>
+      <div id="sales-analysis-products" className="analytics-panel" hidden={section !== "products"}>
       <section className="dashboard-card total-sales-products">
         <div className="total-sales-products-heading">
           <div>
@@ -231,6 +238,7 @@ function TotalSales({ token, role, onBack }) {
           </div>
         )}
       </section>
+      </div>
     </div>
   );
 }

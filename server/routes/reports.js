@@ -10,7 +10,7 @@ import { getBusinessDate } from "../businessDate.js";
 const router = express.Router();
 router.use(requireSalesIdentity);
 const loaders = { sales: salesReport, inventory: inventoryReport, "vendor-deliveries": deliveryReport, "total-sales": totalSalesReport,
-  profits: (db, start, end) => profitReport(db, start, end, getBusinessDate()) };
+  profits: (db, start, end, user) => profitReport(db, start, end, getBusinessDate(), { includeAccounts: user.role === "ADMIN" }) };
 
 for (const [mode, load] of Object.entries(loaders)) {
   const roles = mode === "vendor-deliveries" ? ["ADMIN", "STAFF", "VENDOR"] : ["ADMIN", "STAFF"];
