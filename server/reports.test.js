@@ -40,6 +40,26 @@ function sqlite(rows) {
 }
 
 for (const backend of ["in-memory", "SQLite"]) {
+  test(`${backend}: inventory status uses 1–9 items regardless of configured minimum stock`, async () => {
+    const data = fixture();
+    data.products = [0, 1, 9, 10, 11].map((stock, index) => ({
+      id: index + 1, name: `Boundary ${stock}`, active: 1, current_stock: stock,
+      minimum_stock: stock < 10 ? 0 : 99,
+    }));
+    data.inventory_movements = [];
+    const db = backend === "SQLite" ? sqlite(data) : data;
+    try {
+      const rows = await inventoryReport(db, DAY, DAY);
+      for (const [stock, status] of [[0, "OUT_OF_STOCK"], [1, "LOW_STOCK"], [9, "LOW_STOCK"], [10, "OK"], [11, "OK"]]) {
+        assert.equal(rows.find((row) => row.product === `Boundary ${stock}`).stock_status, status);
+      }
+      const report = buildReportDocument("inventory", rows, { start: DAY, end: DAY }, {});
+      assert.equal(report.summary.find((metric) => metric.label === "Low-stock products").value, 2);
+      assert.equal(report.summary.find((metric) => metric.label === "Out-of-stock products").value, 1);
+      assert.match(reportCsv(report), /Boundary 9,0,0,9,0,LOW STOCK/);
+      assert.match(reportCsv(report), /Boundary 10,0,0,10,99,OK/);
+    } finally { if (backend === "SQLite") db.close(); }
+  });
   test(`${backend}: selected-day sales reconciles product totals and counts bulk returns once`, async () => {
     const db = backend === "SQLite" ? sqlite(fixture()) : fixture();
     try {

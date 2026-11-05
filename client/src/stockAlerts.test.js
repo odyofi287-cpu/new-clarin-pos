@@ -20,11 +20,13 @@ test("user-defined inventory categories intersect with search and stock status, 
 });
 
 test("stock statuses match the dashboard boundaries and numeric strings", () => {
-  assert.deepEqual(products.map(productStockStatus), ["out-of-stock", "low-stock", "low-stock", "in-stock", "out-of-stock", "out-of-stock"]);
+  assert.deepEqual(products.map(productStockStatus), ["out-of-stock", "low-stock", "in-stock", "in-stock", "out-of-stock", "out-of-stock"]);
+  assert.equal(productStockStatus({ current_stock: "9" }), "low-stock");
+  assert.equal(productStockStatus({ current_stock: "10" }), "in-stock");
 });
 
 test("filtered inventory excludes archived records and retains original product images", () => {
-  assert.deepEqual(activeInventoryProducts(products, "low-stock").map((product) => product.id), [2, 3]);
+  assert.deepEqual(activeInventoryProducts(products, "low-stock").map((product) => product.id), [2]);
   assert.deepEqual(activeInventoryProducts(products, "out-of-stock").map((product) => product.id), [1, 6]);
   assert.equal(activeInventoryProducts(products, "out-of-stock")[0], products[0]);
   assert.equal(activeInventoryProducts(products, "out-of-stock")[0].image_url, "water.jpg");

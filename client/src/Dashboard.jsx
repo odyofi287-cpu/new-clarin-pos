@@ -439,7 +439,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
         <div>
           <span className="management-kicker">{role === "VENDOR" ? "Read-only stock monitor" : "Live stock"}</span>
           <h2>{inventoryTitle}</h2>
-          <p>{selectedStockFilter === "low-stock" ? "Active products with 1 to 10 Items remaining. Plan your next restock." : selectedStockFilter === "out-of-stock" ? "Active products with no available stock. Review these products before the next sale or delivery." : role === "VENDOR" ? "Monitor the current stock of products available from the arena." : "Track products and their available stock at a glance."}</p>
+          <p>{selectedStockFilter === "low-stock" ? "Active products with 1 to 9 Items remaining. Plan your next restock." : selectedStockFilter === "out-of-stock" ? "Active products with no available stock. Review these products before the next sale or delivery." : role === "VENDOR" ? "Monitor the current stock of products available from the arena." : "Track products and their available stock at a glance."}</p>
         </div>
         <div className="management-count"><strong>{inventoryProducts.length}</strong><span>items</span></div>
       </div>

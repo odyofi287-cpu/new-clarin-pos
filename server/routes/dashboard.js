@@ -531,10 +531,10 @@ router.get("/total-sales", requireRole("ADMIN", "STAFF"), async (req, res) => {
 
 export async function getStockAlerts(db) {
   const products = isInMemoryDb(db)
-    ? db.products.filter((product) => Number(product.active ?? 1) === 1 && Number(product.current_stock || 0) <= 10)
+    ? db.products.filter((product) => Number(product.active ?? 1) === 1 && Number(product.current_stock || 0) < 10)
     : await dbAll(db,
         `SELECT id, name, category, image_url, current_stock, minimum_stock, unit
-         FROM products WHERE active = 1 AND current_stock <= 10
+         FROM products WHERE active = 1 AND current_stock < 10
          ORDER BY current_stock ASC, name ASC, id ASC`
       );
   const alerts = products.map((product) => ({

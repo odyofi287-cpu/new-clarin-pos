@@ -20,7 +20,7 @@ export function buildReportDocument(mode, data, range, user, generatedAt = new D
   } else if (mode === "inventory") {
     report.summary = [metric("Active products", data.length), metric("Stock-in items", sum(data, "stock_in")), metric("Stock-out items", sum(data, "stock_out")), metric("Low-stock products", data.filter((r) => r.stock_status === "LOW_STOCK").length), metric("Out-of-stock products", data.filter((r) => r.stock_status === "OUT_OF_STOCK").length)];
     report.sections = [{ title: "Stock movement and current inventory", columns: [column("product", "Product"), column("stock_in", "Stock in", "number"), column("stock_out", "Stock out", "number"), column("current_stock", "Current stock", "number"), column("minimum_stock", "Minimum stock", "number"), column("stock_status", "Status", "status")], rows: data }];
-    report.note = "Stock-in and stock-out movements are filtered by the selected business dates. Current stock, minimum stock, and stock status are live values at report generation, not historical closing balances. Adjustments and returns may also change current stock.";
+    report.note = "Stock-in and stock-out movements are filtered by the selected business dates. Current stock, minimum stock, and stock status are live values at report generation, not historical closing balances. Low stock means 1–9 items; zero stock is out of stock; 10 or more items are in stock, regardless of minimum stock. Quantity increases, including positive adjustments and returns, are recorded as Stock In.";
     if (user.role === "STAFF") {
       report.summary[0].label = "Products with my activity";
       report.sections[0].title = "My stock movements and shared stock levels";

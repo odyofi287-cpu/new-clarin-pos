@@ -125,7 +125,7 @@ for (const backend of ["in-memory", "SQLite"]) {
       sales: [], sale_items: [],
       products: [
         product(1, "Sold out", 0), product(2, "Negative balance", -1),
-        product(3, "Low boundary", 10), product(4, "Healthy stock", 11),
+        product(3, "Low boundary", 9), product(4, "Healthy stock", 10),
         product(5, "Archived product", 0, 0), product(6, "Low stock", 3),
         ...Array.from({ length: 11 }, (_, index) => product(index + 7, `Low product ${index}`, 5)),
       ],

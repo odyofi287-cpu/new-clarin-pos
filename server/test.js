@@ -1221,13 +1221,13 @@ test("Inventory flows: STOCK_OUT, LOW/OUT flags, STOCK_IN, ADJUSTMENT, and movem
   assert.strictEqual(body.data.current_stock, 20);
   assert.strictEqual(body.data.status, 'OK');
 
-  // Exactly 10 units is still LOW_STOCK.
+  // Exactly 10 items is healthy; only 1–9 items are LOW_STOCK.
   res = await fetch(`${base}/api/products/1/stock-movements`, { method: 'POST', headers: { 'content-type': 'application/json', Authorization: `Bearer ${admin}` }, body: JSON.stringify({ type: 'STOCK_OUT', quantity: 10 }) });
   assert.strictEqual(res.status, 200);
   res = await fetch(`${base}/api/products/1`, { headers: { Authorization: `Bearer ${admin}` } });
   body = await res.json();
   assert.strictEqual(body.data.current_stock, 10);
-  assert.strictEqual(body.data.status, 'LOW_STOCK');
+  assert.strictEqual(body.data.status, 'OK');
 
   res = await fetch(`${base}/api/products/1/stock-movements`, { method: 'POST', headers: { 'content-type': 'application/json', Authorization: `Bearer ${admin}` }, body: JSON.stringify({ type: 'STOCK_IN', quantity: 5 }) });
   assert.strictEqual(res.status, 200);

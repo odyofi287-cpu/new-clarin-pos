@@ -102,7 +102,7 @@ export async function inventoryReport(db, start, end, user) {
       WHERE p.active = 1 GROUP BY p.id ORDER BY p.name`);
   }
   return rows.map((row) => ({ ...row, stock_in: n(row.stock_in), stock_out: n(row.stock_out), current_stock: n(row.current_stock), minimum_stock: n(row.minimum_stock),
-    stock_status: n(row.current_stock) <= 0 ? "OUT_OF_STOCK" : n(row.current_stock) <= n(row.minimum_stock) ? "LOW_STOCK" : "OK",
+    stock_status: n(row.current_stock) <= 0 ? "OUT_OF_STOCK" : n(row.current_stock) < 10 ? "LOW_STOCK" : "OK",
   })).sort((a, b) => a.product.localeCompare(b.product));
 }
 

@@ -1,7 +1,7 @@
 import express from "express";
 import { requireRole } from "../middleware/auth.js";
 import { publishDataChange } from "../events.js";
-import { dbAll, dbGet, dbRun, isInMemoryDb, withTransaction } from "./dbCompat.js";
+import { dbAll, dbGet, dbRun, isInMemoryDb, isPostgresDb, withTransaction } from "./dbCompat.js";
 import { requireSalesIdentity } from "../salesScope.js";
 import { productEconomicsInput } from "../productEconomics.js";
 import { captureLegacyProfitCost } from "../legacyProfitCosts.js";
@@ -30,7 +30,7 @@ function computeStatus(product) {
   if (!product) return 'UNKNOWN';
   const stock = Number(product.current_stock ?? 0);
   if (stock <= 0) return 'OUT_OF_STOCK';
-  if (stock > 0 && stock <= 10) return 'LOW_STOCK';
+  if (stock > 0 && stock < 10) return 'LOW_STOCK';
   return 'OK';
 }
 
@@ -80,9 +80,9 @@ router.post("/", requireRole("ADMIN", "STAFF"), async (req, res) => {
       if (initial_stock > 0) {
         await dbRun(
           req.db,
-          "INSERT INTO inventory_movements (product_id, movement_type, quantity, reference_type, reference_id, user_id, created_at) VALUES ($1, 'STOCK_IN', $2, $3, $4, $5, CURRENT_TIMESTAMP) RETURNING id",
-          [created.lastInsertRowid, initial_stock, 'initial_stock', null, req.user.user_id || null],
-          "INSERT INTO inventory_movements (product_id, movement_type, quantity, reference_type, reference_id, user_id, created_at) VALUES (?, 'STOCK_IN', ?, ?, ?, ?, datetime('now'))"
+          "INSERT INTO inventory_movements (product_id, movement_type, quantity, reference_type, reference_id, user_id, created_at) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP) RETURNING id",
+          [created.lastInsertRowid, 'STOCK_IN', Number(initial_stock), 'initial_stock', null, req.user.user_id || null],
+          "INSERT INTO inventory_movements (product_id, movement_type, quantity, reference_type, reference_id, user_id, created_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))"
         );
       }
       return created;
@@ -117,6 +117,13 @@ router.put('/:id', requireRole('ADMIN','STAFF'), async (req,res) => {
     try { economics = productEconomicsInput(req.body, prod); } catch (error) { return res.status(400).json({ error: error.message }); }
     if (!String(name || '').trim()) return res.status(400).json({ error: 'Product name is required' });
     await withTransaction(req.db, async () => {
+      // Read the stock balance after acquiring the row lock, not from the earlier
+      // metadata-validation read. Concurrent sales/returns must not distort the delta.
+      const lockedProduct = await dbGet(req.db,
+        `SELECT id, current_stock, deleted_at FROM products WHERE id = $1${isPostgresDb(req.db) ? ' FOR UPDATE' : ''}`,
+        [id], 'SELECT id, current_stock, deleted_at FROM products WHERE id = ?');
+      if (!lockedProduct || lockedProduct.deleted_at) throw new Error('Product is no longer available for editing');
+      const previousStock = Number(lockedProduct.current_stock || 0);
       // Lock/capture an already-configured cost before changing its price.
       await captureLegacyProfitCost(req.db, id);
       const changed = await dbRun(req.db, 'UPDATE products SET name = $1, category = $2, selling_price = $3, unit = $4, minimum_stock = $5, image_url = $6, volume_ml = $7, quantity_per_case = $8, base_price = $9, markup_price = $10 WHERE id = $11 AND deleted_at IS NULL RETURNING id', [name.trim(), category ?? prod.category, economics.selling_price, unit || prod.unit, minimum_stock ?? prod.minimum_stock, normalizedImageUrl, economics.volume_ml, economics.quantity_per_case, economics.base_price, economics.markup_price, id], 'UPDATE products SET name = ?, category = ?, selling_price = ?, unit = ?, minimum_stock = ?, image_url = ?, volume_ml = ?, quantity_per_case = ?, base_price = ?, markup_price = ? WHERE id = ? AND deleted_at IS NULL');
@@ -125,9 +132,9 @@ router.put('/:id', requireRole('ADMIN','STAFF'), async (req,res) => {
       await captureLegacyProfitCost(req.db, id);
       if (stockValue !== null) {
         await dbRun(req.db, 'UPDATE products SET current_stock = $1 WHERE id = $2 RETURNING id', [stockValue, id], 'UPDATE products SET current_stock = ? WHERE id = ?');
-        const delta = stockValue - Number(prod.current_stock || 0);
+        const delta = stockValue - previousStock;
         if (delta !== 0) {
-          await dbRun(req.db, "INSERT INTO inventory_movements (product_id, movement_type, quantity, reference_type, reference_id, user_id, created_at) VALUES ($1, $2, $3, 'manual_adjustment', $4, $5, CURRENT_TIMESTAMP) RETURNING id", [id, delta > 0 ? 'STOCK_IN' : 'STOCK_OUT', Math.abs(delta), id, req.user.user_id || null], "INSERT INTO inventory_movements (product_id, movement_type, quantity, reference_type, reference_id, user_id, created_at) VALUES (?, ?, ?, 'manual_adjustment', ?, ?, datetime('now'))");
+          await dbRun(req.db, "INSERT INTO inventory_movements (product_id, movement_type, quantity, reference_type, reference_id, user_id, created_at) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP) RETURNING id", [id, delta > 0 ? 'STOCK_IN' : 'STOCK_OUT', Math.abs(delta), 'manual_adjustment', id, req.user.user_id || null], "INSERT INTO inventory_movements (product_id, movement_type, quantity, reference_type, reference_id, user_id, created_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))");
         }
       }
     });
@@ -168,29 +175,30 @@ router.get('/:id', requireRole('ADMIN','STAFF','VENDOR'), async (req,res)=>{
 router.post('/:id/stock-movements', requireRole('ADMIN','STAFF'), async (req,res) => {
   try {
     const id = Number(req.params.id);
-    const { type, quantity, reference_type = null, reference_id = null, note = null, delta } = req.body;
+    const { type, quantity, reference_type = null, reference_id = null, delta } = req.body;
     if (!['STOCK_IN','STOCK_OUT','ADJUSTMENT'].includes(type)) return res.status(400).json({ error: 'invalid type' });
-    if (typeof quantity !== 'number' && typeof delta !== 'number') return res.status(400).json({ error: 'quantity or delta required' });
-    const qty = Math.abs(Number(quantity || Math.abs(delta || 0)));
-    let change = 0;
-    if (type === 'STOCK_IN') change = qty;
-    else if (type === 'STOCK_OUT') change = -qty;
-    else if (type === 'ADJUSTMENT') change = Number(delta || 0);
-
-    // vendor may only create STOCK_IN
-    if (req.user.role === 'VENDOR' && type !== 'STOCK_IN') return res.status(403).json({ error: 'Vendors may only add stock via STOCK_IN' });
+    const amount = type === 'ADJUSTMENT' ? delta : (quantity ?? delta);
+    if (!Number.isSafeInteger(amount) || amount === 0 || (type !== 'ADJUSTMENT' && amount < 0)) {
+      return res.status(400).json({ error: type === 'ADJUSTMENT' ? 'Adjustment must be a non-zero whole-number delta' : 'Quantity must be a positive whole number' });
+    }
+    const change = type === 'STOCK_OUT' ? -amount : amount;
+    const qty = Math.abs(change);
+    // Report the actual stock direction, even when the request is an adjustment.
+    const movementType = change > 0 ? 'STOCK_IN' : 'STOCK_OUT';
+    const movementReference = reference_type ?? (type === 'ADJUSTMENT' ? 'manual_adjustment' : null);
 
     // Transaction wrapper: if db supports transaction, use it
     const result = await withTransaction(req.db, async () => {
-      const prod = await dbGet(req.db, 'SELECT id, current_stock, deleted_at FROM products WHERE id = $1', [id], 'SELECT id, current_stock, deleted_at FROM products WHERE id = ?');
+      const prod = await dbGet(req.db, `SELECT id, current_stock, deleted_at FROM products WHERE id = $1${isPostgresDb(req.db) ? ' FOR UPDATE' : ''}`, [id], 'SELECT id, current_stock, deleted_at FROM products WHERE id = ?');
       if (!prod) throw new Error('Product not found');
       if (prod.deleted_at) throw new Error('Deleted products only accept stock adjustments from their existing deliveries and returns');
       const current = Number(prod.current_stock || 0);
       const newStock = current + change;
+      if (!Number.isSafeInteger(newStock)) throw new Error('Stock quantity is outside the supported range');
       if (newStock < 0) throw new Error('Insufficient stock');
       const changed = await dbRun(req.db, 'UPDATE products SET current_stock = $1 WHERE id = $2 AND deleted_at IS NULL RETURNING id', [newStock, id], 'UPDATE products SET current_stock = ? WHERE id = ? AND deleted_at IS NULL');
       if (!changed.changes) throw new Error('Product is no longer available for manual stock changes');
-      await dbRun(req.db, "INSERT INTO inventory_movements (product_id, movement_type, quantity, reference_type, reference_id, user_id, created_at) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP) RETURNING id", [id, type, qty, reference_type, reference_id, req.user.user_id || null], "INSERT INTO inventory_movements (product_id, movement_type, quantity, reference_type, reference_id, user_id, created_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))");
+      await dbRun(req.db, "INSERT INTO inventory_movements (product_id, movement_type, quantity, reference_type, reference_id, user_id, created_at) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP) RETURNING id", [id, movementType, qty, movementReference, reference_id, req.user.user_id || null], "INSERT INTO inventory_movements (product_id, movement_type, quantity, reference_type, reference_id, user_id, created_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))");
       return { id, previous: current, current: newStock };
     });
 
