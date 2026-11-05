@@ -97,10 +97,10 @@ test("daily, monthly and yearly ranges include endpoints and do not merge same-n
   assert.equal((await accountSalesReport(db, "2026-11-05", "2026-11-05")).accounts.find((row) => row.user_id === 3).username, "new.username");
 });
 
-test("account sales API is read-only, validates dates and remains restricted to Admin/Staff", async (t) => {
+test("account sales API is read-only, validates dates and is restricted to Admin", async (t) => {
   const request = await api(t, memoryFixture());
   const url = "/dashboard/account-sales?start_date=2026-11-05&end_date=2026-11-05";
-  for (const role of ["ADMIN", "STAFF"]) {
+  for (const role of ["ADMIN"]) {
     const response = await request(url, role);
     assert.equal(response.status, 200);
     assert.equal(response.cache, "no-store");
@@ -108,7 +108,8 @@ test("account sales API is read-only, validates dates and remains restricted to 
     assert.doesNotMatch(JSON.stringify(response.body.data), /password|email|role_id/);
   }
   assert.equal((await request(url, "VENDOR")).status, 403);
-  for (const query of ["start_date=2026-11-05", "start_date=2026-02-31&end_date=2026-03-01", "start_date=2026-11-05&end_date=2026-11-01"]) assert.equal((await request(`/dashboard/account-sales?${query}`)).status, 400);
+  assert.equal((await request(url, "STAFF")).status, 403);
+  for (const query of ["start_date=2026-11-05", "start_date=2026-02-31&end_date=2026-03-01", "start_date=2026-11-05&end_date=2026-11-01"]) assert.equal((await request(`/dashboard/account-sales?${query}`, "ADMIN")).status, 400);
 });
 
 test("real SQL account aggregation matches memory without multiplying bulk transactions", async (t) => {

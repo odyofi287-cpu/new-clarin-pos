@@ -579,7 +579,7 @@ function App() {
                     <span />
                   </button>
                   <div>
-                  <h2>{view === "dashboard" ? "Dashboard" : view === "profits" ? "Profits" : view === "total-sales" ? "Total Sales" : view === "pos" ? "POS" : view === "products" ? "Products" : view === "inventory" ? "Inventory" : view === "deliveries" ? "Deliveries" : view === "sales-history" ? "Sales & Pickup History" : view === "users" ? "Account Management" : "Reports"}</h2>
+                  <h2>{view === "dashboard" ? "Dashboard" : view === "profits" ? "Profits" : view === "total-sales" ? (role === "ADMIN" ? "Total Sales" : "My Sales") : view === "pos" ? "POS" : view === "products" ? "Products" : view === "inventory" ? "Inventory" : view === "deliveries" ? "Deliveries" : view === "sales-history" ? "Sales & Pickup History" : view === "users" ? "Account Management" : "Reports"}</h2>
                   </div>
                 </div>
                 <div className="workspace-meta">
@@ -593,16 +593,16 @@ function App() {
                 className={`workspace-view-transition ${transitionDirection === "backward" ? "is-backward" : "is-forward"}`}
                 aria-live="polite"
               >
-                {view === "dashboard" && <Dashboard token={token} role={role} vendorId={vendorId} viewMode="dashboard" onNavigate={navigate} />}
-                {view === "total-sales" && role !== "VENDOR" && <TotalSales token={token} onBack={() => navigate("dashboard")} />}
-                {view === "profits" && role !== "VENDOR" && <Profits token={token} onBack={() => navigate("dashboard")} />}
+                {view === "dashboard" && <Dashboard key={`${token}:${role}`} token={token} role={role} vendorId={vendorId} viewMode="dashboard" onNavigate={navigate} />}
+                {view === "total-sales" && role !== "VENDOR" && <TotalSales key={`${token}:${role}`} token={token} role={role} onBack={() => navigate("dashboard")} />}
+                {view === "profits" && role !== "VENDOR" && <Profits key={`${token}:${role}`} token={token} onBack={() => navigate("dashboard")} />}
                 {view === "pos" && <POS token={token} role={role} vendorId={vendorId} viewMode="pos" />}
                 {view === "products" && <Dashboard token={token} role={role} vendorId={vendorId} viewMode="products" />}
                 {view === "inventory" && <Dashboard token={token} role={role} vendorId={vendorId} viewMode="inventory" stockFilter={inventoryStockFilter} onStockFilterChange={setInventoryStockFilter} />}
                 {view === "deliveries" && <POS token={token} role={role} vendorId={vendorId} viewMode="deliveries" />}
                 {view === "sales-history" && <POS token={token} role={role} vendorId={vendorId} viewMode="sales-history" />}
                 {view === "users" && <AccountManagement token={token} />}
-                {view === "reports" && <Reports token={token} role={role} vendorId={vendorId} />}
+                {view === "reports" && <Reports key={`${token}:${role}`} token={token} role={role} vendorId={vendorId} />}
               </div>
             </section>
           </div>

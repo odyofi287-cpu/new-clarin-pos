@@ -55,7 +55,7 @@ export default function Profits({ token, onBack }) {
 
   return <div className="dashboard-shell total-sales-page profits-page">
     <section className="total-sales-hero">
-      <div><button type="button" className="total-sales-back" onClick={onBack}>Back to dashboard</button><span className="management-kicker">Profit intelligence</span><h2>Profits</h2><p>Gross profit from recorded sales and deliveries, less the margin reversed by returns.</p></div>
+      <div><button type="button" className="total-sales-back" onClick={onBack}>Back to dashboard</button><span className="management-kicker">Profit intelligence</span><h2>{data?.sales_scope === "own" ? "My Profits" : "Profits"}</h2><p>{data?.sales_scope === "own" ? "Your account only: gross profit from your recorded sales and deliveries, less returns against your deliveries." : "Gross profit from recorded sales and deliveries, less the margin reversed by returns."}</p></div>
       <div className="total-sales-hero-total"><span>Selected range profit</span><strong>{data ? cash(rangeSummary.gross_profit) : "—"}</strong><small>{data ? `${date(data.start_date)} – ${date(data.end_date)}` : "Loading profit data…"}</small></div>
     </section>
     <section className="dashboard-card profit-range-card">

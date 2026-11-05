@@ -190,13 +190,14 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
       })
         .then((res) => res.json())
         .then((payload) => {
+          if (!active) return;
           if (payload.error) {
             setError(payload.error);
           } else {
             setData(payload.data);
           }
         })
-        .catch(() => setError("Unable to load dashboard"));
+        .catch(() => { if (active) setError("Unable to load dashboard"); });
     };
 
     loadDashboard();
@@ -487,25 +488,25 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
       {viewMode === "dashboard" && (
         <div className="dashboard-grid dashboard-metric-grid">
             <button type="button" className="metric-card total-sales-launch" onClick={() => onNavigate?.("total-sales")}>
-              <span className="metric-label">Sales</span>
+              <span className="metric-label">{data.sales_scope === "own" ? "My Sales" : "Sales"}</span>
               <strong>{formatCurrency(data.calculated_todays_sales)}</strong>
-              <span className="total-sales-launch-footer"><b>View analytics →</b></span>
+              <span className="total-sales-launch-footer"><b>{data.sales_scope === "own" ? "Your account only · View analytics →" : "All accounts · View analytics →"}</b></span>
             </button>
             <button type="button" className="metric-card total-sales-launch profit-launch" onClick={() => onNavigate?.("profits")}>
-              <span className="metric-label">Today's profit</span>
+              <span className="metric-label">{data.sales_scope === "own" ? "My profit today" : "Today's profit"}</span>
               <strong>{formatCurrency(data.todays_profit)}</strong>
               <span className="total-sales-launch-footer"><b>{data.profit_missing_cost_items ? "Some Items need a base price · View details →" : data.profit_estimated_cost_items ? "Includes estimated historical costs · View details →" : "View profit analytics →"}</b></span>
             </button>
             <div className="metric-card">
-              <span className="metric-label">Today's delivery value</span>
+              <span className="metric-label">{data.sales_scope === "own" ? "My delivery value today" : "Today's delivery value"}</span>
               <strong>{formatCurrency(data.todays_total_deliveries)}</strong>
             </div>
             <div className="metric-card" title="Today's recorded sales, vendor pickups, and return batches. Each bulk transaction counts once.">
-              <span className="metric-label">Transaction count</span>
+              <span className="metric-label">{data.sales_scope === "own" ? "My transaction count" : "Transaction count"}</span>
               <strong>{data.todays_transaction_count}</strong>
             </div>
             <div className="metric-card" title="Today's recorded sale items plus delivered items minus returned items.">
-              <span className="metric-label">Items sold today</span>
+              <span className="metric-label">{data.sales_scope === "own" ? "My Items sold today" : "Items sold today"}</span>
               <strong>{data.items_sold_today}</strong>
             </div>
             <div className="metric-card">
@@ -537,7 +538,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
             <InventoryStatusChart products={productsList} onOpenStockFilter={openStockList} />
           </section>
 
-          <SalesCalendar calendar={data.sales_calendar} token={token} />
+          <SalesCalendar key={`${token}:${role}`} calendar={data.sales_calendar} token={token} ownSales={data.sales_scope === "own"} />
 
         </>
       )}

@@ -1006,9 +1006,13 @@ test("Staff dashboard returns operational metrics", async () => {
     fetch(`${base}/api/vendor-returns`, { headers: historyHeaders }).then((response) => response.json()),
   ]);
   const today = getBusinessDate();
-  const todaysSales = salesHistory.data.filter((sale) => sale.sale_date === today);
-  const todaysDeliveries = deliveryHistory.data.filter((delivery) => delivery.delivery_date === today);
-  const todaysReturns = returnHistory.data.filter((entry) => entry.return_date === today);
+  const accountId = jwt.decode(token).user_id;
+  assert.strictEqual(body.data.sales_scope, "own");
+  assert.strictEqual(body.data.sales_account_id, accountId);
+  const ownDeliveryIds = new Set(deliveryHistory.data.filter((delivery) => Number(delivery.actor_id) === Number(accountId)).map((delivery) => Number(delivery.id)));
+  const todaysSales = salesHistory.data.filter((sale) => sale.sale_date === today && Number(sale.actor_id) === Number(accountId));
+  const todaysDeliveries = deliveryHistory.data.filter((delivery) => delivery.delivery_date === today && ownDeliveryIds.has(Number(delivery.id)));
+  const todaysReturns = returnHistory.data.filter((entry) => entry.return_date === today && ownDeliveryIds.has(Number(entry.delivery_id)));
   const deliveryDetails = await Promise.all(todaysDeliveries.map((delivery) =>
     fetch(`${base}/api/deliveries/${delivery.id}`, { headers: historyHeaders })
       .then((response) => response.json())));
@@ -1059,7 +1063,7 @@ test("Staff can view recorded sales history", async () => {
 });
 
 test("Vendor delivery CSV exports ISO dates", async () => {
-  const token = await login("admin@clarin.local", "Admin123!");
+  const token = await login("superadmin@clarin.local", "Superadmin123!");
   const res = await fetch(`${base}/api/reports/vendor-deliveries/csv?start_date=2026-01-01&end_date=2026-12-31`, {
     headers: { Authorization: `Bearer ${token}` },
   });

@@ -6,7 +6,7 @@ import "./SalesCalendar.css";
 const dateLabel = (value) => formatReportValue(value, "date");
 const money = (value) => formatReportValue(value, "money");
 
-export default function SalesCalendar({ calendar, token }) {
+export default function SalesCalendar({ calendar, token, ownSales = false }) {
   const [mode, setMode] = useState("daily");
   const dailyRows = calendar?.daily || [];
   const monthlyRows = calendar?.monthly || [];
@@ -87,7 +87,7 @@ export default function SalesCalendar({ calendar, token }) {
   return (
     <section className="sales-calendar-card">
       <div className="sales-calendar-heading">
-        <div><span className="chart-kicker">Sales recorder</span><h3>Sales Calendar</h3><p>Compare recorded and net sales by period.</p></div>
+        <div><span className="chart-kicker">Sales recorder</span><h3>{ownSales ? "My Sales Calendar" : "Sales Calendar"}</h3><p>{ownSales ? "Your account only. Compare your recorded and net sales by period." : "Compare recorded and net sales by period."}</p></div>
         <div className="sales-calendar-tabs" role="group" aria-label="Sales calendar period">
           {[{ id: "daily", label: "Daily" }, { id: "monthly", label: "Monthly" }, { id: "range", label: "Date range" }].map((tab) => (
             <button type="button" key={tab.id} className={mode === tab.id ? "active" : ""} aria-pressed={mode === tab.id} onClick={() => setMode(tab.id)}>{tab.label}</button>

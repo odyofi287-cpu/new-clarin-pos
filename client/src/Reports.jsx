@@ -10,6 +10,9 @@ const REPORTS = {
   inventory: { title: "Inventory", description: "Stock movement and current levels" },
   "vendor-deliveries": { title: "Deliveries", description: "Grouped pickups and delivery value" },
 };
+const reportDetails = (id, role) => role === "STAFF" && id !== "inventory" && REPORTS[id]
+  ? { title: id === "total-sales" ? "My Sales" : `My ${REPORTS[id].title}`, description: `Your account only · ${REPORTS[id].description}` }
+  : REPORTS[id];
 
 function Reports({ token, role, initialMode }) {
   const defaultMode = initialMode || (role === "VENDOR" ? "vendor-deliveries" : "sales");
@@ -28,7 +31,7 @@ function Reports({ token, role, initialMode }) {
   const query = allTime ? "scope=all-time" : new URLSearchParams(range).toString();
   const key = `${role}:${mode}:${query}:${token}`;
   const report = result?.key === key ? result.report : null;
-  const selected = REPORTS[mode] || REPORTS.sales;
+  const selected = reportDetails(mode, role) || REPORTS.sales;
 
   useEffect(() => { setMode(defaultMode); setPrintPreview(null); }, [defaultMode, role]);
 
@@ -86,7 +89,7 @@ function Reports({ token, role, initialMode }) {
 
     <section className="reports-control-card">
       <div className="reports-section-heading"><div><span className="reports-section-label">1. Report type</span><h3>{selected.title}</h3><p>{selected.description}</p></div><span className="reports-range-badge">{allTime ? "All time" : dateMode === "day" ? range.start_date : `${range.start_date} to ${range.end_date}`}</span></div>
-      <div className="reports-type-grid">{allowedModes.map((id) => <button type="button" key={id} aria-pressed={mode === id} className={`report-type-button ${mode === id ? "selected" : ""}`} onClick={() => { setMode(id); if (dateMode === "all-time" && id !== "total-sales") { setDateMode("day"); setRange({ start_date: range.start_date, end_date: range.start_date }); } }} disabled={exporting}><strong>{REPORTS[id].title}</strong><span>{REPORTS[id].description}</span></button>)}</div>
+      <div className="reports-type-grid">{allowedModes.map((id) => <button type="button" key={id} aria-pressed={mode === id} className={`report-type-button ${mode === id ? "selected" : ""}`} onClick={() => { setMode(id); if (dateMode === "all-time" && id !== "total-sales") { setDateMode("day"); setRange({ start_date: range.start_date, end_date: range.start_date }); } }} disabled={exporting}><strong>{reportDetails(id, role).title}</strong><span>{reportDetails(id, role).description}</span></button>)}</div>
       <div className="reports-divider" />
       <div className="reports-date-heading"><span className="reports-section-label">2. Calendar dates</span><div className="reports-date-mode" role="group" aria-label="Reporting period"><button type="button" aria-pressed={dateMode === "day"} className={dateMode === "day" ? "selected" : ""} disabled={exporting} onClick={() => { setDateMode("day"); setRange({ start_date: range.start_date, end_date: range.start_date }); }}>Specific day</button><button type="button" aria-pressed={dateMode === "range"} className={dateMode === "range" ? "selected" : ""} disabled={exporting} onClick={() => setDateMode("range")}>Date range</button>{mode === "total-sales" && <button type="button" aria-pressed={allTime} className={allTime ? "selected" : ""} disabled={exporting} onClick={() => setDateMode("all-time")}>All time</button>}</div></div>
       <div className="reports-export-row">

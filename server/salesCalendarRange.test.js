@@ -86,7 +86,14 @@ test("PostgreSQL range uses bound dates, indexed predicates, one statement and n
 
 test("sales calendar API permits Admin/Staff, denies Vendors, validates dates and returns matching totals", async (t) => {
   const app = express();
-  app.use((req, res, next) => { req.db = fixture(); req.user = { role: req.headers["x-test-role"] }; next(); });
+  app.use((req, res, next) => {
+    req.db = fixture();
+    req.db.sales.forEach((row) => { row.user_id = 3; });
+    req.db.deliveries.forEach((row, index) => { row.id = index + 1; row.created_by = 3; });
+    req.db.vendor_returns.forEach((row) => { row.delivery_id = 1; });
+    req.db.delivery_items = [];
+    req.user = { role: req.headers["x-test-role"], user_id: 3 }; next();
+  });
   app.use("/dashboard", dashboardRoutes);
   const server = app.listen(0);
   t.after(() => new Promise((resolve) => server.close(resolve)));

@@ -71,7 +71,7 @@ function SalesBarChart({ title, description, rows, labelFor }) {
   );
 }
 
-function TotalSales({ token, onBack }) {
+function TotalSales({ token, role, onBack }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
@@ -128,10 +128,11 @@ function TotalSales({ token, onBack }) {
   }
 
   if (!data) {
-    return <div className="dashboard-shell total-sales-page"><p>Loading total sales...</p></div>;
+    return <div className="dashboard-shell total-sales-page"><p>Loading sales...</p></div>;
   }
 
   const summary = data.summary || {};
+  const ownSales = data.sales_scope === "own";
 
   return (
     <div className="dashboard-shell total-sales-page">
@@ -139,11 +140,11 @@ function TotalSales({ token, onBack }) {
         <div>
           <button type="button" className="total-sales-back" onClick={onBack}>Back to dashboard</button>
           <span className="management-kicker">Sales intelligence</span>
-          <h2>Total Sales</h2>
-          <p>Sales are calculated as recorded sales plus deliveries, less recorded returns.</p>
+          <h2>{ownSales ? "My Sales" : "Total Sales"}</h2>
+          <p>{ownSales ? "Only sales and deliveries recorded by your account are included. Returns deduct from your original deliveries." : "Sales are calculated as recorded sales plus deliveries, less recorded returns."}</p>
         </div>
         <div className="total-sales-hero-total">
-          <span>All-time sales</span>
+          <span>{ownSales ? "My all-time sales" : "All-time sales"}</span>
           <strong>{formatCurrency(summary.all_time?.total)}</strong>
           <small>{formatCurrency(summary.all_time?.recorded_sales)} + {formatCurrency(summary.all_time?.delivery_total)} − {formatCurrency(summary.all_time?.return_total)}</small>
         </div>
@@ -168,11 +169,11 @@ function TotalSales({ token, onBack }) {
         <article className="total-sales-summary-card is-items">
           <span>Returns deducted</span>
           <strong>-{formatCurrency(summary.all_time?.return_total)}</strong>
-          <small>All-time recorded vendor returns</small>
+          <small>{ownSales ? "Returns from your deliveries" : "All-time recorded vendor returns"}</small>
         </article>
       </section>
 
-      <SalesAccountBreakdown token={token} />
+      {role === "ADMIN" && data.sales_scope === "all" && <SalesAccountBreakdown token={token} />}
 
       <section className="total-sales-chart-grid">
         <SalesBarChart

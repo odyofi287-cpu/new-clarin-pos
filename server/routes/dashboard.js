@@ -5,8 +5,10 @@ import { getBusinessDate } from "../businessDate.js";
 import { getSalesCalendarRange, salesCalendarRangeInput } from "../salesCalendarRange.js";
 import { getProfitEvents, summarizeProfit, profitReport } from "../profitData.js";
 import { accountSalesReport } from "../accountSales.js";
+import { requireSalesIdentity, salesReportingDb, salesScope } from "../salesScope.js";
 
 const router = express.Router();
+router.use(requireSalesIdentity);
 
 function getTodayString() {
   return getBusinessDate();
@@ -367,7 +369,7 @@ router.get("/", requireRole("ADMIN", "STAFF", "VENDOR"), async (req, res) => {
   }
 });
 
-router.get("/account-sales", requireRole("ADMIN", "STAFF"), async (req, res) => {
+router.get("/account-sales", requireRole("ADMIN"), async (req, res) => {
   let range;
   try { range = salesCalendarRangeInput(req.query); }
   catch (error) { return res.status(400).json({ error: error.message }); }
@@ -379,7 +381,7 @@ router.get("/profits", requireRole("ADMIN", "STAFF"), async (req, res) => {
   let range;
   try { range = salesCalendarRangeInput(req.query); }
   catch (error) { return res.status(400).json({ error: error.message }); }
-  try { res.set("Cache-Control", "no-store").json({ data: await profitReport(req.db, range.start, range.end, getTodayString()) }); }
+  try { res.json({ data: { ...await profitReport(await salesReportingDb(req.db, req.user), range.start, range.end, getTodayString()), ...salesScope(req.user) } }); }
   catch (error) { console.error(error); res.status(500).json({ error: "Unable to load profit analytics" }); }
 });
 
@@ -391,7 +393,7 @@ router.get("/sales-calendar", requireRole("ADMIN", "STAFF"), async (req, res) =>
     return res.status(400).json({ error: error.message });
   }
   try {
-    res.json({ data: await getSalesCalendarRange(req.db, range.start, range.end) });
+    res.json({ data: { ...await getSalesCalendarRange(await salesReportingDb(req.db, req.user), range.start, range.end), ...salesScope(req.user) } });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Unable to load sales for this date range" });
@@ -400,6 +402,7 @@ router.get("/sales-calendar", requireRole("ADMIN", "STAFF"), async (req, res) =>
 
 router.get("/total-sales", requireRole("ADMIN", "STAFF"), async (req, res) => {
   try {
+    const reportingDb = await salesReportingDb(req.db, req.user);
     const today = getTodayString();
     let sales;
     let deliveries;
@@ -407,11 +410,11 @@ router.get("/total-sales", requireRole("ADMIN", "STAFF"), async (req, res) => {
     let products;
     let allTimeSummary;
 
-    if (isInMemoryDb(req.db)) {
-      sales = req.db.sales.map((sale) => ({ ...sale }));
-      deliveries = req.db.deliveries.map((delivery) => ({ ...delivery }));
-      returns = req.db.vendor_returns.map((entry) => ({ ...entry }));
-      products = buildProductSales(req.db.products, req.db.sale_items, req.db.delivery_items, req.db.vendor_returns);
+    if (isInMemoryDb(reportingDb)) {
+      sales = reportingDb.sales.map((sale) => ({ ...sale }));
+      deliveries = reportingDb.deliveries.map((delivery) => ({ ...delivery }));
+      returns = reportingDb.vendor_returns.map((entry) => ({ ...entry }));
+      products = buildProductSales(reportingDb.products, reportingDb.sale_items, reportingDb.delivery_items, reportingDb.vendor_returns);
       const recordedSales = sales.reduce((sum, sale) => sum + Number(sale.total_amount || 0), 0);
       const deliveryTotal = deliveries.reduce((sum, delivery) => sum + Number(delivery.total_amount || 0), 0);
       const returnTotal = returns.reduce((sum, entry) => sum + Number(entry.total_product_price_returned || 0), 0);
@@ -522,6 +525,7 @@ router.get("/total-sales", requireRole("ADMIN", "STAFF"), async (req, res) => {
     res.json({
       data: {
         generated_for: today,
+        ...salesScope(req.user),
         summary: {
           ...periods.current,
           all_time: allTimeSummary,
@@ -572,29 +576,30 @@ export async function getStockAlerts(db) {
 
 async function operationalDashboard(req, res) {
   const today = getTodayString();
-  const activityCounts = await getDailyActivityCounts(req.db, today);
+  const reportingDb = await salesReportingDb(req.db, req.user);
+  const activityCounts = await getDailyActivityCounts(reportingDb, today);
   const stockAlerts = await getStockAlerts(req.db);
-  const todayProfit = summarizeProfit(await getProfitEvents(req.db, today, today));
+  const todayProfit = summarizeProfit(await getProfitEvents(reportingDb, today, today));
 
-  if (isInMemoryDb(req.db)) {
-    const salesToday = req.db.sales.filter((sale) => sale.sale_date === today);
-    const totalSales = salesToday.reduce((sum, sale) => sum + sale.total_amount, 0);
-    const deliveriesToday = req.db.deliveries.filter((delivery) => delivery.delivery_date === today);
+  if (isInMemoryDb(reportingDb)) {
+    const salesToday = reportingDb.sales.filter((sale) => getCalendarDateKey(sale.sale_date) === today);
+    const totalSales = salesToday.reduce((sum, sale) => sum + Number(sale.total_amount || 0), 0);
+    const deliveriesToday = reportingDb.deliveries.filter((delivery) => getCalendarDateKey(delivery.delivery_date) === today);
     const totalDeliveries = deliveriesToday.reduce((sum, delivery) => sum + Number(delivery.total_amount || 0), 0);
-    const returnsToday = req.db.vendor_returns.filter((entry) => entry.return_date === today);
+    const returnsToday = reportingDb.vendor_returns.filter((entry) => getCalendarDateKey(entry.return_date) === today);
     const totalReturns = returnsToday.reduce((sum, entry) => sum + Number(entry.total_product_price_returned || 0), 0);
     const calculatedSales = totalSales + totalDeliveries - totalReturns;
-    const salesCalendar = buildSalesCalendar(req.db.sales, req.db.deliveries, req.db.vendor_returns);
+    const salesCalendar = buildSalesCalendar(reportingDb.sales, reportingDb.deliveries, reportingDb.vendor_returns);
 
-    const activeProducts = req.db.products.filter((p) => Number(p.active ?? 1) === 1);
+    const activeProducts = reportingDb.products.filter((p) => Number(p.active ?? 1) === 1);
     const totalCurrentInventory = activeProducts.reduce((sum, p) => sum + Number(p.current_stock || 0), 0);
-    const recentSales = req.db.sales
+    const recentSales = reportingDb.sales
       .slice()
-      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .sort((a, b) => String(b.created_at || b.sale_date).localeCompare(String(a.created_at || a.sale_date)))
       .slice(0, 5)
       .map((sale) => {
-        const items = req.db.sale_items.filter((item) => item.sale_id === sale.id);
-        const user = req.db.users.find((u) => u.id === sale.user_id);
+        const items = reportingDb.sale_items.filter((item) => Number(item.sale_id) === Number(sale.id));
+        const user = reportingDb.users.find((u) => Number(u.id) === Number(sale.user_id));
         return {
           id: sale.id,
           sale_date: sale.sale_date,
@@ -604,12 +609,12 @@ async function operationalDashboard(req, res) {
         };
       });
 
-    const recentDeliveries = req.db.deliveries
+    const recentDeliveries = reportingDb.deliveries
       .slice()
-      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .sort((a, b) => String(b.created_at || b.delivery_date).localeCompare(String(a.created_at || a.delivery_date)))
       .slice(0, 5)
       .map((delivery) => {
-        const vendor = req.db.vendors.find((v) => v.id === delivery.vendor_id);
+        const vendor = reportingDb.vendors.find((v) => Number(v.id) === Number(delivery.vendor_id));
         return {
           id: delivery.id,
           delivery_date: delivery.delivery_date,
@@ -620,6 +625,7 @@ async function operationalDashboard(req, res) {
 
     return res.json({
       data: {
+        ...salesScope(req.user),
         todays_total_sales: totalSales,
         todays_total_deliveries: totalDeliveries,
         todays_total_vendor_returns: totalReturns,
@@ -699,6 +705,7 @@ async function operationalDashboard(req, res) {
 
   return res.json({
     data: {
+      ...salesScope(req.user),
       todays_total_sales: todaysTotalSales,
       todays_total_deliveries: todaysTotalDeliveries,
       todays_total_vendor_returns: todaysTotalVendorReturns,
