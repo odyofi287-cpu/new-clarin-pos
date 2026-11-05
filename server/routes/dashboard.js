@@ -6,6 +6,7 @@ import { getSalesCalendarRange, salesCalendarRangeInput } from "../salesCalendar
 import { getProfitEvents, summarizeProfit, profitReport } from "../profitData.js";
 import { accountSalesReport } from "../accountSales.js";
 import { requireSalesIdentity, salesReportingDb, salesScope } from "../salesScope.js";
+import { addDeliveryPaymentAccounts, buildDeliveryPaymentAccounts } from "../deliveryPayments.js";
 
 const router = express.Router();
 router.use(requireSalesIdentity);
@@ -258,8 +259,7 @@ export function buildSalesCalendar(sales, deliveries, returns, todayKey = getTod
   return { daily, monthly };
 }
 
-export function buildVendorPaymentSummary(deliveries = [], returns = []) {
-  const deductionsByDelivery = new Map();
+export function buildVendorPaymentSummary(deliveries = [], returns = [], deliveryItems) {
   let unallocatedReturnAmount = 0;
   for (const entry of returns) {
     const amount = Number(entry.total_product_price_returned || 0);
@@ -267,20 +267,17 @@ export function buildVendorPaymentSummary(deliveries = [], returns = []) {
       unallocatedReturnAmount += amount;
       continue;
     }
-    const deliveryId = Number(entry.delivery_id);
-    deductionsByDelivery.set(deliveryId, (deductionsByDelivery.get(deliveryId) || 0) + amount);
   }
-  const paidDeliveries = deliveries.filter(
+  const accounts = buildDeliveryPaymentAccounts(deliveries, returns, deliveryItems);
+  const paidDeliveries = accounts.filter(
     (delivery) => String(delivery.payment_status || "UNPAID").toUpperCase() === "PAID"
   );
-  const unpaidDeliveries = deliveries.filter(
-    (delivery) => String(delivery.payment_status || "UNPAID").toUpperCase() !== "PAID"
+  const unpaidDeliveries = accounts.filter(
+    (delivery) => delivery.payment_status === "UNPAID"
   );
+  const fullyReturnedDeliveries = accounts.filter((delivery) => delivery.payment_status === "FULLY_RETURNED");
   const sumOriginalAmounts = (rows) => rows.reduce((sum, delivery) => sum + Number(delivery.total_amount || 0), 0);
-  const sumAmountsDue = (rows) => rows.reduce((sum, delivery) => {
-    const originalAmount = Number(delivery.total_amount || 0);
-    return sum + Math.max(originalAmount - (deductionsByDelivery.get(Number(delivery.id)) || 0), 0);
-  }, 0);
+  const sumAmountsDue = (rows) => rows.reduce((sum, delivery) => sum + delivery.amount_due, 0);
   const returnAdjustmentAmount = returns.reduce(
     (sum, entry) => sum + Number(entry.total_product_price_returned || 0),
     0
@@ -298,6 +295,8 @@ export function buildVendorPaymentSummary(deliveries = [], returns = []) {
     paid_delivery_amount: paidDeliveryAmount,
     unpaid_delivery_count: unpaidDeliveries.length,
     unpaid_delivery_amount: unpaidDeliveryAmount,
+    fully_returned_delivery_count: fullyReturnedDeliveries.length,
+    fully_returned_delivery_amount: sumOriginalAmounts(fullyReturnedDeliveries),
     return_count: returnCount,
     return_adjustment_amount: returnAdjustmentAmount,
     unallocated_return_adjustment_amount: unallocatedReturnAmount,
@@ -309,33 +308,12 @@ export function buildVendorPaymentSummary(deliveries = [], returns = []) {
   };
 }
 
-export function buildVendorDeliveryAccounts(deliveries = [], returns = []) {
-  const deductionsByDelivery = new Map();
-  for (const entry of returns) {
-    if (entry.delivery_id == null) continue;
-    const deliveryId = Number(entry.delivery_id);
-    deductionsByDelivery.set(
-      deliveryId,
-      (deductionsByDelivery.get(deliveryId) || 0) + Number(entry.total_product_price_returned || 0)
-    );
-  }
-
-  return deliveries
-    .map((delivery) => {
-      const originalAmount = Number(delivery.total_amount || 0);
-      const returnDeduction = deductionsByDelivery.get(Number(delivery.id)) || 0;
-      return {
-        ...delivery,
-        original_amount: originalAmount,
-        return_deduction: returnDeduction,
-        amount_due: Math.max(originalAmount - returnDeduction, 0),
-        payment_status: String(delivery.payment_status || "UNPAID").toUpperCase(),
-      };
-    })
+export function buildVendorDeliveryAccounts(deliveries = [], returns = [], deliveryItems) {
+  return buildDeliveryPaymentAccounts(deliveries, returns, deliveryItems)
     .sort((a, b) => `${b.delivery_date || ""} ${b.delivery_time || ""} ${b.id}`.localeCompare(`${a.delivery_date || ""} ${a.delivery_time || ""} ${a.id}`));
 }
 
-export function buildVendorDailyPaymentHistory(deliveries = [], returns = []) {
+export function buildVendorDailyPaymentHistory(deliveries = [], returns = [], deliveryItems) {
   const dates = new Set();
   deliveries.forEach((delivery) => {
     const date = getCalendarDateKey(delivery.delivery_date);
@@ -352,7 +330,7 @@ export function buildVendorDailyPaymentHistory(deliveries = [], returns = []) {
       account_date: accountDate,
       ...buildVendorPaymentSummary(
         deliveries.filter((delivery) => getCalendarDateKey(delivery.delivery_date) === accountDate),
-        returns.filter((entry) => getCalendarDateKey(entry.return_date) === accountDate)
+        returns.filter((entry) => getCalendarDateKey(entry.return_date) === accountDate), deliveryItems
       ),
     }));
 }
@@ -727,8 +705,8 @@ async function vendorDashboard(req, res) {
   const today = getTodayString();
 
   if (isInMemoryDb(req.db)) {
-    const vendorDeliveryRecords = req.db.deliveries
-      .filter((delivery) => Number(delivery.vendor_id) === Number(req.user.vendor_id));
+    const vendorDeliveryRecords = await addDeliveryPaymentAccounts(req.db, req.db.deliveries
+      .filter((delivery) => Number(delivery.vendor_id) === Number(req.user.vendor_id)));
     const vendorReturnRecords = req.db.vendor_returns
       .filter((entry) => Number(entry.vendor_id) === Number(req.user.vendor_id));
     const todayDeliveryRecords = vendorDeliveryRecords
@@ -781,7 +759,7 @@ async function vendorDashboard(req, res) {
     });
   }
 
-  const vendorDeliveries = await dbAll(
+  const vendorDeliveries = await addDeliveryPaymentAccounts(req.db, await dbAll(
     req.db,
     `SELECT d.id, d.delivery_date, d.delivery_time, d.total_amount, d.created_at,
             COALESCE(d.payment_status, 'UNPAID') AS payment_status,
@@ -804,7 +782,7 @@ async function vendorDashboard(req, res) {
       GROUP BY d.id
       ORDER BY d.created_at DESC
       LIMIT 10`
-  );
+  ));
 
   const todayDeliveryCount = (await dbGet(
     req.db,
@@ -820,7 +798,7 @@ async function vendorDashboard(req, res) {
     "SELECT COALESCE(SUM(total_amount), 0) AS total FROM deliveries WHERE vendor_id = ? AND delivery_date = ?"
   )).total;
 
-  const vendorPaymentDeliveries = await dbAll(
+  const vendorPaymentDeliveries = await addDeliveryPaymentAccounts(req.db, await dbAll(
     req.db,
     `SELECT d.id, d.delivery_date, d.delivery_time, d.total_amount, COALESCE(d.payment_status, 'UNPAID') AS payment_status,
             COALESCE(STRING_AGG(p.name || ' (' || di.quantity || ')', ', ' ORDER BY p.name), '') AS items
@@ -837,7 +815,7 @@ async function vendorDashboard(req, res) {
      LEFT JOIN products p ON p.id = di.product_id
      WHERE d.vendor_id = ?
      GROUP BY d.id`
-  );
+  ));
 
   const vendorPaymentReturns = await dbAll(
     req.db,

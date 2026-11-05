@@ -1727,8 +1727,12 @@ tbody tr:last-child td {
 .vendor-payment-grid {
   display: grid;
   gap: 0.9rem;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
 }
+
+.vendor-payment-grid > .vendor-payment-card { grid-column: span 2; }
+.vendor-payment-grid > .vendor-payment-card.is-return,
+.vendor-payment-grid > .vendor-payment-card.is-net { grid-column: span 3; }
 
 .vendor-payment-card {
   background: linear-gradient(145deg, #ffffff, #f8fbff);
@@ -1755,6 +1759,7 @@ tbody tr:last-child td {
 .vendor-payment-card.is-unpaid::before { background: #e09a2e; }
 .vendor-payment-card.is-return::before { background: #d45c67; }
 .vendor-payment-card.is-net::before { background: #3272bf; }
+.vendor-payment-card.is-fully-returned::before { background: #8864bc; }
 
 .vendor-payment-card-head {
   align-items: center;
@@ -1763,6 +1768,7 @@ tbody tr:last-child td {
   font-size: 0.78rem;
   font-weight: 800;
   gap: 0.55rem;
+  flex-wrap: wrap;
   justify-content: space-between;
   text-transform: uppercase;
 }
@@ -1803,6 +1809,13 @@ tbody tr:last-child td {
   background: #eaf3ff;
   border-color: #c8dcf5;
   color: #245f9f;
+}
+
+.vendor-payment-card.is-fully-returned .vendor-payment-status,
+.vendor-delivery-payment.is-fully-returned {
+  background: #f0edfc;
+  border-color: #dcd3f4;
+  color: #64439c;
 }
 
 .vendor-payment-count {
@@ -1899,6 +1912,9 @@ tbody tr:last-child td {
   .vendor-payment-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  .vendor-payment-grid > .vendor-payment-card,
+  .vendor-payment-grid > .vendor-payment-card.is-return { grid-column: auto; }
+  .vendor-payment-grid > .vendor-payment-card.is-net { grid-column: 1 / -1; }
 }
 
 @media (max-width: 640px) {

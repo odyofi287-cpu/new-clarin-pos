@@ -6,6 +6,7 @@ import { getBusinessTimestamp } from "../businessDate.js";
 import { deliveryQuantity, money } from "../productEconomics.js";
 import { productReferences } from "../historyMetadata.js";
 import { requireSalesIdentity, requireStaffDeliveryOwnership } from "../salesScope.js";
+import { addDeliveryPaymentAccounts as addDeliveryAccountAmounts, buildDeliveryPaymentAccounts } from "../deliveryPayments.js";
 
 const router = express.Router();
 router.use(requireSalesIdentity);
@@ -15,49 +16,9 @@ async function getDeliveryReturns(db, deliveryId) {
     return db.vendor_returns.filter((entry) => Number(entry.delivery_id) === deliveryId);
   }
   return await dbAll(db,
-    "SELECT product_id, quantity FROM vendor_returns WHERE delivery_id = $1",
+    "SELECT delivery_id, product_id, quantity, total_product_price_returned FROM vendor_returns WHERE delivery_id = $1",
     [deliveryId]
   );
-}
-
-async function addDeliveryAccountAmounts(db, deliveries) {
-  const rows = Array.isArray(deliveries) ? deliveries : [deliveries];
-  if (!rows.length || !rows[0]) return Array.isArray(deliveries) ? [] : deliveries;
-
-  let returnRows;
-  if (isInMemoryDb(db)) {
-    returnRows = db.vendor_returns
-      .filter((entry) => entry.delivery_id != null)
-      .map((entry) => ({ delivery_id: entry.delivery_id, total_product_price_returned: entry.total_product_price_returned }));
-  } else {
-    returnRows = await dbAll(
-      db,
-      `SELECT delivery_id, SUM(total_product_price_returned) AS return_deduction
-       FROM vendor_returns WHERE delivery_id IS NOT NULL GROUP BY delivery_id`,
-      [],
-      `SELECT delivery_id, SUM(total_product_price_returned) AS return_deduction
-       FROM vendor_returns WHERE delivery_id IS NOT NULL GROUP BY delivery_id`
-    );
-  }
-
-  const deductions = new Map();
-  for (const entry of returnRows) {
-    const deliveryId = Number(entry.delivery_id);
-    const amount = Number(entry.return_deduction ?? entry.total_product_price_returned ?? 0);
-    deductions.set(deliveryId, (deductions.get(deliveryId) || 0) + amount);
-  }
-
-  const enriched = rows.map((delivery) => {
-    const originalAmount = Number(delivery.total_amount ?? delivery.original_amount ?? 0);
-    const returnDeduction = deductions.get(Number(delivery.id)) || 0;
-    return {
-      ...delivery,
-      original_amount: originalAmount,
-      return_deduction: returnDeduction,
-      amount_due: Math.max(originalAmount - returnDeduction, 0),
-    };
-  });
-  return Array.isArray(deliveries) ? enriched : enriched[0];
 }
 
 router.get("/", requireRole("ADMIN", "STAFF", "VENDOR"), async (req, res) => {
@@ -354,6 +315,12 @@ router.put("/:id", requireCurrentStaff, requireStaffDeliveryOwnership(), async (
           throw new Error(`Product ${productId} already has ${quantity} returned items; remove those returns before reducing its delivered quantity`);
         }
       }
+      if (safePaymentStatus === "PAID" && String(existing.payment_status || "UNPAID").toUpperCase() !== "PAID"
+        && buildDeliveryPaymentAccounts([existing], deliveryReturns, itemPayloads.map((item) => ({
+          delivery_id: id, product_id: item.productId, quantity: item.quantity,
+        })))[0].fully_returned) {
+        throw new Error("This delivery is fully returned. No payment confirmation is needed.");
+      }
       const previousItems = await dbAll(req.db,
         "SELECT product_id, quantity, unit_cost, unit_base_price FROM delivery_items WHERE delivery_id = $1", [id]);
       for (const item of itemPayloads) {
@@ -483,29 +450,34 @@ router.post("/:id/confirm-payment", requireRole("ADMIN", "STAFF"), requireStaffD
       return res.status(400).json({ error: "Invalid delivery ID" });
     }
 
-    const delivery = await dbGet(
-      req.db,
-      "SELECT id, payment_status FROM deliveries WHERE id = $1",
-      [id],
-      "SELECT id, payment_status FROM deliveries WHERE id = ?"
-    );
-    if (!delivery) {
-      return res.status(404).json({ error: "Pickup not found" });
-    }
-
-    if (String(delivery.payment_status || "UNPAID").toUpperCase() !== "PAID") {
-      await dbRun(
+    await withTransaction(req.db, async () => {
+      const delivery = await dbGet(
         req.db,
-        `UPDATE deliveries
-         SET payment_status = 'PAID', payment_confirmed_at = CURRENT_TIMESTAMP, payment_confirmed_by = $1
-         WHERE id = $2 AND COALESCE(payment_status, 'UNPAID') <> 'PAID'
-         RETURNING id`,
-        [req.user.user_id, id],
-        `UPDATE deliveries
-         SET payment_status = 'PAID', payment_confirmed_at = datetime('now'), payment_confirmed_by = ?
-         WHERE id = ? AND COALESCE(payment_status, 'UNPAID') <> 'PAID'`
+        "SELECT id, payment_status, total_amount FROM deliveries WHERE id = $1 FOR UPDATE",
+        [id],
+        "SELECT id, payment_status, total_amount FROM deliveries WHERE id = ?"
       );
-    }
+      if (!delivery) {
+        const error = new Error("Pickup not found"); error.status = 404; throw error;
+      }
+      if ((await addDeliveryAccountAmounts(req.db, delivery)).fully_returned) {
+        throw new Error("This delivery is fully returned. No payment confirmation is needed.");
+      }
+
+      if (String(delivery.payment_status || "UNPAID").toUpperCase() !== "PAID") {
+        await dbRun(
+          req.db,
+          `UPDATE deliveries
+           SET payment_status = 'PAID', payment_confirmed_at = CURRENT_TIMESTAMP, payment_confirmed_by = $1
+           WHERE id = $2 AND COALESCE(payment_status, 'UNPAID') <> 'PAID'
+           RETURNING id`,
+          [req.user.user_id, id],
+          `UPDATE deliveries
+           SET payment_status = 'PAID', payment_confirmed_at = datetime('now'), payment_confirmed_by = ?
+           WHERE id = ? AND COALESCE(payment_status, 'UNPAID') <> 'PAID'`
+        );
+      }
+    });
 
     const updatedDelivery = await dbGet(
       req.db,
@@ -530,7 +502,7 @@ router.post("/:id/confirm-payment", requireRole("ADMIN", "STAFF"), requireStaffD
     res.json({ data: await addDeliveryAccountAmounts(req.db, updatedDelivery) });
   } catch (error) {
     console.error(error);
-    res.status(400).json({ error: error.message || "Failed to confirm delivery payment" });
+    res.status(error.status || 400).json({ error: error.message || "Failed to confirm delivery payment" });
   }
 });
 

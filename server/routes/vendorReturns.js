@@ -6,6 +6,7 @@ import { dbAll, dbGet, dbRun, isInMemoryDb, withTransaction } from "./dbCompat.j
 import { getBusinessDate } from "../businessDate.js";
 import { restockVendorReturn, reverseVendorReturnStock } from "./returnInventory.js";
 import { requireSalesIdentity, requireStaffDeliveryOwnership, staffOwnsDelivery } from "../salesScope.js";
+import { addDeliveryPaymentAccounts } from "../deliveryPayments.js";
 
 const router = express.Router();
 router.use(requireSalesIdentity);
@@ -52,41 +53,31 @@ function getDateKey(value) {
 
 async function getVendorDeliveryOptions(db, vendorId, businessDate = getBusinessDate(), ownerId = null) {
   if (isInMemoryDb(db)) {
-    return db.deliveries
+    const deliveries = db.deliveries
       .filter((delivery) => Number(delivery.vendor_id) === Number(vendorId)
         && (ownerId == null || Number(delivery.created_by) === Number(ownerId))
         && getDateKey(delivery.delivery_date) === businessDate)
       .map((delivery) => {
         const deliveryItems = db.delivery_items.filter((item) => Number(item.delivery_id) === Number(delivery.id));
-        const deliveryReturns = db.vendor_returns.filter((entry) => Number(entry.delivery_id) === Number(delivery.id));
-        const returnDeduction = deliveryReturns.reduce((sum, entry) => sum + Number(entry.total_product_price_returned || 0), 0);
-        const originalAmount = Number(delivery.total_amount || 0);
         return {
           ...delivery,
-          original_amount: originalAmount,
-          return_deduction: returnDeduction,
-          amount_due: Math.max(originalAmount - returnDeduction, 0),
           item_count: deliveryItems.length,
           items: deliveryItems.map((item) => `${db.products.find((product) => Number(product.id) === Number(item.product_id))?.name || "Unknown"} (${item.quantity})`).join(", "),
-          payment_status: String(delivery.payment_status || "UNPAID").toUpperCase(),
-          returnable: String(delivery.payment_status || "UNPAID").toUpperCase() !== "PAID",
         };
       })
       .sort((a, b) => `${b.delivery_time || ""}-${b.id}`.localeCompare(`${a.delivery_time || ""}-${a.id}`));
+    return (await addDeliveryPaymentAccounts(db, deliveries)).map((delivery) => ({
+      ...delivery, returnable: delivery.payment_status === "UNPAID",
+    }));
   }
 
   const rows = await dbAll(
     db,
     `SELECT d.id, d.vendor_id, d.delivery_date, d.delivery_time, d.total_amount AS original_amount,
             COALESCE(d.payment_status, 'UNPAID') AS payment_status,
-            COALESCE(r.return_deduction, 0) AS return_deduction,
             COALESCE(i.item_count, 0) AS item_count,
             COALESCE(i.items, '') AS items
      FROM deliveries d
-     LEFT JOIN (
-       SELECT delivery_id, SUM(total_product_price_returned) AS return_deduction
-       FROM vendor_returns WHERE delivery_id IS NOT NULL GROUP BY delivery_id
-     ) r ON r.delivery_id = d.id
      LEFT JOIN (
        SELECT di.delivery_id, COUNT(*) AS item_count,
               STRING_AGG(p.name || ' (' || di.quantity::text || ')', ', ' ORDER BY p.name) AS items
@@ -98,14 +89,9 @@ async function getVendorDeliveryOptions(db, vendorId, businessDate = getBusiness
     ownerId == null ? [vendorId, businessDate] : [vendorId, businessDate, ownerId],
     `SELECT d.id, d.vendor_id, d.delivery_date, d.delivery_time, d.total_amount AS original_amount,
             COALESCE(d.payment_status, 'UNPAID') AS payment_status,
-            COALESCE(r.return_deduction, 0) AS return_deduction,
             COALESCE(i.item_count, 0) AS item_count,
             COALESCE(i.items, '') AS items
      FROM deliveries d
-     LEFT JOIN (
-       SELECT delivery_id, SUM(total_product_price_returned) AS return_deduction
-       FROM vendor_returns WHERE delivery_id IS NOT NULL GROUP BY delivery_id
-     ) r ON r.delivery_id = d.id
      LEFT JOIN (
        SELECT di.delivery_id, COUNT(*) AS item_count,
               GROUP_CONCAT(p.name || ' (' || di.quantity || ')', ', ') AS items
@@ -116,18 +102,11 @@ async function getVendorDeliveryOptions(db, vendorId, businessDate = getBusiness
      ORDER BY d.delivery_time DESC, d.id DESC`
   );
 
-  return rows.map((delivery) => {
-    const originalAmount = Number(delivery.original_amount || 0);
-    const returnDeduction = Number(delivery.return_deduction || 0);
-    const paymentStatus = String(delivery.payment_status || "UNPAID").toUpperCase();
+  return (await addDeliveryPaymentAccounts(db, rows)).map((delivery) => {
     return {
       ...delivery,
-      original_amount: originalAmount,
-      return_deduction: returnDeduction,
-      amount_due: Math.max(originalAmount - returnDeduction, 0),
       item_count: Number(delivery.item_count || 0),
-      payment_status: paymentStatus,
-      returnable: paymentStatus !== "PAID",
+      returnable: delivery.payment_status === "UNPAID",
     };
   });
 }

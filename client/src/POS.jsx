@@ -5,6 +5,7 @@ import { filterHistory, countHistoryDates } from "./historyCalendar.js";
 import { formatItemQuantity } from "./productQuantity";
 import { packSize, packLabel } from "./deliveryPacks";
 import { filterTransactions, transactionFilterOptions } from "./transactionFilters";
+import { paymentStatus } from "./paymentStatus";
 import "./history.css";
 import "./transaction-entry.css";
 
@@ -47,8 +48,8 @@ function getManilaBusinessDate() {
 }
 
 function PaymentStatusBadge({ status }) {
-  const isPaid = String(status || "UNPAID").toUpperCase() === "PAID";
-  return <span className={`payment-status-badge ${isPaid ? "is-paid" : "is-unpaid"}`}>{isPaid ? "Paid" : "Unpaid"}</span>;
+  const { label, className } = paymentStatus(status);
+  return <span className={`payment-status-badge ${className}`}>{label}</span>;
 }
 
 function getDisplayReturnId(entry) {
@@ -652,9 +653,10 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
       : pickupEntries;
     const filteredPaymentEntries = filterHistory(vendorPaymentEntries, 'delivery_date', historySelection);
     const paidDeliveryCount = filteredPaymentEntries.filter((entry) => String(entry.payment_status || 'UNPAID').toUpperCase() === 'PAID').length;
-    const unpaidDeliveryCount = filteredPaymentEntries.length - paidDeliveryCount;
+    const fullyReturnedDeliveryCount = filteredPaymentEntries.filter((entry) => entry.payment_status === 'FULLY_RETURNED').length;
+    const unpaidDeliveryCount = filteredPaymentEntries.length - paidDeliveryCount - fullyReturnedDeliveryCount;
     const outstandingPaymentAmount = filteredPaymentEntries
-      .filter((entry) => String(entry.payment_status || 'UNPAID').toUpperCase() !== 'PAID')
+      .filter((entry) => String(entry.payment_status || 'UNPAID').toUpperCase() === 'UNPAID')
       .reduce((sum, entry) => sum + Number(entry.amount_due ?? entry.total_amount ?? 0), 0);
 
     return (
@@ -695,6 +697,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                   <div className="payment-status-summary" aria-label="Filtered payment status totals">
                     <span className="is-paid"><b>{paidDeliveryCount}</b> Paid</span>
                     <span className="is-unpaid"><b>{unpaidDeliveryCount}</b> Unpaid</span>
+                    <span className="is-fully-returned"><b>{fullyReturnedDeliveryCount}</b> Fully returned</span>
                     <span className="is-due"><b>{formatCurrency(outstandingPaymentAmount)}</b> Outstanding</span>
                   </div>
                 </div>
@@ -706,11 +709,12 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                 <div className="payment-status-board">
                   {filteredPaymentEntries.map((entry) => {
                     const isPaid = String(entry.payment_status || 'UNPAID').toUpperCase() === 'PAID';
+                    const isFullyReturned = entry.payment_status === 'FULLY_RETURNED';
                     const isExpanded = expandedPaymentIds.has(entry.id);
                     const amountDue = Number(entry.amount_due ?? entry.total_amount ?? 0);
                     const returnDeduction = Number(entry.return_deduction || 0);
                     const productItems = String(entry.items || '').split(',').map((item) => item.trim()).filter(Boolean);
-                    return <article className={`payment-account-card ${isPaid ? 'is-paid' : 'is-unpaid'} ${isExpanded ? 'is-expanded' : ''}`} key={`payment-${entry.id}`}>
+                    return <article className={`payment-account-card ${paymentStatus(entry.payment_status).className} ${isExpanded ? 'is-expanded' : ''}`} key={`payment-${entry.id}`}>
                       <div className="payment-account-main">
                         <div className="payment-account-identity">
                           <span className="payment-delivery-number">#{entry.id}</span>
@@ -731,13 +735,14 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                           <PaymentStatusBadge status={entry.payment_status} />
                           <div className="payment-account-date"><span>Recorded</span><strong>{formatDeliveryDate(entry.delivery_date)}</strong><small>{entry.delivery_time || 'No time recorded'}</small></div>
                           {isPaid && <small className="payment-confirmation-note">Confirmed by {entry.payment_confirmed_by_name || 'authorized user'}<br />{formatConfirmationDateTime(entry.payment_confirmed_at)}</small>}
+                          {isFullyReturned && <small className="payment-confirmation-note">All items returned. No payment due.</small>}
                         </div>
 
                         <div className="payment-row-actions">
                           <button type="button" className="payment-products-button" aria-expanded={isExpanded} onClick={() => togglePaymentProducts(entry.id)}>
                             <span>{isExpanded ? 'Hide Products' : 'Show Products'}</span><b aria-hidden="true">{isExpanded ? '−' : '+'}</b>
                           </button>
-                          <button type="button" className="payment-confirm-button" disabled={isPaid || amountDue <= 0 || confirmingPaymentId === entry.id} onClick={() => handleConfirmPayment(entry)}>{confirmingPaymentId === entry.id ? 'Confirming…' : isPaid ? 'Payment Confirmed' : amountDue <= 0 ? 'No Amount Due' : 'Confirm Payment'}</button>
+                          <button type="button" className="payment-confirm-button" disabled={isPaid || isFullyReturned || amountDue <= 0 || confirmingPaymentId === entry.id} onClick={() => handleConfirmPayment(entry)}>{confirmingPaymentId === entry.id ? 'Confirming…' : isPaid ? 'Payment Confirmed' : isFullyReturned ? 'Fully Returned' : amountDue <= 0 ? 'No Amount Due' : 'Confirm Payment'}</button>
                         </div>
                       </div>
 
@@ -851,7 +856,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
         pickup_date: String(detailBody.data?.delivery_date || record.delivery_date || "").slice(0, 10),
         pickup_time: detailBody.data?.delivery_time || record.delivery_time || "",
         vendor_id: String(detailBody.data?.vendor_id ?? record.vendor_id ?? ""),
-        payment_status: String(detailBody.data?.payment_status || record.payment_status || "UNPAID").toUpperCase(),
+        payment_status: String(detailBody.data?.recorded_payment_status || record.recorded_payment_status || "UNPAID").toUpperCase(),
         product_id: "",
         quantity: "1",
         category: "",
@@ -1125,7 +1130,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                       {returnDeliveries.map((delivery) => {
                         const paid = String(delivery.payment_status || "UNPAID").toUpperCase() === "PAID";
                         return <option key={delivery.id} value={delivery.id} disabled={paid || !delivery.returnable}>
-                          #{delivery.id} · {delivery.delivery_time || "No time"} · {formatCurrency(delivery.amount_due)} · {paid ? "Paid (closed)" : "Unpaid"}
+                          #{delivery.id} · {delivery.delivery_time || "No time"} · {formatCurrency(delivery.amount_due)} · {paid ? "Paid (closed)" : delivery.payment_status === "FULLY_RETURNED" ? "Fully returned (closed)" : "Unpaid"}
                         </option>;
                       })}
                     </select>
@@ -1133,7 +1138,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                       ? <small className="transaction-field-error">{returnDeliveriesError}</small>
                       : selectedReturnDelivery
                         ? <small>Original {formatCurrency(selectedReturnDelivery.original_amount)} · Previous returns -{formatCurrency(selectedReturnDelivery.return_deduction)} · Due {formatCurrency(selectedReturnDelivery.amount_due)}</small>
-                        : returnForm.vendor_id && !returnDeliveriesLoading && <small>{returnDeliveries.length ? "Paid deliveries are shown but closed for returns." : "No deliveries were recorded for this vendor today."}</small>}
+                        : returnForm.vendor_id && !returnDeliveriesLoading && <small>{returnDeliveries.length ? "Paid and fully returned deliveries are shown but closed for returns." : "No deliveries were recorded for this vendor today."}</small>}
                   </label>
                 )}
                 {isPickupEntry && pickupMode === "edit" && (
@@ -1143,7 +1148,7 @@ function POS({ token, role, vendorId, viewMode = "pos" }) {
                       <option value="UNPAID">Unpaid</option>
                       <option value="PAID">Paid</option>
                     </select>
-                    <small>Paid records retain who confirmed the payment and when.</small>
+                    <small>Paid records retain who confirmed the payment and when. Unpaid deliveries become Fully returned automatically when all items are returned.</small>
                   </label>
                 )}
               </section>

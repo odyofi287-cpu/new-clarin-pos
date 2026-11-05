@@ -350,6 +350,8 @@
 .payment-status-summary .is-unpaid,
 .payment-status-badge.is-unpaid { background: #fff1ee; border: 1px solid #f2d0ca; color: #c24638; }
 .payment-status-summary .is-due { background: #edf4ff; border: 1px solid #cfdef4; color: #255f9f; }
+.payment-status-summary .is-fully-returned,
+.payment-status-badge.is-fully-returned { background: #f0edfc; border: 1px solid #dcd3f4; color: #64439c; }
 .payment-status-badge {
   align-items: center;
   border-radius: 999px;

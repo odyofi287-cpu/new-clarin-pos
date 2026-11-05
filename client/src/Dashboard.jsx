@@ -6,6 +6,7 @@ import SalesCalendar from "./SalesCalendar";
 import { formatItemQuantity } from "./productQuantity";
 import "./productManagement.css";
 import ProductEconomicsFields, { emptyProductEconomics, productEconomicsPayload } from "./ProductEconomicsFields";
+import { paymentStatus } from "./paymentStatus";
 
 function formatCurrency(value) {
   return value == null ? "0.00" : Number(value).toLocaleString("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 });
@@ -274,6 +275,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
     const paymentSummary = data.vendor_summary.payment_summary || {};
     const paidDeliveryCount = Number(paymentSummary.paid_delivery_count || 0);
     const unpaidDeliveryCount = Number(paymentSummary.unpaid_delivery_count || 0);
+    const fullyReturnedDeliveryCount = Number(paymentSummary.fully_returned_delivery_count || 0);
     const returnCount = Number(paymentSummary.return_count || 0);
     const dailyHistory = data.vendor_summary.daily_history || [];
     const todayDeliveryAccounts = data.vendor_summary.today_delivery_accounts || [];
@@ -332,6 +334,15 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
               <div className="vendor-payment-amount"><span>Unpaid amount</span><strong>{formatCurrency(paymentSummary.unpaid_delivery_amount)}</strong></div>
             </article>
 
+            <article className="vendor-payment-card is-fully-returned">
+              <div className="vendor-payment-card-head">
+                <span>Fully returned</span>
+                <span className="vendor-payment-status">No payment due</span>
+              </div>
+              <div className="vendor-payment-count"><strong>{fullyReturnedDeliveryCount}</strong><span>{fullyReturnedDeliveryCount === 1 ? "delivery" : "deliveries"}</span></div>
+              <div className="vendor-payment-amount"><span>Original delivery amount</span><strong>{formatCurrency(paymentSummary.fully_returned_delivery_amount)}</strong></div>
+            </article>
+
             <article className="vendor-payment-card is-return">
               <div className="vendor-payment-card-head">
                 <span>Return adjustments</span>
@@ -362,7 +373,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
                       <td data-label="Original Amount">{formatCurrency(delivery.original_amount)}</td>
                       <td data-label="Return Deduction"><strong className="vendor-account-deduction">-{formatCurrency(delivery.return_deduction)}</strong></td>
                       <td data-label="Amount Due"><strong>{formatCurrency(delivery.amount_due)}</strong></td>
-                      <td data-label="Payment Status"><span className={`vendor-delivery-payment ${String(delivery.payment_status).toUpperCase() === "PAID" ? "is-paid" : "is-unpaid"}`}>{String(delivery.payment_status).toUpperCase() === "PAID" ? "Paid" : "Unpaid"}</span></td>
+                      <td data-label="Payment Status"><span className={`vendor-delivery-payment ${paymentStatus(delivery.payment_status).className}`}>{paymentStatus(delivery.payment_status).label}</span></td>
                       <td data-label="Time">{formatRecordTime(delivery.delivery_time)}</td>
                       <td data-label="Products"><button type="button" className="vendor-products-toggle" aria-expanded={expanded} onClick={() => toggleVendorDeliveryProducts(delivery.id)}>{expanded ? "Hide Products" : "Show Products"}</button></td>
                     </tr>
@@ -372,7 +383,7 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
               </table>
             )}
           </div>
-          <p className="vendor-payment-formula">Each delivery amount due is its original amount minus returns assigned to that delivery. Net payable includes unpaid deliveries only.</p>
+          <p className="vendor-payment-formula">Each delivery amount due is its original amount minus returns assigned to that delivery. Fully returned unpaid deliveries have no payment due and are counted separately from paid and unpaid deliveries.</p>
         </section>
 
         <section className="dashboard-card vendor-daily-history">
@@ -389,12 +400,13 @@ function Dashboard({ token, role, viewMode = "dashboard", onNavigate, stockFilte
           ) : (
             <div className="management-table-wrap">
               <table>
-                <thead><tr><th>Date</th><th>Deliveries</th><th>Paid</th><th>Unpaid</th><th>Returns</th><th>Net Payable</th></tr></thead>
+                <thead><tr><th>Date</th><th>Deliveries</th><th>Paid</th><th>Unpaid</th><th>Fully Returned</th><th>Returns</th><th>Net Payable</th></tr></thead>
                 <tbody>{dailyHistory.map((day) => <tr key={day.account_date}>
                   <td data-label="Date"><strong>{formatRecordDate(day.account_date)}</strong></td>
                   <td data-label="Deliveries">{day.total_delivery_count}<small>{formatCurrency(day.gross_delivery_amount)}</small></td>
                   <td data-label="Paid">{day.paid_delivery_count}<small>{formatCurrency(day.paid_delivery_amount)}</small></td>
                   <td data-label="Unpaid">{day.unpaid_delivery_count}<small>{formatCurrency(day.unpaid_delivery_amount)}</small></td>
+                  <td data-label="Fully Returned">{day.fully_returned_delivery_count || 0}<small>{formatCurrency(day.fully_returned_delivery_amount)}</small></td>
                   <td data-label="Returns">{day.return_count}<small>-{formatCurrency(day.return_adjustment_amount)}</small></td>
                   <td data-label="Net Payable"><strong>{formatCurrency(day.net_payable_amount)}</strong></td>
                 </tr>)}</tbody>
